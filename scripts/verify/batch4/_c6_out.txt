@@ -1,0 +1,13 @@
+﻿== S3.8 gate: Redis ops baseline ==
+02:16:54 PASS redis reachable (PING)
+02:16:54 rdb_bgsave_ok=True appendonly=appendonly no
+02:16:54 PASS RDB last bgsave status ok
+02:16:54 memory: used_memory_human:12.00M; maxmemory-policy
+noeviction
+02:16:54 swap:* keys (scanned, bounded sample) = 0
+02:16:54 bigkeys scan completed=True
+02:16:54 PASS big keys scan runs
+02:16:54 slowlog length = 1
+02:16:54 PASS slowlog readable
+02:16:54 hotkeys available = True (LFU required; otherwise noted)
+02:16:54 GATE-REDIS-OPS PASS
