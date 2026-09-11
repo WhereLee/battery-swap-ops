@@ -1,0 +1,11 @@
+target/
+*.log
+logs/
+.idea/
+*.iml
+.vscode/
+diag-archive/
+.local/
+**/dev-secrets.properties
+**/batch-secrets.properties
+.DS_Store
