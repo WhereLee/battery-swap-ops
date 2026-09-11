@@ -9,6 +9,7 @@ import com.swapops.server.device.entity.CellEntity;
 import com.swapops.server.order.dao.SwapOrderDao;
 import com.swapops.server.order.entity.SwapOrderEntity;
 import com.swapops.server.order.enums.OrderType;
+import com.swapops.server.order.service.delay.OrderDelayService;
 import com.swapops.server.device.dao.BatteryDao;
 import com.swapops.server.device.dao.CellDao;
 import lombok.extern.slf4j.Slf4j;
@@ -30,14 +31,17 @@ public class OrderEventService {
     private final BatteryDao batteryDao;
     private final BillingService billingService;
     private final SwapOrderService swapOrderService;
+    private final OrderDelayService orderDelayService;
 
     public OrderEventService(SwapOrderDao orderDao, CellDao cellDao, BatteryDao batteryDao,
-                             BillingService billingService, SwapOrderService swapOrderService) {
+                             BillingService billingService, SwapOrderService swapOrderService,
+                             OrderDelayService orderDelayService) {
         this.orderDao = orderDao;
         this.cellDao = cellDao;
         this.batteryDao = batteryDao;
         this.billingService = billingService;
         this.swapOrderService = swapOrderService;
+        this.orderDelayService = orderDelayService;
     }
 
     /** 柜故障（S3.2）：该柜活跃订单全部转 EXCEPTION 交人工；在途指令由 DeviceEventService 中断 */
@@ -70,6 +74,9 @@ public class OrderEventService {
         long now = System.currentTimeMillis();
         if (cas(order.getId(), OrderStatus.PENDING_OPEN, OrderStatus.OPENED,
                 w -> w.set(SwapOrderEntity::getOpenTime, now))) {
+            // 状态推进：撤预占计时，接取电计时（S3.3 精确计时器）
+            orderDelayService.cancelAll(order);
+            orderDelayService.schedulePickup(order, now);
             log.info("订单已开仓 orderNo={} cellNo={} seq={}", order.getOrderNo(), cellNo, commandSeq);
         }
     }
@@ -93,6 +100,7 @@ public class OrderEventService {
                     assignHolder(battery, order.getUserId());
                     order.setTakeTime(now);
                     order.setCompleteTime(now);
+                    orderDelayService.cancelAll(order);
                     billingService.charge(order, now);
                     log.info("首借订单完成 orderNo={} batteryNo={}", order.getOrderNo(), battery.getBatteryNo());
                 }
@@ -100,6 +108,9 @@ public class OrderEventService {
             case SWAP -> {
                 if (cas(order.getId(), OrderStatus.OPENED, OrderStatus.TAKEN,
                         w -> w.set(SwapOrderEntity::getTakeTime, now))) {
+                    // 状态推进：撤取电计时，接归还超期计时（S3.3）
+                    orderDelayService.cancelAll(order);
+                    orderDelayService.scheduleOverdue(order, now);
                     log.info("换电订单已取电，待还旧电池 orderNo={} takeBatteryNo={}",
                             order.getOrderNo(), battery.getBatteryNo());
                 }
@@ -135,6 +146,7 @@ public class OrderEventService {
                 }
                 swapOrder.setReturnTime(now);
                 swapOrder.setCompleteTime(now);
+                orderDelayService.cancelAll(swapOrder);
                 billingService.charge(swapOrder, now);
                 log.info("换电订单完成 orderNo={} 归还={} 借出={}", swapOrder.getOrderNo(),
                         battery.getBatteryNo(), swapOrder.getTakeBatteryId());
@@ -149,6 +161,7 @@ public class OrderEventService {
                     .set(SwapOrderEntity::getReturnBatteryId, battery.getId()))) {
                 returnOrder.setReturnTime(now);
                 returnOrder.setCompleteTime(now);
+                orderDelayService.cancelAll(returnOrder);
                 billingService.charge(returnOrder, now);
                 log.info("退租订单完成 orderNo={} 归还={}", returnOrder.getOrderNo(), battery.getBatteryNo());
             }

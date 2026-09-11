@@ -45,6 +45,8 @@ class OrderEventServiceTest {
     private BillingService billingService;
     @Mock
     private SwapOrderService swapOrderService;
+    @Mock
+    private com.swapops.server.order.service.delay.OrderDelayService orderDelayService;
     @InjectMocks
     private OrderEventService service;
 
@@ -99,6 +101,8 @@ class OrderEventServiceTest {
         service.onDoorOpened(cabinet(), 3, 7L);
 
         verify(orderDao).update(isNull(), any());
+        verify(orderDelayService).cancelAll(any(SwapOrderEntity.class));
+        verify(orderDelayService).schedulePickup(any(SwapOrderEntity.class), anyLong());
     }
 
     @Test
@@ -134,6 +138,8 @@ class OrderEventServiceTest {
         service.onBatteryOut(cabinet(), cell(11L, 3), battery(21L, "BAT-0001"), 7L);
 
         verify(billingService, never()).charge(any(), anyLong());
+        verify(orderDelayService).cancelAll(any(SwapOrderEntity.class));
+        verify(orderDelayService).scheduleOverdue(any(SwapOrderEntity.class), anyLong());
     }
 
     @Test

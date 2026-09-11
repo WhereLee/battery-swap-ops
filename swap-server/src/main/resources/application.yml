@@ -48,6 +48,13 @@ swap:
     pickup-timeout-seconds: 120
   order:
     sweep-interval-ms: 5000
+  delay:
+    poll-interval-ms: 1000
+    batch: 100
+    max-attempts: 3
+    backoff-base-millis: 5000
+  job:
+    lock-ttl-seconds: 60
   dev:
     # 本地联调开关：默认关闭；运行参数 -Dspring-boot.run.arguments=--swap.dev.enabled=true 打开
     enabled: false

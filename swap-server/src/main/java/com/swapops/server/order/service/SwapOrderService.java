@@ -21,6 +21,7 @@ import com.swapops.server.order.dao.SwapOrderDao;
 import com.swapops.server.order.entity.SwapOrderEntity;
 import com.swapops.server.order.enums.OrderType;
 import com.swapops.server.order.form.CreateOrderForm;
+import com.swapops.server.order.service.delay.OrderDelayService;
 import com.swapops.server.user.entity.UserPlanEntity;
 import com.swapops.server.user.entity.WalletEntity;
 import com.swapops.server.user.service.PlanService;
@@ -62,12 +63,14 @@ public class SwapOrderService {
     private final AllocationService allocationService;
     private final CommandDispatchService commandDispatchService;
     private final BillingProperties billingProperties;
+    private final OrderDelayService orderDelayService;
 
     public SwapOrderService(SwapOrderDao orderDao, CabinetDao cabinetDao, CellDao cellDao,
                             BatteryDao batteryDao, StationDao stationDao,
                             UserAccountService userAccountService, WalletService walletService,
                             PlanService planService, AllocationService allocationService,
-                            CommandDispatchService commandDispatchService, BillingProperties billingProperties) {
+                            CommandDispatchService commandDispatchService, BillingProperties billingProperties,
+                            OrderDelayService orderDelayService) {
         this.orderDao = orderDao;
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
@@ -79,6 +82,7 @@ public class SwapOrderService {
         this.allocationService = allocationService;
         this.commandDispatchService = commandDispatchService;
         this.billingProperties = billingProperties;
+        this.orderDelayService = orderDelayService;
     }
 
     /**
@@ -156,6 +160,7 @@ public class SwapOrderService {
         order.setTakeBatteryId(alloc.battery() == null ? null : alloc.battery().getId());
         order.setUpdateTime(System.currentTimeMillis());
         orderDao.updateById(order);
+        orderDelayService.schedulePreempt(order);
         log.info("下单成功 orderNo={} type={} userId={} cabinetNo={} cellNo={} batteryNo={}",
                 order.getOrderNo(), type, userId, cabinet.getCabinetNo(), alloc.cell().getCellNo(),
                 alloc.battery() == null ? "-" : alloc.battery().getBatteryNo());
@@ -190,6 +195,7 @@ public class SwapOrderService {
             cas(order.getId(), OrderStatus.PENDING_OPEN, OrderStatus.CANCELLED,
                     w -> w.set(SwapOrderEntity::getCancelTime, System.currentTimeMillis())
                             .set(SwapOrderEntity::getCloseReason, "SEND_FAILED"));
+            orderDelayService.cancelAll(order);
             log.warn("开仓指令下发失败，订单已补偿关闭 orderNo={} cause={}", orderNo, e.getMessage());
             throw e;
         }
@@ -207,12 +213,19 @@ public class SwapOrderService {
                             .set(SwapOrderEntity::getCloseReason, "USER_CANCEL"));
             if (closed) {
                 allocationService.release(order.getCellId(), order.getId(), order.getOrderNo());
+                orderDelayService.cancelAll(order);
                 log.info("订单已取消 orderNo={}", orderNo);
             }
         } else {
             throw new RRException("当前状态不可取消: " + OrderStatus.fromCode(order.getStatus()));
         }
         return orderDao.selectById(order.getId());
+    }
+
+    /** 按订单号定位（延迟任务处理器用；以 DB 现态为准） */
+    public SwapOrderEntity findByOrderNo(String orderNo) {
+        return orderDao.selectOne(new LambdaQueryWrapper<SwapOrderEntity>()
+                .eq(SwapOrderEntity::getOrderNo, orderNo));
     }
 
     /** 按柜+指令 seq 定位活跃订单（对账路径） */
@@ -230,13 +243,26 @@ public class SwapOrderService {
                 .last("LIMIT 1"));
     }
 
-    /** 对账证据推进：设备已执行开仓（lastCommandSeq≥seq）且仓未取 → PENDING_OPEN→OPENED */
+    /** 对账证据推进：设备已执行开仓（lastCommandSeq≥seq）且仓未取 → PENDING_OPEN→OPENED，接续取电计时 */
     public boolean markOpenedByEvidence(SwapOrderEntity order) {
-        return cas(order.getId(), OrderStatus.PENDING_OPEN, OrderStatus.OPENED,
-                w -> w.set(SwapOrderEntity::getOpenTime, System.currentTimeMillis()));
+        long now = System.currentTimeMillis();
+        boolean opened = cas(order.getId(), OrderStatus.PENDING_OPEN, OrderStatus.OPENED,
+                w -> w.set(SwapOrderEntity::getOpenTime, now));
+        if (opened) {
+            order.setOpenTime(now);
+            orderDelayService.cancelAll(order);
+            orderDelayService.schedulePickup(order, now);
+        }
+        return opened;
     }
 
-    /** 异常终止（设备故障/证据丢失）：任意活跃态 → EXCEPTION + 释放预占（交人工处置） */
+    /** 归还超期：TAKEN → OVERDUE（延迟任务/扫描调用；幂等） */
+    public boolean markOverdue(SwapOrderEntity order) {
+        return cas(order.getId(), OrderStatus.TAKEN, OrderStatus.OVERDUE,
+                w -> w.set(SwapOrderEntity::getUpdateTime, System.currentTimeMillis()));
+    }
+
+    /** 异常终止（设备故障/证据丢失）：任意活跃态 → EXCEPTION + 释放预占 + 清计时（交人工处置） */
     public boolean markException(SwapOrderEntity order, String reason) {
         OrderStatus from = OrderStatus.fromCode(order.getStatus());
         if (isTerminal(order.getStatus())) {
@@ -247,12 +273,13 @@ public class SwapOrderService {
                         .set(SwapOrderEntity::getCloseReason, reason));
         if (marked) {
             allocationService.release(order.getCellId(), order.getId(), order.getOrderNo());
+            orderDelayService.cancelAll(order);
             log.warn("订单转人工异常 orderNo={} reason={}", order.getOrderNo(), reason);
         }
         return marked;
     }
 
-    /** 超时关闭（扫描任务调用）：任意活跃态 → TIMEOUT_CLOSED + 释放预占 */
+    /** 超时关闭（延迟任务/扫描调用）：任意活跃态 → TIMEOUT_CLOSED + 释放预占 + 清计时 */
     public boolean closeTimedOut(SwapOrderEntity order, String reason) {
         OrderStatus from = OrderStatus.fromCode(order.getStatus());
         boolean closed = cas(order.getId(), from, OrderStatus.TIMEOUT_CLOSED,
@@ -260,6 +287,7 @@ public class SwapOrderService {
                         .set(SwapOrderEntity::getCloseReason, reason));
         if (closed) {
             allocationService.release(order.getCellId(), order.getId(), order.getOrderNo());
+            orderDelayService.cancelAll(order);
             log.warn("订单超时关闭 orderNo={} from={} reason={}", order.getOrderNo(), from, reason);
         }
         return closed;

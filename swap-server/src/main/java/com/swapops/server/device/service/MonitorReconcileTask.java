@@ -3,6 +3,7 @@ package com.swapops.server.device.service;
 import com.swapops.contract.CommandAction;
 import com.swapops.contract.OrderStatus;
 import com.swapops.server.common.RRException;
+import com.swapops.server.common.lock.JobLockService;
 import com.swapops.server.device.config.DeviceChannelProperties;
 import com.swapops.server.device.dao.CellDao;
 import com.swapops.server.device.entity.CellEntity;
@@ -24,7 +25,7 @@ import java.util.List;
  *       （门已开→OPENED；电池已取走但事件链缺失→EXCEPTION 交人工）；</li>
  *   <li>设备未执行 → 同 seq 重试（设备幂等）；达上限 → RETRY_EXCEEDED 转人工。</li>
  * </ol>
- * 单条异常不中断整轮（下轮自愈）；S3.3 引入任务租约锁后本任务纳入多实例互斥。
+ * 单条异常不中断整轮（下轮自愈）；多实例由任务租约锁互斥。
  */
 @Slf4j
 @Component
@@ -35,19 +36,28 @@ public class MonitorReconcileTask {
     private final CommandDispatchService commandDispatchService;
     private final SwapOrderService swapOrderService;
     private final CellDao cellDao;
+    private final JobLockService jobLockService;
 
     public MonitorReconcileTask(DeviceChannelProperties properties, CommandLogService commandLogService,
                                 CommandDispatchService commandDispatchService,
-                                SwapOrderService swapOrderService, CellDao cellDao) {
+                                SwapOrderService swapOrderService, CellDao cellDao,
+                                JobLockService jobLockService) {
         this.properties = properties;
         this.commandLogService = commandLogService;
         this.commandDispatchService = commandDispatchService;
         this.swapOrderService = swapOrderService;
         this.cellDao = cellDao;
+        this.jobLockService = jobLockService;
     }
 
     @Scheduled(fixedDelayString = "${swap.device.reconcile-interval-ms:15000}")
     public void reconcile() {
+        if (!jobLockService.runWithLock("monitor-reconcile", this::doReconcile)) {
+            log.debug("指令对账：另一实例执行中，跳过本轮");
+        }
+    }
+
+    private void doReconcile() {
         List<CommandLogEntity> timeouts = commandLogService.findTimeoutPending(
                 properties.getCommandTimeoutSeconds(), properties.getReconcileBatch());
         for (CommandLogEntity cmd : timeouts) {

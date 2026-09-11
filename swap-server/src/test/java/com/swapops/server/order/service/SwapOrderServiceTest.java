@@ -16,6 +16,7 @@ import com.swapops.server.device.service.CommandDispatchService;
 import com.swapops.server.order.dao.SwapOrderDao;
 import com.swapops.server.order.entity.SwapOrderEntity;
 import com.swapops.server.order.form.CreateOrderForm;
+import com.swapops.server.order.service.delay.OrderDelayService;
 import com.swapops.server.user.entity.SwapUserEntity;
 import com.swapops.server.user.entity.WalletEntity;
 import com.swapops.server.user.service.PlanService;
@@ -67,6 +68,8 @@ class SwapOrderServiceTest {
     private AllocationService allocationService;
     @Mock
     private CommandDispatchService commandDispatchService;
+    @Mock
+    private OrderDelayService orderDelayService;
 
     private SwapOrderService service;
 
@@ -82,7 +85,7 @@ class SwapOrderServiceTest {
     void setUp() {
         service = new SwapOrderService(orderDao, cabinetDao, cellDao, batteryDao, stationDao,
                 userAccountService, walletService, planService, allocationService,
-                commandDispatchService, new BillingProperties());
+                commandDispatchService, new BillingProperties(), orderDelayService);
     }
 
     private CreateOrderForm form(String type, String cabinetNo) {
@@ -136,6 +139,7 @@ class SwapOrderServiceTest {
         assertThat(order.getCellId()).isEqualTo(11L);
         assertThat(order.getTakeBatteryId()).isEqualTo(21L);
         assertThat(order.getOrderNo()).startsWith("SW");
+        verify(orderDelayService).schedulePreempt(order);
     }
 
     @Test
@@ -210,6 +214,7 @@ class SwapOrderServiceTest {
         service.cancel("SWO-1", 7L);
 
         verify(allocationService).release(11L, 99L, "SWO-1");
+        verify(orderDelayService).cancelAll(order);
     }
 
     @Test
@@ -228,14 +233,28 @@ class SwapOrderServiceTest {
     }
 
     @Test
-    @DisplayName("对账证据推进：PENDING_OPEN→OPENED（设备已执行开仓）")
+    @DisplayName("对账证据推进：PENDING_OPEN→OPENED（设备已执行开仓）+ 接取电计时")
     void 对账证据开仓() {
         SwapOrderEntity order = new SwapOrderEntity();
         order.setId(99L);
+        order.setOrderNo("SWO-1");
         order.setStatus(OrderStatus.PENDING_OPEN.getCode());
         when(orderDao.update(any(), any())).thenReturn(1);
 
         assertThat(service.markOpenedByEvidence(order)).isTrue();
+        verify(orderDelayService).cancelAll(order);
+        verify(orderDelayService).schedulePickup(eq(order), anyLong());
+    }
+
+    @Test
+    @DisplayName("归还超期：TAKEN→OVERDUE（CAS）")
+    void 归还超期转OVERDUE() {
+        SwapOrderEntity order = new SwapOrderEntity();
+        order.setId(99L);
+        order.setStatus(OrderStatus.TAKEN.getCode());
+        when(orderDao.update(any(), any())).thenReturn(1);
+
+        assertThat(service.markOverdue(order)).isTrue();
     }
 
     @Test

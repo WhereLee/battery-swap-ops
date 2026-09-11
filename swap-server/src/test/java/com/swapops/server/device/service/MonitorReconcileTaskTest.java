@@ -1,12 +1,14 @@
 package com.swapops.server.device.service;
 
 import com.swapops.contract.OrderStatus;
+import com.swapops.server.common.lock.JobLockService;
 import com.swapops.server.device.config.DeviceChannelProperties;
 import com.swapops.server.device.dao.CellDao;
 import com.swapops.server.device.entity.CellEntity;
 import com.swapops.server.device.entity.CommandLogEntity;
 import com.swapops.server.order.entity.SwapOrderEntity;
 import com.swapops.server.order.service.SwapOrderService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,6 +22,7 @@ import java.util.Map;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -43,8 +46,18 @@ class MonitorReconcileTaskTest {
     private SwapOrderService swapOrderService;
     @Mock
     private CellDao cellDao;
+    @Mock
+    private JobLockService jobLockService;
     @InjectMocks
     private MonitorReconcileTask task;
+
+    @BeforeEach
+    void runLockInline() {
+        when(jobLockService.runWithLock(anyString(), any(Runnable.class))).thenAnswer(inv -> {
+            inv.getArgument(1, Runnable.class).run();
+            return true;
+        });
+    }
 
     private CommandLogEntity cmd(int retryCount) {
         CommandLogEntity cmd = new CommandLogEntity();
