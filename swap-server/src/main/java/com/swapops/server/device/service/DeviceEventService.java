@@ -15,6 +15,8 @@ import com.swapops.server.device.entity.BatteryEntity;
 import com.swapops.server.device.entity.CabinetEntity;
 import com.swapops.server.device.entity.CellEntity;
 import com.swapops.server.device.form.DeviceEventForm;
+import com.swapops.server.order.service.AllocationService;
+import com.swapops.server.order.service.OrderEventService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,14 +35,19 @@ public class DeviceEventService {
     private final BatteryDao batteryDao;
     private final CommandLogService commandLogService;
     private final DeviceChannelProperties properties;
+    private final AllocationService allocationService;
+    private final OrderEventService orderEventService;
 
     public DeviceEventService(CabinetDao cabinetDao, CellDao cellDao, BatteryDao batteryDao,
-                              CommandLogService commandLogService, DeviceChannelProperties properties) {
+                              CommandLogService commandLogService, DeviceChannelProperties properties,
+                              AllocationService allocationService, OrderEventService orderEventService) {
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
         this.batteryDao = batteryDao;
         this.commandLogService = commandLogService;
         this.properties = properties;
+        this.allocationService = allocationService;
+        this.orderEventService = orderEventService;
     }
 
     @Transactional
@@ -104,6 +111,8 @@ public class DeviceEventService {
                     commandLogService.markArrivedBySeq(form.getCabinetNo(), form.getCommandSeq(),
                             CommandAction.OPEN_CELL);
                 }
+                // 订单域：门开推进 PENDING_OPEN → OPENED（无 commandSeq 只走设备台账）
+                orderEventService.onDoorOpened(cabinet, form.getCellNo(), form.getCommandSeq());
             }
             case BATTERY_OUT -> {
                 CellEntity cell = requireCell(cabinet, form);
@@ -115,6 +124,9 @@ public class DeviceEventService {
                 }
                 updateCell(cell.getId(), CellStatus.EMPTY, null);
                 detachBattery(battery.getId());
+                // 分配集合：仓变空 + 预占锁随订单推进清除；订单域按会话 seq 推进（TAKE 完成 / SWAP 待还）
+                allocationService.onBatteryOut(cell.getId());
+                orderEventService.onBatteryOut(cabinet, cell, battery, form.getCommandSeq());
                 log.info("取电 cabinetNo={} cellNo={} batteryNo={}", form.getCabinetNo(), form.getCellNo(), form.getBatteryNo());
             }
             case BATTERY_IN -> {
@@ -126,6 +138,9 @@ public class DeviceEventService {
                 }
                 updateCell(cell.getId(), CellStatus.OCCUPIED, battery.getId());
                 attachBattery(battery.getId(), cell.getId(), form.getSoc());
+                // 分配集合：仓变占用（充电中，未满电不进 full）；订单域推进（SWAP/RETURN 完成）
+                allocationService.onBatteryIn(cell.getId());
+                orderEventService.onBatteryIn(cabinet, cell, battery, form.getCommandSeq());
                 log.info("还电 cabinetNo={} cellNo={} batteryNo={} soc={}", form.getCabinetNo(), form.getCellNo(), form.getBatteryNo(), form.getSoc());
             }
             case SOC_REPORT -> {
@@ -142,12 +157,17 @@ public class DeviceEventService {
                     Integer status = (soc != null && soc >= properties.getSocFullThreshold())
                             ? BatteryStatus.FULL.getCode() : BatteryStatus.CHARGING.getCode();
                     updateSoc(battery.getId(), soc, status);
+                    if (status == BatteryStatus.FULL.getCode() && battery.getCellId() != null) {
+                        // 满电即入可分配池
+                        allocationService.onBatteryFull(battery.getCellId());
+                    }
                     log.info("电量上报 batteryNo={} soc={} -> status={}", form.getBatteryNo(), soc, status);
                 }
             }
             case CELL_FAULT -> {
                 CellEntity cell = requireCell(cabinet, form);
                 updateCell(cell.getId(), CellStatus.FAULT, cell.getBatteryId());
+                allocationService.refreshByCellId(cell.getId());
                 log.warn("仓位故障 cabinetNo={} cellNo={}", form.getCabinetNo(), form.getCellNo());
             }
             case DOOR_CLOSED -> log.debug("门关闭 cabinetNo={} cellNo={}（审计，不推进订单）",

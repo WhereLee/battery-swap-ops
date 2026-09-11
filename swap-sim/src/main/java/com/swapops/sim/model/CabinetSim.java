@@ -48,6 +48,14 @@ public class CabinetSim {
     /** 故障注入：门锁卡死（拒绝开仓） */
     private volatile boolean doorStuck = false;
 
+    /** 开门会话（cellNo → commandSeq/时间）：同一会话内的取/还电事件回带该 seq（协议会话关联） */
+    private final Map<Integer, Long> sessionSeq = new ConcurrentHashMap<>();
+
+    private final Map<Integer, Long> sessionAt = new ConcurrentHashMap<>();
+
+    /** 会话保鲜窗（毫秒）：超窗的开门会话不再回带 seq（防陈旧关联） */
+    private static final long SESSION_FRESH_MILLIS = 5 * 60 * 1000L;
+
     public CabinetSim(String cabinetNo, String bootId, SimProperties properties,
                       EventReporter reporter, int batteryOffset) {
         this.cabinetNo = cabinetNo;
@@ -90,11 +98,10 @@ public class CabinetSim {
             lastRejectedSeq = seq;
             throw new IllegalStateException("门锁故障，开仓被拒");
         }
-        if (!cell.isHasBattery()) {
-            lastRejectedSeq = seq;
-            throw new IllegalStateException("空仓无电池，开仓被拒");
-        }
+        // 空仓也可开门：RETURN（退租）订单就是"开空仓→放入电池"；物理门不区分取/还
         lastSeq = seq;
+        sessionSeq.put(cellNo, seq);
+        sessionAt.put(cellNo, System.currentTimeMillis());
         long delay = properties.getOpenDelayMillis();
         actionExecutor.submit(() -> {
             sleep(delay);
@@ -116,8 +123,9 @@ public class CabinetSim {
             }
             batteryNo = cell.takeBattery();
         }
-        log.info("[{}] 取电 cellNo={} batteryNo={}", cabinetNo, cellNo, batteryNo);
-        actionExecutor.submit(() -> reportEvent(EventType.BATTERY_OUT, cellNo, batteryNo, null, null, traceId));
+        Long commandSeq = freshSessionSeq(cellNo);
+        log.info("[{}] 取电 cellNo={} batteryNo={} sessionSeq={}", cabinetNo, cellNo, batteryNo, commandSeq);
+        actionExecutor.submit(() -> reportEvent(EventType.BATTERY_OUT, cellNo, batteryNo, null, commandSeq, traceId));
     }
 
     /** 联调：模拟还电（BATTERY_IN） */
@@ -129,8 +137,23 @@ public class CabinetSim {
             }
             cell.putBattery(batteryNo, soc);
         }
-        log.info("[{}] 还电 cellNo={} batteryNo={} soc={}", cabinetNo, cellNo, batteryNo, soc);
-        actionExecutor.submit(() -> reportEvent(EventType.BATTERY_IN, cellNo, batteryNo, soc, null, traceId));
+        Long commandSeq = freshSessionSeq(cellNo);
+        // 会话在还电后终结（一次开门会话最多一取一还）
+        sessionSeq.remove(cellNo);
+        sessionAt.remove(cellNo);
+        log.info("[{}] 还电 cellNo={} batteryNo={} soc={} sessionSeq={}", cabinetNo, cellNo, batteryNo, soc, commandSeq);
+        actionExecutor.submit(() -> reportEvent(EventType.BATTERY_IN, cellNo, batteryNo, soc, commandSeq, traceId));
+    }
+
+    /** 取当前开门会话的 seq（超窗/不存在返回 null） */
+    private Long freshSessionSeq(int cellNo) {
+        Long at = sessionAt.get(cellNo);
+        if (at == null || System.currentTimeMillis() - at > SESSION_FRESH_MILLIS) {
+            sessionSeq.remove(cellNo);
+            sessionAt.remove(cellNo);
+            return null;
+        }
+        return sessionSeq.get(cellNo);
     }
 
     public void setDoorStuck(boolean stuck) {

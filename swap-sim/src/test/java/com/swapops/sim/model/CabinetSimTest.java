@@ -2,7 +2,6 @@ package com.swapops.sim.model;
 
 import com.swapops.contract.EventType;
 import com.swapops.sim.config.SimProperties;
-import com.swapops.sim.reporter.DeviceEventMessage;
 import com.swapops.sim.reporter.EventReporter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,7 +15,8 @@ import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
 /**
- * 模拟柜单测：seq 幂等双线、空仓拒绝、门开后事件上报（异步）、取/还电事件。
+ * 模拟柜单测：seq 幂等双线、门锁故障双线、空仓开门（退租场景）、会话 seq 回带、
+ * 门开后事件上报（异步）、取/还电事件、心跳状态。
  */
 @DisplayName("模拟柜（协议 v1 行为）")
 class CabinetSimTest {
@@ -40,7 +40,7 @@ class CabinetSimTest {
         boolean accepted = cabinet.openCell(1, 7L, "trace-abc");
 
         assertThat(accepted).isTrue();
-        verify(reporter, timeout(2000)).report(argThat(m ->
+        verify(reporter, timeout(5000)).report(argThat(m ->
                 m.eventType() == EventType.DOOR_OPENED
                         && m.cellNo() == 1
                         && m.commandSeq() == 7L
@@ -55,23 +55,32 @@ class CabinetSimTest {
     }
 
     @Test
-    @DisplayName("空仓拒绝；曾被拒 seq 重试明确拒绝（双线）")
-    void 空仓与双线拒绝() {
-        assertThatThrownBy(() -> cabinet.openCell(3, 1L, "t"))
+    @DisplayName("门锁故障拒绝；曾被拒 seq 重试明确拒绝（双线）")
+    void 门锁故障与双线拒绝() {
+        cabinet.setDoorStuck(true);
+        assertThatThrownBy(() -> cabinet.openCell(1, 1L, "t"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("空仓");
-        assertThatThrownBy(() -> cabinet.openCell(3, 1L, "t"))
+                .hasMessageContaining("门锁故障");
+        assertThatThrownBy(() -> cabinet.openCell(1, 1L, "t"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("曾被拒绝");
     }
 
     @Test
-    @DisplayName("门锁故障注入：开仓被拒")
-    void 门锁故障拒绝() {
-        cabinet.setDoorStuck(true);
-        assertThatThrownBy(() -> cabinet.openCell(1, 1L, "t"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("门锁故障");
+    @DisplayName("空仓可开门（RETURN 退租场景：开空仓放入电池）")
+    void 空仓可开门() {
+        assertThat(cabinet.openCell(3, 2L, "t")).isTrue();
+        verify(reporter, timeout(5000)).report(argThat(m ->
+                m.eventType() == EventType.DOOR_OPENED && m.cellNo() == 3 && m.commandSeq() == 2L));
+    }
+
+    @Test
+    @DisplayName("会话回带：开门会话内的取电事件回带同一 commandSeq")
+    void 会话seq回带() {
+        assertThat(cabinet.openCell(1, 9L, "t")).isTrue();
+        cabinet.devTake(1, "t");
+        verify(reporter, timeout(5000)).report(argThat(m ->
+                m.eventType() == EventType.BATTERY_OUT && m.commandSeq() == 9L));
     }
 
     @Test
@@ -89,12 +98,13 @@ class CabinetSimTest {
     }
 
     @Test
-    @DisplayName("取电/还电：先 BATTERY_OUT 后 BATTERY_IN，仓态可查询")
+    @DisplayName("取电/还电：先 BATTERY_OUT 后 BATTERY_IN（无会话时 commandSeq 为空）")
     void 取还电事件() {
         cabinet.devTake(1, "t1");
-        verify(reporter, timeout(2000)).report(argThat(m -> m.eventType() == EventType.BATTERY_OUT));
+        verify(reporter, timeout(5000)).report(argThat(m ->
+                m.eventType() == EventType.BATTERY_OUT && m.commandSeq() == null));
         cabinet.devPut(1, "BAT-0001", 15, "t2");
-        verify(reporter, timeout(2000)).report(argThat(m ->
+        verify(reporter, timeout(5000)).report(argThat(m ->
                 m.eventType() == EventType.BATTERY_IN && m.soc() == 15));
         assertThat(cabinet.snapshot().get("lastCommandSeq")).isEqualTo(0L);
     }

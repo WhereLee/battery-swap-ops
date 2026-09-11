@@ -11,6 +11,21 @@ public final class SwapRedisKeys {
     /** 指令 seq（INCR，柜内单调） */
     public static final String CMD_SEQ_PREFIX = "swap:cmd-seq:";
 
+    /** 可分配集合：满电电池仓（成员=cellId） */
+    public static final String ALLOC_FULL_PREFIX = "swap:alloc:full:";
+
+    /** 可分配集合：空闲仓（RETURN 归还用；成员=cellId） */
+    public static final String ALLOC_EMPTY_PREFIX = "swap:alloc:empty:";
+
+    /** 仓预占锁（SET NX EX，与 DB lock_order_id 双保险；防弹仓后事件重入） */
+    public static final String CELL_LOCK_PREFIX = "swap:cell-lock:";
+
+    /** 订单预占快照（value=cellId，TTL=预占超时；对账/排障用） */
+    public static final String PREEMPT_PREFIX = "swap:preempt:";
+
+    /** 用户端 token（value=userId，TTL=会话时长） */
+    public static final String USER_TOKEN_PREFIX = "swap:user-token:";
+
     private SwapRedisKeys() {
     }
 }

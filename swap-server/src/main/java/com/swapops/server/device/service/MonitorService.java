@@ -47,7 +47,17 @@ public class MonitorService {
         update.setLastHeartbeatTime(now);
         update.setUpdateTime(now);
         if (form.getStatus() != null) {
-            update.setStatus(CabinetStatus.fromCode(form.getStatus()).getCode());
+            int reported = CabinetStatus.fromCode(form.getStatus()).getCode();
+            Integer current = cabinet.getStatus();
+            boolean adminHeld = current != null && (current == CabinetStatus.MAINTENANCE.getCode()
+                    || current == CabinetStatus.DISABLED.getCode());
+            if (adminHeld) {
+                // 人工态优先：心跳只能刷新判活，不能把柜从"维护/停用"拉回在线
+                log.debug("柜处于人工态({})，心跳状态不覆盖 cabinetNo={} reported={}",
+                        current, form.getCabinetNo(), reported);
+            } else {
+                update.setStatus(reported);
+            }
         }
         cabinetDao.updateById(update);
         log.debug("心跳已刷新 cabinetNo={} status={}", form.getCabinetNo(), form.getStatus());

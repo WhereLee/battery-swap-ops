@@ -1,0 +1,23 @@
+﻿== S2 gate: swap E2E ==
+16:52:20 login ok phone=13800000001
+16:52:20 wallet-before balance=20000 deposit=0 planRemain=5
+16:52:21 PASS TAKE order opened
+16:52:21 TAKE orderNo=SW1789116740896e29885 cabinet=SWAP-C-001 cell=2 battery=BAT-0002
+16:52:21 PASS TAKE completed
+16:52:21 PASS TAKE payType=PLAN
+16:52:21 PASS TAKE deposit charged 9900
+16:52:21 PASS TAKE plan remaining 4
+16:52:22 PASS SWAP order opened
+16:52:22 SWAP orderNo=SW178911674190605c6aa cabinet=SWAP-C-001 cell=3 takeBattery=BAT-0003
+16:52:22 PASS SWAP completed
+16:52:22 PASS SWAP returned held battery
+16:52:22 PASS SWAP holder transferred (new battery)
+16:52:22 PASS SWAP plan remaining 3
+16:52:23 PASS RETURN order opened
+16:52:23 RETURN orderNo=SW178911674282444a94f cabinet=SWAP-C-001 cell=9
+16:52:23 PASS RETURN completed
+16:52:23 PASS RETURN fee=0
+16:52:23 PASS RETURN deposit refunded
+16:52:23 PASS RETURN plan remaining still 3
+16:52:23 wallet-after balance=20000 deposit=0 planRemain=3
+16:52:23 GATE-2 PASS

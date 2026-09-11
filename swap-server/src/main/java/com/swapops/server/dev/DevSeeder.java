@@ -10,6 +10,17 @@ import com.swapops.server.device.dao.CellDao;
 import com.swapops.server.device.entity.BatteryEntity;
 import com.swapops.server.device.entity.CabinetEntity;
 import com.swapops.server.device.entity.CellEntity;
+import com.swapops.server.order.service.AllocationService;
+import com.swapops.server.user.dao.PlanDao;
+import com.swapops.server.user.dao.SwapUserDao;
+import com.swapops.server.user.dao.UserPlanDao;
+import com.swapops.server.user.dao.WalletDao;
+import com.swapops.server.user.entity.PlanEntity;
+import com.swapops.server.user.entity.SwapUserEntity;
+import com.swapops.server.user.entity.UserPlanEntity;
+import com.swapops.server.user.entity.WalletEntity;
+import com.swapops.server.user.enums.PlanType;
+import com.swapops.server.user.enums.UserPlanStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -28,18 +39,33 @@ public class DevSeeder implements ApplicationRunner {
 
     private static final String SECRET_PATTERN = "^[0-9a-f]{32}$";
 
+    /** 联调用户数（并发剧本需要 ≥20 个独立用户） */
+    private static final int DEV_USER_COUNT = 25;
+
     private final DevProperties devProperties;
     private final CabinetDao cabinetDao;
     private final CellDao cellDao;
     private final BatteryDao batteryDao;
+    private final SwapUserDao swapUserDao;
+    private final WalletDao walletDao;
+    private final PlanDao planDao;
+    private final UserPlanDao userPlanDao;
+    private final AllocationService allocationService;
     private final JdbcTemplate jdbcTemplate;
 
     public DevSeeder(DevProperties devProperties, CabinetDao cabinetDao, CellDao cellDao,
-                     BatteryDao batteryDao, JdbcTemplate jdbcTemplate) {
+                     BatteryDao batteryDao, SwapUserDao swapUserDao, WalletDao walletDao,
+                     PlanDao planDao, UserPlanDao userPlanDao, AllocationService allocationService,
+                     JdbcTemplate jdbcTemplate) {
         this.devProperties = devProperties;
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
         this.batteryDao = batteryDao;
+        this.swapUserDao = swapUserDao;
+        this.walletDao = walletDao;
+        this.planDao = planDao;
+        this.userPlanDao = userPlanDao;
+        this.allocationService = allocationService;
         this.jdbcTemplate = jdbcTemplate;
     }
 
@@ -106,6 +132,78 @@ public class DevSeeder implements ApplicationRunner {
             log.info("联调种子就绪 cabinetNo={} cells={} fullCells={}", cabinetNo, cells,
                     devProperties.getFullCells());
         }
+        seedUsersAndPlans();
+        // 事件/种子可能先于启动重建发生：全量重建可分配集合（与 DB 真值对齐）
+        allocationService.rebuildFromDb();
+    }
+
+    /**
+     * 联调用户与套餐（幂等）：25 个用户 + 钱包 + 两张套餐模板 + 每人一张次卡（剩 5 次）。
+     * 用户 1 押金为 0（供剧本验证"首借缴押金"链路），其余用户押金 9900 已缴。
+     */
+    private void seedUsersAndPlans() {
+        long now = System.currentTimeMillis();
+        PlanEntity timesPlan = ensurePlan("次卡10次", PlanType.TIMES.name(), 3000, 10, null, null, now);
+        ensurePlan("月卡30天", PlanType.MONTHLY.name(), 9900, null, 30, 3, now);
+        for (int i = 1; i <= DEV_USER_COUNT; i++) {
+            String phone = String.format("138%08d", i);
+            SwapUserEntity user = swapUserDao.selectOne(new LambdaQueryWrapper<SwapUserEntity>()
+                    .eq(SwapUserEntity::getPhone, phone));
+            if (user == null) {
+                user = new SwapUserEntity();
+                user.setPhone(phone);
+                user.setName("联调用户" + i);
+                user.setStatus(1);
+                user.setCreateTime(now);
+                user.setUpdateTime(now);
+                swapUserDao.insert(user);
+            }
+            if (walletDao.selectOne(new LambdaQueryWrapper<WalletEntity>()
+                    .eq(WalletEntity::getUserId, user.getId())) == null) {
+                WalletEntity wallet = new WalletEntity();
+                wallet.setUserId(user.getId());
+                wallet.setBalanceFen(20000);
+                wallet.setDepositFen(i == 1 ? 0 : 9900);
+                wallet.setUpdateTime(now);
+                walletDao.insert(wallet);
+            }
+            Long planCount = userPlanDao.selectCount(new LambdaQueryWrapper<UserPlanEntity>()
+                    .eq(UserPlanEntity::getUserId, user.getId())
+                    .eq(UserPlanEntity::getPlanId, timesPlan.getId()));
+            if (planCount == null || planCount == 0) {
+                UserPlanEntity userPlan = new UserPlanEntity();
+                userPlan.setUserId(user.getId());
+                userPlan.setPlanId(timesPlan.getId());
+                userPlan.setStartTime(now);
+                userPlan.setEndTime(now + 365L * 24 * 3600 * 1000);
+                userPlan.setRemainingTimes(5);
+                userPlan.setStatus(UserPlanStatus.ACTIVE.getCode());
+                userPlan.setCreateTime(now);
+                userPlan.setUpdateTime(now);
+                userPlanDao.insert(userPlan);
+            }
+        }
+        log.info("联调用户种子就绪 users={}（用户1 押金0，其余押金9900；每人次卡剩5次）", DEV_USER_COUNT);
+    }
+
+    private PlanEntity ensurePlan(String name, String type, int priceFen, Integer totalTimes,
+                                  Integer durationDays, Integer dailyLimit, long now) {
+        PlanEntity plan = planDao.selectOne(new LambdaQueryWrapper<PlanEntity>()
+                .eq(PlanEntity::getName, name));
+        if (plan != null) {
+            return plan;
+        }
+        plan = new PlanEntity();
+        plan.setName(name);
+        plan.setPlanType(type);
+        plan.setPriceFen(priceFen);
+        plan.setTotalTimes(totalTimes);
+        plan.setDurationDays(durationDays);
+        plan.setDailyLimitTimes(dailyLimit);
+        plan.setStatus(1);
+        plan.setCreateTime(now);
+        planDao.insert(plan);
+        return plan;
     }
 
     private Long ensureStation() {

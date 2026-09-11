@@ -24,8 +24,12 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 下行指令下发：seq 幂等键 → 流水记账 → HTTP 同步调用柜（连接复用 + 超时参数化）；
- * 柜拒绝/网络失败显式失败（流水 SEND_FAILED），不留假状态。
+ * 下行指令下发（两段式）：
+ * <ul>
+ *   <li>{@link #prepareOpen}：分配 seq 幂等键 + 记流水 PENDING（短事务，便于订单先绑定 seq 再发包）；</li>
+ *   <li>{@link #dispatchPrepared}：HTTP 同步下发；柜拒绝/网络失败显式化（流水 SEND_FAILED）。</li>
+ * </ul>
+ * 事务外发送（订单域保证）：不在 DB 事务里占据网络等待；失败由调用方补偿。
  */
 @Slf4j
 @Service
@@ -53,30 +57,25 @@ public class CommandDispatchService {
         this.restTemplate = new RestTemplate(factory);
     }
 
-    public CommandLogEntity openCell(String cabinetNo, int cellNo) {
-        CabinetEntity cabinet = cabinetDao.selectOne(new LambdaQueryWrapper<CabinetEntity>()
-                .eq(CabinetEntity::getCabinetNo, cabinetNo));
-        if (cabinet == null) {
-            throw new RRException("柜未登记: " + cabinetNo);
-        }
-        if (cabinet.getSecret() == null || cabinet.getSecret().isEmpty()) {
-            throw new RRException("柜密钥缺失，拒绝下发: " + cabinetNo);
-        }
+    /** 准备一次开仓指令：校验柜/密钥 → seq → 流水 PENDING（未发包） */
+    public CommandLogEntity prepareOpen(String cabinetNo, int cellNo, String traceId) {
+        requireDispatchable(cabinetNo);
         long seq = commandLogService.nextSeq(cabinetNo);
-        // 链路号只取一次：流水与下行请求头必须同号（否则对账 grep 断链）
-        String traceId = TraceIdFilter.currentOrGenerate();
-        CommandLogEntity cmdLog = commandLogService.recordPending(cabinetNo, CommandAction.OPEN_CELL,
-                seq, traceId);
+        return commandLogService.recordPending(cabinetNo, CommandAction.OPEN_CELL, seq, traceId);
+    }
 
+    /** 下发已准备的指令（同步 HTTP；失败记 SEND_FAILED 并抛业务异常） */
+    public void dispatchPrepared(CommandLogEntity cmdLog, String cabinetNo, int cellNo) {
+        CabinetEntity cabinet = requireDispatchable(cabinetNo);
         Map<String, Object> payload = new HashMap<>();
         payload.put("cabinetNo", cabinetNo);
         payload.put("cellNo", cellNo);
-        payload.put("commandSeq", seq);
+        payload.put("commandSeq", cmdLog.getCommandSeq());
         HttpHeaders headers = new HttpHeaders();
         headers.set(DEVICE_HEADER, cabinetNo);
         headers.set(SIGN_HEADER, DeviceSignature.sign(cabinet.getSecret(),
-                DeviceSignature.canonicalCommand(cabinetNo, cellNo, seq)));
-        headers.set(TraceIdFilter.TRACE_ID_HEADER, traceId);
+                DeviceSignature.canonicalCommand(cabinetNo, cellNo, cmdLog.getCommandSeq())));
+        headers.set(TraceIdFilter.TRACE_ID_HEADER, cmdLog.getTraceId());
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> resp = restTemplate.postForObject(properties.getSimBaseUrl() + CMD_PATH,
@@ -87,8 +86,8 @@ public class CommandDispatchService {
                 commandLogService.markSendFailed(cmdLog.getId());
                 throw new RRException("柜拒绝指令: " + msg);
             }
-            log.info("开仓指令已下发 cabinetNo={} cellNo={} seq={} -> 等待门开事件", cabinetNo, cellNo, seq);
-            return cmdLog;
+            log.info("开仓指令已下发 cabinetNo={} cellNo={} seq={} -> 等待门开事件",
+                    cabinetNo, cellNo, cmdLog.getCommandSeq());
         } catch (HttpStatusCodeException e) {
             commandLogService.markSendFailed(cmdLog.getId());
             throw new RRException("柜拒绝指令(HTTP " + e.getStatusCode().value() + "): " + e.getResponseBodyAsString());
@@ -96,5 +95,29 @@ public class CommandDispatchService {
             commandLogService.markSendFailed(cmdLog.getId());
             throw new RRException("柜无响应(连接失败): " + cabinetNo + " cause=" + e.getMessage());
         }
+    }
+
+    /** 联调便捷：准备 + 立即下发（DevOpsController 使用） */
+    public CommandLogEntity openCell(String cabinetNo, int cellNo) {
+        String traceId = TraceIdFilter.currentOrGenerate();
+        CommandLogEntity cmdLog = prepareOpen(cabinetNo, cellNo, traceId);
+        try {
+            dispatchPrepared(cmdLog, cabinetNo, cellNo);
+            return cmdLog;
+        } catch (RRException e) {
+            throw e;
+        }
+    }
+
+    private CabinetEntity requireDispatchable(String cabinetNo) {
+        CabinetEntity cabinet = cabinetDao.selectOne(new LambdaQueryWrapper<CabinetEntity>()
+                .eq(CabinetEntity::getCabinetNo, cabinetNo));
+        if (cabinet == null) {
+            throw new RRException("柜未登记: " + cabinetNo);
+        }
+        if (cabinet.getSecret() == null || cabinet.getSecret().isEmpty()) {
+            throw new RRException("柜密钥缺失，拒绝下发: " + cabinetNo);
+        }
+        return cabinet;
     }
 }

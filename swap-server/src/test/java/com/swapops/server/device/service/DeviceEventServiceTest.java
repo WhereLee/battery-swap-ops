@@ -15,6 +15,8 @@ import com.swapops.server.device.entity.BatteryEntity;
 import com.swapops.server.device.entity.CabinetEntity;
 import com.swapops.server.device.entity.CellEntity;
 import com.swapops.server.device.form.DeviceEventForm;
+import com.swapops.server.order.service.AllocationService;
+import com.swapops.server.order.service.OrderEventService;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -29,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -51,6 +54,10 @@ class DeviceEventServiceTest {
     private CommandLogService commandLogService;
     @Mock
     private DeviceChannelProperties properties;
+    @Mock
+    private AllocationService allocationService;
+    @Mock
+    private OrderEventService orderEventService;
     @InjectMocks
     private DeviceEventService service;
 
@@ -109,6 +116,7 @@ class DeviceEventServiceTest {
 
         assertThat(accepted).isTrue();
         verify(commandLogService).markArrivedBySeq("SWAP-C-001", 7L, CommandAction.OPEN_CELL);
+        verify(orderEventService).onDoorOpened(any(CabinetEntity.class), eq(3), eq(7L));
     }
 
     @Test
@@ -132,6 +140,9 @@ class DeviceEventServiceTest {
         assertThat(accepted).isTrue();
         verify(cellDao).update(isNull(), any());
         verify(batteryDao).update(isNull(), any());
+        verify(allocationService).onBatteryIn(11L);
+        verify(orderEventService).onBatteryIn(any(CabinetEntity.class), any(CellEntity.class),
+                any(BatteryEntity.class), eq(null));
     }
 
     @Test

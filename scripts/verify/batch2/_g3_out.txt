@@ -1,0 +1,5 @@
+﻿== S2 gate: concurrent swap (zero oversell) ==
+16:59:40 total=20 success=6 failed=14
+16:59:40 success details: 13800000002->2/BAT-0014, 13800000003->6/BAT-0018, 13800000004->4/BAT-0016, 13800000005->1/BAT-0013, 13800000006->3/BAT-0015, 13800000007->5/BAT-0017
+16:59:40 sample failure status=400 (expect 400 no-stock)
+16:59:40 GATE-3 PASS

@@ -12,7 +12,9 @@ public enum CabinetStatus {
     /** 故障 */
     FAULT(3),
     /** 维护 */
-    MAINTENANCE(4);
+    MAINTENANCE(4),
+    /** 人工停用（计划退役；不参与分配；心跳仍到但不再覆盖该状态） */
+    DISABLED(5);
 
     private final int code;
 

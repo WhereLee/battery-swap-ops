@@ -32,6 +32,18 @@ swap:
     soc-full-threshold: 90
     connect-timeout-millis: 2000
     read-timeout-millis: 3000
+  admin:
+    # 管理端静态 token：仅环境变量注入（仓库零明文）；未配置启动即失败
+    token: ${SWAP_ADMIN_TOKEN:}
+  billing:
+    balance-fee-fen: 300
+    deposit-fen: 9900
+    overdue-hours: 24
+    overdue-fee-per-hour-fen: 100
+    preempt-ttl-seconds: 120
+    pickup-timeout-seconds: 120
+  order:
+    sweep-interval-ms: 5000
   dev:
     # 本地联调开关：默认关闭；运行参数 -Dspring-boot.run.arguments=--swap.dev.enabled=true 打开
     enabled: false
