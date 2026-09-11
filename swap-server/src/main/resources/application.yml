@@ -36,6 +36,12 @@ swap:
     max-retry: 3
     reconcile-interval-ms: 15000
     reconcile-batch: 100
+    mq:
+      # 平台 MQ 消费（S3.5；HTTP 通道保留为降级）：并发度=1 保序
+      enabled: true
+      endpoint: 127.0.0.1:8081
+      topic: swap-device-event
+      consumer-group: platform-device-event
   admin:
     # 管理端静态 token：仅环境变量注入（仓库零明文）；未配置启动即失败
     token: ${SWAP_ADMIN_TOKEN:}
@@ -61,6 +67,12 @@ swap:
     backoff-base-millis: 5000
   job:
     lock-ttl-seconds: 60
+  reconcile:
+    # 日终对账（S3.5）
+    cron: "0 0 2 * * ?"
+    stale-margin-seconds: 3600
+    window-hours: 24
+    sample-limit: 200
   dev:
     # 本地联调开关：默认关闭；运行参数 -Dspring-boot.run.arguments=--swap.dev.enabled=true 打开
     enabled: false

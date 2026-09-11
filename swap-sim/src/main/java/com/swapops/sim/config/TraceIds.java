@@ -12,6 +12,9 @@ public final class TraceIds {
     public static final String HEADER = "X-Trace-Id";
     public static final String MDC_KEY = "traceId";
 
+    /** MQ message property 键（契约 §7：traceId 随 property 贯穿；与平台消费侧同值） */
+    public static final String MQ_PROPERTY = "traceId";
+
     private TraceIds() {
     }
 

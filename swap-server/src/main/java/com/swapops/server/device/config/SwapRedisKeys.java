@@ -47,6 +47,9 @@ public final class SwapRedisKeys {
     /** 定时任务租约锁（SET NX PX，多实例互斥） */
     public static final String JOB_LOCK_PREFIX = "swap:job-lock:";
 
+    /** 最近一次日终对账报告（JSON，管理端可查） */
+    public static final String RECONCILE_LAST = "swap:reconcile:last";
+
     private SwapRedisKeys() {
     }
 }

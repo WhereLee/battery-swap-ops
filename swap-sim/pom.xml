@@ -27,6 +27,11 @@
             <groupId>com.swapops</groupId>
             <artifactId>swap-contract</artifactId>
         </dependency>
+        <!-- S3.5：MQ 可靠事件通道（gRPC 客户端，与本地 broker 5.3.1 兼容） -->
+        <dependency>
+            <groupId>org.apache.rocketmq</groupId>
+            <artifactId>rocketmq-client-java</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

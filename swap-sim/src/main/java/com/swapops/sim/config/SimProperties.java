@@ -34,6 +34,25 @@ public class SimProperties {
     /** 联调端点开关 */
     private boolean devEnabled = false;
 
+    /**
+     * 事件通道路由（S3.5）：http（默认，降级形态）/ mq（终态）/ dual（对照期双写）。
+     * 心跳恒 HTTP（判活不依赖 broker）。
+     */
+    private String eventChannel = "http";
+
+    /** MQ 通道参数（仅事件通道用） */
+    private Mq mq = new Mq();
+
+    @Data
+    public static class Mq {
+        /** 通道开关（event-channel=mq/dual 时必须为 true，由路由 Bean 构造期 fail-fast 校验） */
+        private boolean enabled = true;
+        private String endpoint = "127.0.0.1:8081";
+        private String topic = "swap-device-event";
+        /** 有界缓冲（保序队列；满则丢最旧，QUERY_STATE 兜底） */
+        private int bufferSize = 500;
+    }
+
     /** 本进程安装的柜（编号须与平台台账一致） */
     private List<CabinetCfg> cabinets = new ArrayList<>();
 

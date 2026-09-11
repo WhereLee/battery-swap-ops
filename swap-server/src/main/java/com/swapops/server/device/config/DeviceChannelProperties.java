@@ -38,4 +38,16 @@ public class DeviceChannelProperties {
 
     /** 单轮对账处理上限（防长轮） */
     private int reconcileBatch = 100;
+
+    /** MQ 事件消费参数（S3.5；HTTP 通道保留为降级） */
+    private Mq mq = new Mq();
+
+    @Data
+    public static class Mq {
+        /** 消费者开关（关闭时平台只收 HTTP 事件） */
+        private boolean enabled = true;
+        private String endpoint = "127.0.0.1:8081";
+        private String topic = "swap-device-event";
+        private String consumerGroup = "platform-device-event";
+    }
 }
