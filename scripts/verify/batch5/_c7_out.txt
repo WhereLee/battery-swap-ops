@@ -1,0 +1,19 @@
+﻿== S4.4 gate: work order loop ==
+07:18:24 PASS source alarms raised
+07:18:24 WO-A created woNo=WO92036052411351040 severity=LOW status=1
+07:18:24 PASS created as OPEN
+07:18:24 PASS from-alarm idempotent (same woNo)
+07:18:24 PASS invalid severity rejected
+07:18:25 PASS TRIAGED (2)
+07:18:25 PASS ASSIGNED (3)
+07:18:25 PASS HANDLING (4)
+07:18:25 PASS VERIFIED (5)
+07:18:25 PASS CLOSED (6)
+07:18:25 PASS no SLA breach on closed WO
+07:18:25 WO-A audit logs=6
+07:18:25 PASS audit trail complete (>=6 entries)
+07:18:25 PASS closed WO cannot be re-triaged
+07:18:25 WO-B created woNo=WO92036053749334016 severity=HIGH
+07:18:26 PASS open WO breached SLA
+07:18:27 PASS WORK_ORDER_SLA_BREACH alarm raised
+07:18:27 GATE-WORKORDER PASS

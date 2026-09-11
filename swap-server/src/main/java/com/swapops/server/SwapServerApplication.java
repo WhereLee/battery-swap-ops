@@ -9,7 +9,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 @MapperScan({"com.swapops.server.device.dao", "com.swapops.server.user.dao",
         "com.swapops.server.order.dao", "com.swapops.server.asset.dao", "com.swapops.server.alarm.dao",
-        "com.swapops.server.outbox.dao"})
+        "com.swapops.server.outbox.dao", "com.swapops.server.workorder.dao"})
 public class SwapServerApplication {
 
     public static void main(String[] args) {

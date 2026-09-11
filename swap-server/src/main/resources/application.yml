@@ -144,6 +144,11 @@ swap:
     worker-lease-seconds: 120
     worker-renew-interval-ms: 30000
     rollback-tolerance-millis: 5
+  workorder:
+    # S4.4 工单 SLA（分钟，按严重级；联调可缩短）
+    sla-minutes-high: 30
+    sla-minutes-medium: 120
+    sla-minutes-low: 480
   outbox:
     # S3.8 WP6：本地消息表中继（重试上限刻意放宽：短时 MQ 抖动不进死信；真死信由 OUTBOX_DEAD 告警）
     relay-interval-ms: 5000

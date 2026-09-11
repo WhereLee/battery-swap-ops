@@ -23,5 +23,7 @@ public enum AlarmType {
     /** 延迟任务超限死信（S3.3） */
     DELAY_DEAD,
     /** outbox 投递失败超限/无发布器（S3.8 WP6） */
-    OUTBOX_DEAD
+    OUTBOX_DEAD,
+    /** 工单 SLA 超时（S4.4） */
+    WORK_ORDER_SLA_BREACH
 }
