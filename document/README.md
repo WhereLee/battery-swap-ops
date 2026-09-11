@@ -24,6 +24,7 @@
 
 ### block-records
 - block-records/批次1-骨架与指令闭环.md
+- block-records/批次1-复审与优化.md
 
 ### pitfalls
 - pitfalls/gbk-source-encoding.md
