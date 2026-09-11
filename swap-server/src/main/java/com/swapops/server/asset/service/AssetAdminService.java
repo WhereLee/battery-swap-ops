@@ -10,6 +10,8 @@ import com.swapops.contract.CellStatus;
 import com.swapops.server.asset.dao.StationDao;
 import com.swapops.server.asset.entity.StationEntity;
 import com.swapops.server.common.RRException;
+import com.swapops.server.common.cache.CacheKeys;
+import com.swapops.server.common.cache.TwoLevelCacheService;
 import com.swapops.server.common.utils.PageParams;
 import com.swapops.server.common.utils.PageResult;
 import com.swapops.server.device.dao.BatteryDao;
@@ -49,16 +51,18 @@ public class AssetAdminService {
     private final BatteryDao batteryDao;
     private final MonitorService monitorService;
     private final AllocationService allocationService;
+    private final TwoLevelCacheService cache;
 
     public AssetAdminService(StationDao stationDao, CabinetDao cabinetDao, CellDao cellDao,
                              BatteryDao batteryDao, MonitorService monitorService,
-                             AllocationService allocationService) {
+                             AllocationService allocationService, TwoLevelCacheService cache) {
         this.stationDao = stationDao;
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
         this.batteryDao = batteryDao;
         this.monitorService = monitorService;
         this.allocationService = allocationService;
+        this.cache = cache;
     }
 
     // ---------- 站点 ----------
@@ -83,6 +87,8 @@ public class AssetAdminService {
                 .eq(StationEntity::getId, id)
                 .set(StationEntity::getStatus, status)
                 .set(StationEntity::getUpdateTime, System.currentTimeMillis()));
+        // 写路径失效：站点元数据缓存（含其他实例 L1 的 Pub/Sub 广播）
+        cache.evict(CacheKeys.STATION_ACTIVE_LIST);
         log.info("站点状态变更 stationNo={} status={}", station.getStationNo(), status);
     }
 
@@ -228,10 +234,11 @@ public class AssetAdminService {
 
     // ---------- 用户端站点列表 ----------
 
-    /** 站点列表（含可换满电数/可还仓位数；与分配同源，运营口径一致） */
+    /** 站点列表（含可换满电数/可还仓位数；与分配同源，运营口径一致；站点元数据走两级缓存，实时计数不缓存） */
     public List<Map<String, Object>> listUserStations() {
-        List<StationEntity> stations = stationDao.selectList(new LambdaQueryWrapper<StationEntity>()
-                .eq(StationEntity::getStatus, 1).orderByAsc(StationEntity::getId));
+        List<StationEntity> stations = cache.getList(CacheKeys.STATION_ACTIVE_LIST, StationEntity.class,
+                () -> stationDao.selectList(new LambdaQueryWrapper<StationEntity>()
+                        .eq(StationEntity::getStatus, 1).orderByAsc(StationEntity::getId)));
         List<Map<String, Object>> result = new ArrayList<>();
         for (StationEntity station : stations) {
             List<CabinetEntity> cabinets = cabinetDao.selectList(new LambdaQueryWrapper<CabinetEntity>()

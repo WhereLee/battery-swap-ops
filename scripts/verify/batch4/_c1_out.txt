@@ -1,0 +1,10 @@
+﻿== S3.8 gate: two-level cache ==
+21:36:54 plan cache rebuilds before=0 after=0
+21:36:54 PASS plan catalog warm (<=1 rebuild for 3 reads)
+21:36:54 target station id=1 no=ST-001
+21:36:54 station cache rebuilds under 50 concurrent reads: +1
+21:36:54 PASS concurrent requests actually fired (50)
+21:36:54 PASS concurrent single-flight: exactly one rebuild
+21:36:54 PASS evict takes effect (stopped station hidden)
+21:36:54 PASS restore visible after evict (write-path invalidation)
+21:36:54 GATE-CACHE PASS

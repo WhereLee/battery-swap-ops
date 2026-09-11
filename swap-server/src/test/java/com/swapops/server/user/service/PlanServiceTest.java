@@ -3,6 +3,7 @@ package com.swapops.server.user.service;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.swapops.server.common.RRException;
+import com.swapops.server.common.cache.TwoLevelCacheService;
 import com.swapops.server.order.enums.PaymentType;
 import com.swapops.server.order.service.PaymentRecordService;
 import com.swapops.server.user.dao.PlanDao;
@@ -44,6 +45,8 @@ class PlanServiceTest {
     private WalletService walletService;
     @Mock
     private PaymentRecordService paymentRecordService;
+    @Mock
+    private TwoLevelCacheService cache;
     @InjectMocks
     private PlanService service;
 

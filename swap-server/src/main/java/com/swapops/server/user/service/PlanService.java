@@ -3,6 +3,8 @@ package com.swapops.server.user.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.swapops.server.common.RRException;
+import com.swapops.server.common.cache.CacheKeys;
+import com.swapops.server.common.cache.TwoLevelCacheService;
 import com.swapops.server.order.enums.PaymentType;
 import com.swapops.server.order.service.PaymentRecordService;
 import com.swapops.server.user.dao.PlanDao;
@@ -31,19 +33,23 @@ public class PlanService {
     private final UserPlanDao userPlanDao;
     private final WalletService walletService;
     private final PaymentRecordService paymentRecordService;
+    private final TwoLevelCacheService cache;
 
     public PlanService(PlanDao planDao, UserPlanDao userPlanDao, WalletService walletService,
-                       PaymentRecordService paymentRecordService) {
+                       PaymentRecordService paymentRecordService, TwoLevelCacheService cache) {
         this.planDao = planDao;
         this.userPlanDao = userPlanDao;
         this.walletService = walletService;
         this.paymentRecordService = paymentRecordService;
+        this.cache = cache;
     }
 
+    /** 生效套餐目录（低频变更的字典读；S4 套餐 CRUD 变更后须 evict PLAN_ACTIVE_LIST） */
     public List<PlanEntity> listActive() {
-        return planDao.selectList(new LambdaQueryWrapper<PlanEntity>()
-                .eq(PlanEntity::getStatus, 1)
-                .orderByAsc(PlanEntity::getPriceFen));
+        return cache.getList(CacheKeys.PLAN_ACTIVE_LIST, PlanEntity.class,
+                () -> planDao.selectList(new LambdaQueryWrapper<PlanEntity>()
+                        .eq(PlanEntity::getStatus, 1)
+                        .orderByAsc(PlanEntity::getPriceFen)));
     }
 
     /**
