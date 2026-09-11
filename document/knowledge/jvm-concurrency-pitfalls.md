@@ -7,6 +7,9 @@
 
 - 现象：值 A→B→A 后，`AtomicInteger.compareAndSet(A, X)` **会成功**——它只看值不看历史；
 - 演示：测试证明普通 CAS 误判、`AtomicStampedReference` 用版本戳识别；
+- **写测试时踩到的真坑**：`AtomicStampedReference` 用**引用相等**比较引用，Integer 要求落在 -128~127
+  缓存区间才可靠；用 100→200→100 会因 200 自动装箱成不同对象导致 CAS 意外失败（首版测试即因此红了 CI）。
+  生产启示：用 `AtomicStampedReference` 时引用类型应选不可变单例/自定义值对象，或直接用 `AtomicMarkableReference`+基本类型；
 - 工程含义：状态机若允许"回到旧值"（如状态可逆），CAS 就不安全；本项目订单状态**只前向不可逆**，
   天然规避 ABA（这也是状态机设计的价值之一，不是巧合）。
 

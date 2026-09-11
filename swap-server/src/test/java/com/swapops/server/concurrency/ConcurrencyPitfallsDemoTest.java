@@ -23,24 +23,25 @@ class ConcurrencyPitfallsDemoTest {
     @DisplayName("ABA：AtomicInteger 的 CAS 会误判；AtomicStampedReference 能识别")
     void aba问题() {
         // 场景：线程A读到 100；线程B依次改成 200、又改回 100；线程A用旧期望值 CAS(100→50) 成功——ABA 未被察觉
-        AtomicInteger plain = new AtomicInteger(100);
+        AtomicInteger plain = new AtomicInteger(10);
         int expected = plain.get();
-        plain.compareAndSet(100, 200);
-        plain.compareAndSet(200, 100);
-        boolean wronglySucceeded = plain.compareAndSet(expected, 50);
+        plain.compareAndSet(10, 20);
+        plain.compareAndSet(20, 10);
+        boolean wronglySucceeded = plain.compareAndSet(expected, 30);
         assertThat(wronglySucceeded).isTrue();
-        assertThat(plain.get()).isEqualTo(50);
+        assertThat(plain.get()).isEqualTo(30);
 
         // 带版本戳：B 的两次修改让 stamp 从 0→2；A 持旧 stamp=0 的 CAS 必然失败
-        AtomicStampedReference<Integer> stamped = new AtomicStampedReference<>(100, 0);
+        // 注意：AtomicStampedReference 用「引用相等」比较——Integer 需在 -128~127 缓存区间（超区间会踩引用不等陷阱）
+        AtomicStampedReference<Integer> stamped = new AtomicStampedReference<>(10, 0);
         int[] stampHolder = new int[1];
         Integer expectedValue = stamped.get(stampHolder);
         int expectedStamp = stampHolder[0];
-        stamped.compareAndSet(100, 200, 0, 1);
-        stamped.compareAndSet(200, 100, 1, 2);
-        boolean detected = stamped.compareAndSet(expectedValue, 50, expectedStamp, expectedStamp + 1);
+        stamped.compareAndSet(10, 20, 0, 1);
+        stamped.compareAndSet(20, 10, 1, 2);
+        boolean detected = stamped.compareAndSet(expectedValue, 30, expectedStamp, expectedStamp + 1);
         assertThat(detected).isFalse();
-        assertThat(stamped.getReference()).isEqualTo(100);
+        assertThat(stamped.getReference()).isEqualTo(10);
     }
 
     @Test
