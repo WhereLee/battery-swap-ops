@@ -32,6 +32,9 @@ public class UserOrderController {
         this.swapOrderService = swapOrderService;
     }
 
+    /** 下单限流：同用户 5 单/分钟（防误点/脚本刷单） */
+    @com.swapops.server.common.ratelimit.RateLimit(name = "order-create",
+            dimension = com.swapops.server.common.ratelimit.RateLimitDimension.USER, permits = 5, windowSeconds = 60)
     @PostMapping("/order")
     public Result<Map<String, Object>> create(@RequestBody CreateOrderForm form,
                                               @RequestHeader(value = IDEM_HEADER, required = false) String idemKey) {

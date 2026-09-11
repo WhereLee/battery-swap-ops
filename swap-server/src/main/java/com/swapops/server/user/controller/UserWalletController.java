@@ -38,7 +38,9 @@ public class UserWalletController {
         this.payOrderService = payOrderService;
     }
 
-    /** 创建充值单：返回 tradeNo + mock 支付页地址（入账以网关回调为准） */
+    /** 创建充值单：返回 tradeNo + mock 支付页地址（入账以网关回调为准）；同用户 3 单/分钟 */
+    @com.swapops.server.common.ratelimit.RateLimit(name = "wallet-recharge",
+            dimension = com.swapops.server.common.ratelimit.RateLimitDimension.USER, permits = 3, windowSeconds = 60)
     @PostMapping("/wallet/recharge")
     public Result<Map<String, Object>> recharge(@RequestBody RechargeForm form) {
         if (form.getAmountFen() == null) {

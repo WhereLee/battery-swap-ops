@@ -1,6 +1,8 @@
 package com.swapops.server.user.controller;
 
 import com.swapops.server.common.Result;
+import com.swapops.server.common.ratelimit.RateLimit;
+import com.swapops.server.common.ratelimit.RateLimitDimension;
 import com.swapops.server.user.form.UserLoginForm;
 import com.swapops.server.user.service.UserAccountService;
 import lombok.Data;
@@ -27,6 +29,8 @@ public class UserAuthController {
         this.userAccountService = userAccountService;
     }
 
+    /** 登录限流：同 IP 5 次/5 秒（撞库/脚本防护；Redis 故障 fail-open） */
+    @RateLimit(name = "user-login", dimension = RateLimitDimension.IP, permits = 5, windowSeconds = 5)
     @PostMapping("/login")
     public Result<Map<String, Object>> login(@RequestBody UserLoginForm form) {
         String token = userAccountService.login(form.getPhone());

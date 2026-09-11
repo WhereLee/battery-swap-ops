@@ -45,6 +45,11 @@
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
         </dependency>
+        <!-- S3.8 WP2：AOP（限流注解切面） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
         <!-- S3.5：MQ 可靠事件通道（gRPC 客户端；HTTP 通道保留为降级） -->
         <dependency>
             <groupId>org.apache.rocketmq</groupId>

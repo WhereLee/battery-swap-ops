@@ -1,0 +1,13 @@
+﻿== S3.8 gate: token bucket ==
+01:34:04 waiting 6s for token bucket refill
+01:34:10 burst result: allowed=5 rejected(429)=15 retryAfter=1 (requests=20)
+01:34:10 PASS requests fired (20)
+01:34:10 PASS exactly permits(5) allowed
+01:34:10 PASS exactly 15 rejected with 429
+01:34:10 PASS Retry-After header present
+01:34:10 stats delta: allowed=+5 denied=+15
+01:34:10 PASS stats allowed delta = 5
+01:34:10 PASS stats denied delta = 15
+01:34:10 waiting 6s for refill
+01:34:16 PASS refill allows next request
+01:34:16 GATE-RATELIMIT PASS

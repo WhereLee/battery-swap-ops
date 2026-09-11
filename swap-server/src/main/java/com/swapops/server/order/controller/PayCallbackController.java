@@ -25,6 +25,9 @@ public class PayCallbackController {
         this.payOrderService = payOrderService;
     }
 
+    /** 回调限流：全集群 100 次/10 秒（网关重试风暴兜底） */
+    @com.swapops.server.common.ratelimit.RateLimit(name = "pay-callback",
+            dimension = com.swapops.server.common.ratelimit.RateLimitDimension.GLOBAL, permits = 100, windowSeconds = 10)
     @PostMapping("/callback")
     public Result<Map<String, Object>> callback(@RequestBody PayCallbackForm form) {
         PayOrderEntity order = payOrderService.handleCallback(form.getTradeNo(), form.getResult(), form.getSign());

@@ -83,6 +83,9 @@ swap:
     stale-margin-seconds: 3600
     window-hours: 24
     sample-limit: 200
+  ratelimit:
+    # S3.8 WP2 令牌桶限流（粒度由 @RateLimit 注解声明；关闭后注解失效）
+    enabled: true
   cache:
     # S3.8 WP1 两级缓存：L1=Caffeine 本进程 / L2=Redis JSON；仅展示/字典类读
     enabled: true
