@@ -1,0 +1,46 @@
+server:
+  port: 8400
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: swap-server
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/swap_ops?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      database: 0
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+
+swap:
+  device:
+    sim-base-url: http://127.0.0.1:8500
+    heartbeat-timeout-seconds: 60
+    soc-full-threshold: 90
+    connect-timeout-millis: 2000
+    read-timeout-millis: 3000
+  dev:
+    # 本地联调开关：默认关闭；运行参数 -Dspring-boot.run.arguments=--swap.dev.enabled=true 打开
+    enabled: false
+    # 设备密钥：仅环境变量注入（仓库零明文）
+    secret: ${SWAP_DEV_SECRET:}
+    cabinets: 10
+    cells-per-cabinet: 12
+    full-cells: 6
+
+logging:
+  level:
+    com.swapops: info

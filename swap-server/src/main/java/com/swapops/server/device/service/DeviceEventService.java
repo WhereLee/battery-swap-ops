@@ -1,0 +1,207 @@
+package com.swapops.server.device.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.swapops.contract.BatteryStatus;
+import com.swapops.contract.CellStatus;
+import com.swapops.contract.CommandAction;
+import com.swapops.contract.EventType;
+import com.swapops.server.common.RRException;
+import com.swapops.server.device.config.DeviceChannelProperties;
+import com.swapops.server.device.dao.BatteryDao;
+import com.swapops.server.device.dao.CabinetDao;
+import com.swapops.server.device.dao.CellDao;
+import com.swapops.server.device.entity.BatteryEntity;
+import com.swapops.server.device.entity.CabinetEntity;
+import com.swapops.server.device.entity.CellEntity;
+import com.swapops.server.device.form.DeviceEventForm;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * 设备事件编排（协议 v1）：
+ * 必填校验 → 序守卫（bootId/eventSeq 条件 UPDATE）→ 事件语义（仓/电池状态推进）→ 指令销账。
+ * 事件是唯一事实源；重复/乱序事件被序守卫幂等丢弃；处理不做"半截子"。
+ */
+@Slf4j
+@Service
+public class DeviceEventService {
+
+    private final CabinetDao cabinetDao;
+    private final CellDao cellDao;
+    private final BatteryDao batteryDao;
+    private final CommandLogService commandLogService;
+    private final DeviceChannelProperties properties;
+
+    public DeviceEventService(CabinetDao cabinetDao, CellDao cellDao, BatteryDao batteryDao,
+                              CommandLogService commandLogService, DeviceChannelProperties properties) {
+        this.cabinetDao = cabinetDao;
+        this.cellDao = cellDao;
+        this.batteryDao = batteryDao;
+        this.commandLogService = commandLogService;
+        this.properties = properties;
+    }
+
+    @Transactional
+    public boolean handle(DeviceEventForm form) {
+        // 1. 必填校验（协议垃圾快速失败；authenticator 已验签）
+        EventType type;
+        try {
+            type = EventType.fromWire(form.getEventType());
+        } catch (IllegalArgumentException e) {
+            throw new RRException("未知事件类型: " + form.getEventType());
+        }
+        String cabinetNo = form.getCabinetNo();
+        String bootId = form.getBootId();
+        Long eventSeq = form.getEventSeq();
+        if (cabinetNo == null || cabinetNo.isEmpty()
+                || bootId == null || bootId.isEmpty()
+                || eventSeq == null) {
+            throw new RRException("事件缺必填字段(cabinetNo/eventType/bootId/eventSeq)");
+        }
+
+        // 2. 序守卫（单条条件 UPDATE：守卫+推进基线原子完成）
+        long now = System.currentTimeMillis();
+        int rows = cabinetDao.update(null, new LambdaUpdateWrapper<CabinetEntity>()
+                .eq(CabinetEntity::getCabinetNo, cabinetNo)
+                .set(CabinetEntity::getLastBootId, bootId)
+                .set(CabinetEntity::getLastEventSeq, eventSeq)
+                .set(CabinetEntity::getUpdateTime, now)
+                .and(w -> w.isNull(CabinetEntity::getLastBootId)
+                        .or().ne(CabinetEntity::getLastBootId, bootId)
+                        .or(o -> o.eq(CabinetEntity::getLastBootId, bootId)
+                                .lt(CabinetEntity::getLastEventSeq, eventSeq))));
+        if (rows == 0) {
+            CabinetEntity cabinet = cabinetDao.selectOne(new LambdaQueryWrapper<CabinetEntity>()
+                    .eq(CabinetEntity::getCabinetNo, cabinetNo));
+            if (cabinet == null) {
+                throw new RRException("未登记的柜事件: " + cabinetNo);
+            }
+            log.info("事件序守卫拒绝(同代际旧序/重放, 幂等丢弃) cabinetNo={} bootId={} eventSeq={} 已受理last={}/{}",
+                    cabinetNo, bootId, eventSeq, cabinet.getLastBootId(), cabinet.getLastEventSeq());
+            return false;
+        }
+
+        // 3. 事件语义
+        apply(type, form);
+        log.info("事件已受理 cabinetNo={} eventType={} cellNo={} batteryNo={} bootId={} eventSeq={}",
+                form.getCabinetNo(), type, form.getCellNo(), form.getBatteryNo(),
+                form.getBootId(), form.getEventSeq());
+        return true;
+    }
+
+    private void apply(EventType type, DeviceEventForm form) {
+        switch (type) {
+            case DOOR_OPENED -> {
+                log.info("门已开 cabinetNo={} cellNo={} commandSeq={}",
+                        form.getCabinetNo(), form.getCellNo(), form.getCommandSeq());
+                if (form.getCommandSeq() != null) {
+                    commandLogService.markArrivedBySeq(form.getCabinetNo(), form.getCommandSeq(),
+                            CommandAction.OPEN_CELL);
+                }
+            }
+            case BATTERY_OUT -> {
+                CellEntity cell = requireCell(form);
+                BatteryEntity battery = requireBattery(form);
+                updateCell(cell.getId(), CellStatus.EMPTY, null);
+                detachBattery(battery.getId());
+                log.info("取电 cabinetNo={} cellNo={} batteryNo={}", form.getCabinetNo(), form.getCellNo(), form.getBatteryNo());
+            }
+            case BATTERY_IN -> {
+                CellEntity cell = requireCell(form);
+                BatteryEntity battery = requireBattery(form);
+                updateCell(cell.getId(), CellStatus.OCCUPIED, battery.getId());
+                attachBattery(battery.getId(), cell.getId(), form.getSoc());
+                log.info("还电 cabinetNo={} cellNo={} batteryNo={} soc={}", form.getCabinetNo(), form.getCellNo(), form.getBatteryNo(), form.getSoc());
+            }
+            case SOC_REPORT -> {
+                BatteryEntity battery = requireBattery(form);
+                Integer soc = form.getSoc();
+                Integer status = (soc != null && soc >= properties.getSocFullThreshold())
+                        ? BatteryStatus.FULL.getCode() : BatteryStatus.CHARGING.getCode();
+                updateSoc(battery.getId(), soc, status);
+                log.info("电量上报 batteryNo={} soc={} -> status={}", form.getBatteryNo(), soc, status);
+            }
+            case CELL_FAULT -> {
+                CellEntity cell = requireCell(form);
+                updateCell(cell.getId(), CellStatus.FAULT, cell.getBatteryId());
+                log.warn("仓位故障 cabinetNo={} cellNo={}", form.getCabinetNo(), form.getCellNo());
+            }
+            case DOOR_CLOSED -> log.debug("门关闭 cabinetNo={} cellNo={}（审计，不推进订单）",
+                    form.getCabinetNo(), form.getCellNo());
+            case CABINET_FAULT -> log.warn("柜级故障 cabinetNo={}", form.getCabinetNo());
+            default -> log.warn("事件语义未实现（忽略） type={}", type);
+        }
+    }
+
+    private CellEntity requireCell(DeviceEventForm form) {
+        if (form.getCellNo() == null) {
+            throw new RRException("事件缺 cellNo: " + form.getEventType());
+        }
+        CabinetEntity cabinet = cabinetDao.selectOne(new LambdaQueryWrapper<CabinetEntity>()
+                .eq(CabinetEntity::getCabinetNo, form.getCabinetNo()));
+        CellEntity cell = cellDao.selectOne(new LambdaQueryWrapper<CellEntity>()
+                .eq(CellEntity::getCabinetId, cabinet.getId())
+                .eq(CellEntity::getCellNo, form.getCellNo()));
+        if (cell == null) {
+            throw new RRException("仓不存在: " + form.getCabinetNo() + "#" + form.getCellNo());
+        }
+        return cell;
+    }
+
+    private BatteryEntity requireBattery(DeviceEventForm form) {
+        if (form.getBatteryNo() == null || form.getBatteryNo().isEmpty()) {
+            throw new RRException("事件缺 batteryNo: " + form.getEventType());
+        }
+        BatteryEntity battery = batteryDao.selectOne(new LambdaQueryWrapper<BatteryEntity>()
+                .eq(BatteryEntity::getBatteryNo, form.getBatteryNo()));
+        if (battery == null) {
+            throw new RRException("电池不存在: " + form.getBatteryNo());
+        }
+        return battery;
+    }
+
+    private void updateCell(Long cellId, CellStatus status, Long batteryId) {
+        cellDao.update(null, new LambdaUpdateWrapper<CellEntity>()
+                .eq(CellEntity::getId, cellId)
+                .set(CellEntity::getStatus, status.getCode())
+                .set(CellEntity::getBatteryId, batteryId)
+                .set(CellEntity::getUpdateTime, System.currentTimeMillis()));
+    }
+
+    /** 借出：状态 LOANED、脱离仓位（cellId=null），holder 由订单域在 S2 绑定 */
+    private void detachBattery(Long batteryId) {
+        batteryDao.update(null, new LambdaUpdateWrapper<BatteryEntity>()
+                .eq(BatteryEntity::getId, batteryId)
+                .set(BatteryEntity::getStatus, BatteryStatus.LOANED.getCode())
+                .set(BatteryEntity::getCellId, null)
+                .set(BatteryEntity::getUpdateTime, System.currentTimeMillis()));
+    }
+
+    /** 归仓：状态 CHARGING、绑定仓位、清持有人（还电即归还） */
+    private void attachBattery(Long batteryId, Long cellId, Integer soc) {
+        LambdaUpdateWrapper<BatteryEntity> wrapper = new LambdaUpdateWrapper<BatteryEntity>()
+                .eq(BatteryEntity::getId, batteryId)
+                .set(BatteryEntity::getStatus, BatteryStatus.CHARGING.getCode())
+                .set(BatteryEntity::getCellId, cellId)
+                .set(BatteryEntity::getHolderUserId, null)
+                .set(BatteryEntity::getUpdateTime, System.currentTimeMillis());
+        if (soc != null) {
+            wrapper.set(BatteryEntity::getSoc, soc);
+        }
+        batteryDao.update(null, wrapper);
+    }
+
+    /** 电量上报：更新时间与状态（充电中/满电） */
+    private void updateSoc(Long batteryId, Integer soc, Integer status) {
+        LambdaUpdateWrapper<BatteryEntity> wrapper = new LambdaUpdateWrapper<BatteryEntity>()
+                .eq(BatteryEntity::getId, batteryId)
+                .set(BatteryEntity::getStatus, status)
+                .set(BatteryEntity::getUpdateTime, System.currentTimeMillis());
+        if (soc != null) {
+            wrapper.set(BatteryEntity::getSoc, soc);
+        }
+        batteryDao.update(null, wrapper);
+    }
+}

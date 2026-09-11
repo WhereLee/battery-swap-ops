@@ -1,0 +1,38 @@
+server:
+  port: 8500
+
+spring:
+  application:
+    name: swap-sim
+
+swap:
+  sim:
+    # 平台地址（事件/心跳上报目标；平台 context-path=/api）
+    server-base-url: http://127.0.0.1:8400/api
+    heartbeat-interval-seconds: 10
+    open-delay-millis: 300
+    cells-per-cabinet: 12
+    full-cells: 6
+    # 联调端点（模拟取/还电与故障注入）：默认关闭，运行参数开启
+    dev-enabled: false
+    cabinets:
+      - cabinetNo: SWAP-C-001
+        secret: ${SWAP_DEV_SECRET:}
+      - cabinetNo: SWAP-C-002
+        secret: ${SWAP_DEV_SECRET:}
+      - cabinetNo: SWAP-C-003
+        secret: ${SWAP_DEV_SECRET:}
+      - cabinetNo: SWAP-C-004
+        secret: ${SWAP_DEV_SECRET:}
+      - cabinetNo: SWAP-C-005
+        secret: ${SWAP_DEV_SECRET:}
+      - cabinetNo: SWAP-C-006
+        secret: ${SWAP_DEV_SECRET:}
+      - cabinetNo: SWAP-C-007
+        secret: ${SWAP_DEV_SECRET:}
+      - cabinetNo: SWAP-C-008
+        secret: ${SWAP_DEV_SECRET:}
+      - cabinetNo: SWAP-C-009
+        secret: ${SWAP_DEV_SECRET:}
+      - cabinetNo: SWAP-C-010
+        secret: ${SWAP_DEV_SECRET:}

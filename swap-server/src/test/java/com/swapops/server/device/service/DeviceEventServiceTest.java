@@ -1,0 +1,162 @@
+package com.swapops.server.device.service;
+
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.swapops.contract.CommandAction;
+import com.swapops.contract.EventType;
+import com.swapops.server.common.RRException;
+import com.swapops.server.device.config.DeviceChannelProperties;
+import com.swapops.server.device.dao.BatteryDao;
+import com.swapops.server.device.dao.CabinetDao;
+import com.swapops.server.device.dao.CellDao;
+import com.swapops.server.device.entity.BatteryEntity;
+import com.swapops.server.device.entity.CabinetEntity;
+import com.swapops.server.device.entity.CellEntity;
+import com.swapops.server.device.form.DeviceEventForm;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+/**
+ * 事件编排单测：序守卫幂等丢弃、指令销账、归仓语义、协议垃圾拒绝。
+ */
+@DisplayName("设备事件编排（协议 v1）")
+@ExtendWith(MockitoExtension.class)
+class DeviceEventServiceTest {
+
+    @Mock
+    private CabinetDao cabinetDao;
+    @Mock
+    private CellDao cellDao;
+    @Mock
+    private BatteryDao batteryDao;
+    @Mock
+    private CommandLogService commandLogService;
+    @Mock
+    private DeviceChannelProperties properties;
+    @InjectMocks
+    private DeviceEventService service;
+
+    /**
+     * 纯单测无 MyBatis 装配：Lambda 包装器依赖 TableInfo 缓存（SerializedLambda 反解列名）
+     */
+    @BeforeAll
+    static void initMybatisPlusLambdaCache() {
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
+        TableInfoHelper.initTableInfo(assistant, CabinetEntity.class);
+        TableInfoHelper.initTableInfo(assistant, CellEntity.class);
+        TableInfoHelper.initTableInfo(assistant, BatteryEntity.class);
+    }
+
+    private DeviceEventForm form(EventType type, Integer cellNo, String batteryNo,
+                                 String bootId, Long eventSeq, Long commandSeq, Integer soc) {
+        DeviceEventForm form = new DeviceEventForm();
+        form.setCabinetNo("SWAP-C-001");
+        form.setEventType(type == null ? null : type.name());
+        form.setCellNo(cellNo);
+        form.setBatteryNo(batteryNo);
+        form.setBootId(bootId);
+        form.setEventSeq(eventSeq);
+        form.setCommandSeq(commandSeq);
+        form.setSoc(soc);
+        return form;
+    }
+
+    @Test
+    @DisplayName("序守卫拒绝（同代际旧序/重放）：幂等丢弃，不推进任何流水与状态")
+    void 序守卫拒绝_幂等丢弃() {
+        when(cabinetDao.update(isNull(), any())).thenReturn(0);
+        CabinetEntity cabinet = new CabinetEntity();
+        cabinet.setCabinetNo("SWAP-C-001");
+        cabinet.setLastBootId("boot-1");
+        cabinet.setLastEventSeq(9L);
+        when(cabinetDao.selectOne(any())).thenReturn(cabinet);
+
+        boolean accepted = service.handle(form(EventType.BATTERY_OUT, 3, "BAT-0001",
+                "boot-1", 5L, 7L, null));
+
+        assertThat(accepted).isFalse();
+        verifyNoInteractions(cellDao, batteryDao, commandLogService);
+    }
+
+    @Test
+    @DisplayName("DOOR_OPENED（携 commandSeq）：按 seq 精确销账指令流水")
+    void 门开事件_销账指令() {
+        when(cabinetDao.update(isNull(), any())).thenReturn(1);
+
+        boolean accepted = service.handle(form(EventType.DOOR_OPENED, 3, null,
+                "boot-1", 5L, 7L, null));
+
+        assertThat(accepted).isTrue();
+        verify(commandLogService).markArrivedBySeq("SWAP-C-001", 7L, CommandAction.OPEN_CELL);
+    }
+
+    @Test
+    @DisplayName("BATTERY_IN（还电）：仓转占用 + 电池归仓（同事务两写）")
+    void 还电_仓与电池双写() {
+        when(cabinetDao.update(isNull(), any())).thenReturn(1);
+        CabinetEntity cabinet = new CabinetEntity();
+        cabinet.setId(1L);
+        cabinet.setCabinetNo("SWAP-C-001");
+        when(cabinetDao.selectOne(any())).thenReturn(cabinet);
+        CellEntity cell = new CellEntity();
+        cell.setId(11L);
+        when(cellDao.selectOne(any())).thenReturn(cell);
+        BatteryEntity battery = new BatteryEntity();
+        battery.setId(21L);
+        when(batteryDao.selectOne(any())).thenReturn(battery);
+
+        boolean accepted = service.handle(form(EventType.BATTERY_IN, 1, "BAT-0001",
+                "boot-1", 6L, null, 20));
+
+        assertThat(accepted).isTrue();
+        verify(cellDao).update(isNull(), any());
+        verify(batteryDao).update(isNull(), any());
+    }
+
+    @Test
+    @DisplayName("协议垃圾（缺 eventSeq）：RRException，不触任何 DAO")
+    void 缺eventSeq_协议拒绝() {
+        assertThatThrownBy(() -> service.handle(form(EventType.BATTERY_OUT, 3, "BAT-0001",
+                "boot-1", null, null, null)))
+                .isInstanceOf(RRException.class)
+                .hasMessageContaining("缺必填字段");
+        verifyNoInteractions(cabinetDao, cellDao, batteryDao);
+    }
+
+    @Test
+    @DisplayName("未知事件类型：协议拒绝")
+    void 未知事件类型_拒绝() {
+        DeviceEventForm form = form(EventType.BATTERY_OUT, 3, "BAT-0001", "boot-1", 1L, null, null);
+        form.setEventType("NOPE");
+        assertThatThrownBy(() -> service.handle(form))
+                .isInstanceOf(RRException.class)
+                .hasMessageContaining("未知事件类型");
+        verifyNoInteractions(cabinetDao);
+    }
+
+    @Test
+    @DisplayName("未登记的柜事件：显式失败（配置错位）")
+    void 未登记柜_显式失败() {
+        when(cabinetDao.update(isNull(), any())).thenReturn(0);
+        when(cabinetDao.selectOne(any())).thenReturn(null);
+        assertThatThrownBy(() -> service.handle(form(EventType.DOOR_OPENED, 1, null,
+                "boot-1", 1L, null, null)))
+                .isInstanceOf(RRException.class)
+                .hasMessageContaining("未登记的柜事件");
+    }
+}

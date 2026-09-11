@@ -1,0 +1,122 @@
+package com.swapops.server.dev;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.swapops.contract.BatteryStatus;
+import com.swapops.contract.CabinetStatus;
+import com.swapops.contract.CellStatus;
+import com.swapops.server.device.dao.BatteryDao;
+import com.swapops.server.device.dao.CabinetDao;
+import com.swapops.server.device.dao.CellDao;
+import com.swapops.server.device.entity.BatteryEntity;
+import com.swapops.server.device.entity.CabinetEntity;
+import com.swapops.server.device.entity.CellEntity;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+/**
+ * 本地联调种子（仅 swap.dev.enabled=true）：站点 + N 柜 × M 仓 + 前 K 仓满电电池。
+ * 幂等：存在即跳过；密钥经环境变量注入（不落仓库），与模拟器同一 SWAP_DEV_SECRET。
+ */
+@Slf4j
+@Component
+@ConditionalOnProperty(prefix = "swap.dev", name = "enabled", havingValue = "true")
+public class DevSeeder implements ApplicationRunner {
+
+    private static final String SECRET_PATTERN = "^[0-9a-f]{32}$";
+
+    private final DevProperties devProperties;
+    private final CabinetDao cabinetDao;
+    private final CellDao cellDao;
+    private final BatteryDao batteryDao;
+    private final JdbcTemplate jdbcTemplate;
+
+    public DevSeeder(DevProperties devProperties, CabinetDao cabinetDao, CellDao cellDao,
+                     BatteryDao batteryDao, JdbcTemplate jdbcTemplate) {
+        this.devProperties = devProperties;
+        this.cabinetDao = cabinetDao;
+        this.cellDao = cellDao;
+        this.batteryDao = batteryDao;
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    @Override
+    public void run(ApplicationArguments args) {
+        String secret = devProperties.getSecret();
+        if (secret == null || !secret.matches(SECRET_PATTERN)) {
+            throw new IllegalStateException("swap.dev.secret 必须为 32hex（经环境变量 SWAP_DEV_SECRET 注入）");
+        }
+        Long stationId = ensureStation();
+        long now = System.currentTimeMillis();
+        int cells = devProperties.getCellsPerCabinet();
+        for (int i = 1; i <= devProperties.getCabinets(); i++) {
+            String cabinetNo = String.format("SWAP-C-%03d", i);
+            CabinetEntity cabinet = cabinetDao.selectOne(new LambdaQueryWrapper<CabinetEntity>()
+                    .eq(CabinetEntity::getCabinetNo, cabinetNo));
+            if (cabinet == null) {
+                cabinet = new CabinetEntity();
+                cabinet.setCabinetNo(cabinetNo);
+                cabinet.setStationId(stationId);
+                cabinet.setCellCount(cells);
+                cabinet.setStatus(CabinetStatus.ONLINE.getCode());
+                cabinet.setSecret(secret);
+                cabinet.setCreateTime(now);
+                cabinet.setUpdateTime(now);
+                cabinetDao.insert(cabinet);
+            }
+            for (int j = 1; j <= cells; j++) {
+                boolean full = j <= devProperties.getFullCells();
+                CellEntity cell = cellDao.selectOne(new LambdaQueryWrapper<CellEntity>()
+                        .eq(CellEntity::getCabinetId, cabinet.getId())
+                        .eq(CellEntity::getCellNo, j));
+                if (cell == null) {
+                    cell = new CellEntity();
+                    cell.setCabinetId(cabinet.getId());
+                    cell.setCellNo(j);
+                    cell.setStatus(full ? CellStatus.OCCUPIED.getCode() : CellStatus.EMPTY.getCode());
+                    cell.setUpdateTime(now);
+                    cellDao.insert(cell);
+                }
+                if (full) {
+                    // 确定性编号：与模拟器同一公式 (柜序-1) × 仓数 + 仓号；存在即复用（幂等/自愈）
+                    String batteryNo = String.format("BAT-%04d", (i - 1) * cells + j);
+                    BatteryEntity battery = batteryDao.selectOne(new LambdaQueryWrapper<BatteryEntity>()
+                            .eq(BatteryEntity::getBatteryNo, batteryNo));
+                    if (battery == null) {
+                        battery = new BatteryEntity();
+                        battery.setBatteryNo(batteryNo);
+                        battery.setModel("48V24Ah");
+                        battery.setStatus(BatteryStatus.FULL.getCode());
+                        battery.setSoc(100);
+                        battery.setSoh(100);
+                        battery.setCycleCount(0);
+                        battery.setCellId(cell.getId());
+                        battery.setUpdateTime(now);
+                        batteryDao.insert(battery);
+                    }
+                    if (cell.getBatteryId() == null) {
+                        cell.setBatteryId(battery.getId());
+                        cellDao.updateById(cell);
+                    }
+                }
+            }
+            log.info("联调种子就绪 cabinetNo={} cells={} fullCells={}", cabinetNo, cells,
+                    devProperties.getFullCells());
+        }
+    }
+
+    private Long ensureStation() {
+        java.util.List<Long> ids = jdbcTemplate.queryForList(
+                "SELECT id FROM station WHERE station_no = 'ST-001'", Long.class);
+        if (!ids.isEmpty()) {
+            return ids.get(0);
+        }
+        long now = System.currentTimeMillis();
+        jdbcTemplate.update("INSERT INTO station(station_no, name, address, status, create_time, update_time) "
+                + "VALUES('ST-001', '示范站点', '本地联调', 1, ?, ?)", now, now);
+        return jdbcTemplate.queryForObject("SELECT id FROM station WHERE station_no = 'ST-001'", Long.class);
+    }
+}
