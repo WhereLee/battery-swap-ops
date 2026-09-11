@@ -21,11 +21,13 @@
 - plans/S0.5-表清单与约束.md
 - plans/S0.6-演示剧本.md
 - plans/S0-自查优化记录.md
+- plans/S3-可靠性深水-方案.md（基于 S2 后代码盘点的 S3 实施定稿）
 
 ### block-records
 - block-records/批次1-骨架与指令闭环.md
 - block-records/批次1-复审与优化.md
 - block-records/批次2-换电闭环.md
+- block-records/批次3-可靠性深水.md（S3；batch3 剧本 _g4/_g5/_g7 PASS、_g6 部分通过，详见记录）
 
 ### pitfalls
 - pitfalls/gbk-source-encoding.md

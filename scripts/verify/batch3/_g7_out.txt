@@ -1,0 +1,14 @@
+﻿== S3 gate: reconcile + alarm governance ==
+17:54:57 baseline reconcile totalViolations=1
+17:54:57 injecting mismatch: battery BAT-0001 cell_id=999999
+17:54:57 dirty reconcile totalViolations=3 (baseline 1)
+17:54:57 PASS mismatch detected (violations increased)
+17:54:57 PASS RECONCILE_ERROR alarm raised
+17:54:57 restoring battery BAT-0001 cell_id
+17:54:57 restored reconcile totalViolations=1
+17:54:57 PASS restored to baseline
+17:54:57 PASS injected mismatch sample removed
+17:54:58 PASS dedup: two raises = one unhandled row
+17:54:58 PASS manual handle ok
+17:54:58 PASS handled alarm removed from unhandled list
+17:54:58 GATE-7 PASS

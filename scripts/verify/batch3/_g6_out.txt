@@ -1,0 +1,13 @@
+﻿== S3 gate: MQ reliable channel ==
+18:18:47 trigger event cabinet=SWAP-C-001 cellNo=9 battery=BAT-0003
+18:19:08 FAIL sim MQ activity increased
+18:19:08 FAIL server MQ consume activity increased
+18:19:08 latest MQ eventSeq=1 server-side occurrences=28 (HTTP+Mq expected >=2)
+18:19:08 PASS same event seen twice on server (dual paths)
+18:19:08 stopping broker pids=36884
+18:19:21 FAIL sender holds event while broker down (WARN/ERROR MQ line)
+18:19:21 restarting broker
+18:20:52 INFO MQ lines before=2 after=2 (held event must be delivered after restart)
+18:20:52 FAIL sender resumed after broker restart (new INFO MQ line, <=90s)
+18:20:52 done: this gate requires visual confirmation of ASCII tokens above; log excerpts kept in _out.txt
+18:20:52 GATE-6 FAIL checks=4
