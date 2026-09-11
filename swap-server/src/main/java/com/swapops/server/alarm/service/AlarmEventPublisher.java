@@ -10,10 +10,14 @@ import org.apache.rocketmq.client.apis.ClientConfiguration;
 import org.apache.rocketmq.client.apis.ClientServiceProvider;
 import org.apache.rocketmq.client.apis.message.Message;
 import org.apache.rocketmq.client.apis.producer.Producer;
+import org.apache.rocketmq.client.apis.producer.SendReceipt;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 告警事件发布器（S3.6，Agent 接缝①）：topic swap-alarm，信封
@@ -23,6 +27,9 @@ import java.util.Map;
 @Slf4j
 @Component
 public class AlarmEventPublisher {
+
+    /** 发布超时（send 无上限会卡住 outbox 中继线程） */
+    private static final long SEND_TIMEOUT_MILLIS = 3000;
 
     private final DeviceChannelProperties deviceProperties;
     private final AlarmProperties alarmProperties;
@@ -36,46 +43,55 @@ public class AlarmEventPublisher {
         this.alarmProperties = alarmProperties;
     }
 
-    /** 发布告警创建事件 */
-    public void publish(AlarmEntity alarm) {
-        publish(alarm, alarm.getHandled() != null && alarm.getHandled() == 1 ? "HANDLED" : "RAISED");
+    /** 构建告警事件信封（S3.8 WP6：由业务事务内落 outbox，中继补投时不再构建） */
+    public String buildEnvelope(AlarmEntity alarm, String eventKind) {
+        Map<String, Object> envelope = new LinkedHashMap<>();
+        envelope.put("alarmId", alarm.getId());
+        envelope.put("alarmType", alarm.getAlarmType());
+        envelope.put("deviceType", alarm.getDeviceType());
+        envelope.put("deviceNo", alarm.getDeviceNo());
+        envelope.put("content", alarm.getContent());
+        envelope.put("handled", alarm.getHandled());
+        envelope.put("handler", alarm.getHandler());
+        envelope.put("createTime", alarm.getCreateTime());
+        envelope.put("handledTime", alarm.getHandledTime());
+        envelope.put("eventKind", eventKind);
+        envelope.put("traceId", TraceIdFilter.currentOrGenerate());
+        try {
+            return objectMapper.writeValueAsString(envelope);
+        } catch (Exception e) {
+            throw new IllegalStateException("告警信封构建失败: " + e.getMessage(), e);
+        }
     }
 
-    /** 发布人工处理事件（审计） */
-    public void publishHandled(AlarmEntity alarm, Long handler) {
-        publish(alarm, "HANDLED");
-    }
-
-    private void publish(AlarmEntity alarm, String eventKind) {
+    /**
+     * 发布已构建的信封（outbox 中继调用）。
+     * 失败**抛出**（中继据此退避重试/死信），不再吞异常——可靠性从"日志告警"升级为"持久补投"。
+     */
+    public void publishEnvelope(String envelopeJson, String traceId, String keys) {
         if (!alarmProperties.isEventEnabled()) {
             return;
         }
         try {
-            Map<String, Object> envelope = new LinkedHashMap<>();
-            envelope.put("alarmId", alarm.getId());
-            envelope.put("alarmType", alarm.getAlarmType());
-            envelope.put("deviceType", alarm.getDeviceType());
-            envelope.put("deviceNo", alarm.getDeviceNo());
-            envelope.put("content", alarm.getContent());
-            envelope.put("handled", alarm.getHandled());
-            envelope.put("handler", alarm.getHandler());
-            envelope.put("createTime", alarm.getCreateTime());
-            envelope.put("handledTime", alarm.getHandledTime());
-            envelope.put("eventKind", eventKind);
-            String traceId = TraceIdFilter.currentOrGenerate();
-            envelope.put("traceId", traceId);
             Message message = provider.newMessageBuilder()
                     .setTopic("swap-alarm")
-                    .setBody(objectMapper.writeValueAsBytes(envelope))
-                    .addProperty(TraceIdFilter.MDC_KEY, traceId)
-                    .setKeys("alarm-" + alarm.getId())
+                    .setBody(envelopeJson.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                    .addProperty(TraceIdFilter.MDC_KEY,
+                            traceId == null ? TraceIdFilter.currentOrGenerate() : traceId)
+                    .setKeys(keys)
                     .build();
-            ensureProducer().send(message);
-            log.info("[告警事件已发布] kind={} alarmId={} type={} deviceNo={}",
-                    eventKind, alarm.getId(), alarm.getAlarmType(), alarm.getDeviceNo());
+            CompletableFuture<SendReceipt> future = ensureProducer().sendAsync(message);
+            try {
+                future.get(SEND_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException e) {
+                future.cancel(true);
+                throw new IllegalStateException("告警事件发布超时(" + SEND_TIMEOUT_MILLIS + "ms)");
+            }
+            log.info("[outbox] 告警事件已发布 keys={}", keys);
+        } catch (IllegalStateException e) {
+            throw e;
         } catch (Exception e) {
-            log.warn("[告警事件发布失败] 本地告警已落库，不重试 alarmId={} cause={}",
-                    alarm.getId(), e.getMessage());
+            throw new IllegalStateException("告警事件发布失败: " + e.getMessage(), e);
         }
     }
 

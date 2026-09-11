@@ -144,6 +144,12 @@ swap:
     worker-lease-seconds: 120
     worker-renew-interval-ms: 30000
     rollback-tolerance-millis: 5
+  outbox:
+    # S3.8 WP6：本地消息表中继（重试上限刻意放宽：短时 MQ 抖动不进死信；真死信由 OUTBOX_DEAD 告警）
+    relay-interval-ms: 5000
+    batch: 50
+    max-attempts: 20
+    backoff-base-millis: 5000
   alarm:
     # 告警治理（S3.6）
     dedup-window-seconds: 300

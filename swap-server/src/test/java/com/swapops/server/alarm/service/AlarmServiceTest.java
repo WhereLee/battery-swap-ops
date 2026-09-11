@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.ZSetOperations;
@@ -37,6 +39,7 @@ import static org.mockito.Mockito.when;
  */
 @DisplayName("告警治理（去重+限速+恢复）")
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class AlarmServiceTest {
 
     @Mock
@@ -49,6 +52,8 @@ class AlarmServiceTest {
     private ZSetOperations<String, String> zset;
     @Mock
     private AlarmEventPublisher publisher;
+    @Mock
+    private com.swapops.server.outbox.service.OutboxService outboxService;
 
     private AlarmService service;
 
@@ -60,7 +65,8 @@ class AlarmServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AlarmService(alarmDao, redis, new AlarmProperties(), publisher);
+        service = new AlarmService(alarmDao, redis, new AlarmProperties(), publisher, outboxService);
+        when(publisher.buildEnvelope(any(), anyString())).thenReturn("{\"alarmId\":1}");
     }
 
     private void givenRedisFirstSeen(boolean first) {
@@ -77,7 +83,7 @@ class AlarmServiceTest {
     }
 
     @Test
-    @DisplayName("首次告警：入库 + 发布 Agent 事件")
+    @DisplayName("首次告警：入库 + 事件入 outbox（与告警同事务）")
     void 首次告警入库() {
         givenRedisFirstSeen(true);
         givenRateLimitCount(1);
@@ -90,7 +96,7 @@ class AlarmServiceTest {
         Long id = service.raise(AlarmService.DEVICE_CABINET, "SWAP-C-001", AlarmType.OFFLINE, "离线");
 
         assertThat(id).isEqualTo(1L);
-        verify(publisher).publish(any(AlarmEntity.class));
+        verify(outboxService).enqueue(eq("alarm:1:RAISED"), eq("ALARM"), anyString(), anyString());
     }
 
     @Test
@@ -100,7 +106,7 @@ class AlarmServiceTest {
 
         assertThat(service.raise(AlarmService.DEVICE_CABINET, "SWAP-C-001", AlarmType.OFFLINE, "离线"))
                 .isNull();
-        verifyNoInteractions(alarmDao, publisher);
+        verifyNoInteractions(alarmDao, outboxService);
     }
 
     @Test
@@ -111,7 +117,7 @@ class AlarmServiceTest {
 
         assertThat(service.raise(AlarmService.DEVICE_CABINET, "SWAP-C-001", AlarmType.OFFLINE, "离线"))
                 .isNull();
-        verifyNoInteractions(alarmDao, publisher);
+        verifyNoInteractions(alarmDao, outboxService);
     }
 
     @Test
@@ -139,16 +145,16 @@ class AlarmServiceTest {
     }
 
     @Test
-    @DisplayName("人工处理：CAS 未命中拒绝；命中发布处理事件")
+    @DisplayName("人工处理：CAS 未命中拒绝；命中处理事件入 outbox（审计可补投）")
     void 人工处理() {
         when(alarmDao.update(isNull(), any())).thenReturn(0);
         assertThat(service.handle(5L, 7L)).isFalse();
-        verifyNoInteractions(publisher);
+        verifyNoInteractions(outboxService);
 
         when(alarmDao.update(isNull(), any())).thenReturn(1);
         when(alarmDao.selectById(5L)).thenReturn(new AlarmEntity());
         assertThat(service.handle(5L, 7L)).isTrue();
-        verify(publisher).publishHandled(any(AlarmEntity.class), eq(7L));
+        verify(outboxService).enqueue(eq("alarm:5:HANDLED"), eq("ALARM"), anyString(), anyString());
     }
 
     @Test

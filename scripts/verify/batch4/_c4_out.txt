@@ -1,0 +1,12 @@
+﻿== S3.8 gate: outbox relay ==
+02:08:04 stopping MQ broker/proxy pids=38840
+02:08:19 outbox after outage: pending(NEW)=1 maxAttempts=2
+02:08:19 PASS event persisted while MQ down (NEW row)
+02:08:19 PASS relay retried at least once (attempts>0)
+02:08:19 PASS dedup: two raises -> one outbox row
+02:08:19 restarting MQ broker+proxy
+02:08:47 PASS MQ broker+proxy back UP
+02:09:02 outbox after recovery: SENT=1 DEAD=0
+02:09:02 PASS event delivered after MQ recovery (SENT)
+02:09:02 PASS no dead letter for this event
+02:09:02 GATE-OUTBOX PASS

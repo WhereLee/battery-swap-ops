@@ -21,5 +21,7 @@ public enum AlarmType {
     /** 定时任务停摆（看护） */
     JOB_STALLED,
     /** 延迟任务超限死信（S3.3） */
-    DELAY_DEAD
+    DELAY_DEAD,
+    /** outbox 投递失败超限/无发布器（S3.8 WP6） */
+    OUTBOX_DEAD
 }

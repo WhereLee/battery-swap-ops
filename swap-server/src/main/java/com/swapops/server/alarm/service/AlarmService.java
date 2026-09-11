@@ -6,10 +6,14 @@ import com.swapops.server.alarm.config.AlarmProperties;
 import com.swapops.server.alarm.dao.AlarmDao;
 import com.swapops.server.alarm.entity.AlarmEntity;
 import com.swapops.server.alarm.AlarmType;
+import com.swapops.server.common.filter.TraceIdFilter;
 import com.swapops.server.device.config.SwapRedisKeys;
+import com.swapops.server.outbox.service.AlarmOutboxPublisher;
+import com.swapops.server.outbox.service.OutboxService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.util.List;
@@ -39,13 +43,16 @@ public class AlarmService {
     private final StringRedisTemplate stringRedisTemplate;
     private final AlarmProperties properties;
     private final AlarmEventPublisher publisher;
+    private final OutboxService outboxService;
 
     public AlarmService(AlarmDao alarmDao, StringRedisTemplate stringRedisTemplate,
-                        AlarmProperties properties, AlarmEventPublisher publisher) {
+                        AlarmProperties properties, AlarmEventPublisher publisher,
+                        OutboxService outboxService) {
         this.alarmDao = alarmDao;
         this.stringRedisTemplate = stringRedisTemplate;
         this.properties = properties;
         this.publisher = publisher;
+        this.outboxService = outboxService;
     }
 
     /**
@@ -53,6 +60,7 @@ public class AlarmService {
      *
      * @return 新告警 id；去重命中/限速丢弃返回 null
      */
+    @Transactional
     public Long raise(String deviceType, String deviceNo, AlarmType type, String content) {
         String dedupKey = SwapRedisKeys.ALARM_DEDUP_PREFIX + type + ":" + deviceNo;
         boolean firstSeen = true;
@@ -97,7 +105,9 @@ public class AlarmService {
         alarmDao.insert(alarm);
         log.warn("告警产生 id={} type={} deviceType={} deviceNo={} content={}",
                 alarm.getId(), type, deviceType, deviceNo, content);
-        publisher.publish(alarm);
+        // S3.8 WP6：事件走 outbox（与告警同事务落库），中继补投——发布失败不再丢事件
+        outboxService.enqueue("alarm:" + alarm.getId() + ":RAISED", AlarmOutboxPublisher.EVENT_TYPE_ALARM,
+                publisher.buildEnvelope(alarm, "RAISED"), TraceIdFilter.currentOrGenerate());
         return alarm.getId();
     }
 
@@ -122,7 +132,8 @@ public class AlarmService {
         markRecovered(DEVICE_CABINET, cabinetNo, AlarmType.OFFLINE);
     }
 
-    /** 人工处理（管理端）：CAS 0→1；成功后发布处理事件（审计） */
+    /** 人工处理（管理端）：CAS 0→1；成功后处理事件走 outbox（审计，可补投） */
+    @Transactional
     public boolean handle(Long alarmId, Long userId) {
         int rows = alarmDao.update(null, new LambdaUpdateWrapper<AlarmEntity>()
                 .eq(AlarmEntity::getId, alarmId)
@@ -135,7 +146,8 @@ public class AlarmService {
         }
         AlarmEntity alarm = alarmDao.selectById(alarmId);
         if (alarm != null) {
-            publisher.publishHandled(alarm, userId);
+            outboxService.enqueue("alarm:" + alarmId + ":HANDLED", AlarmOutboxPublisher.EVENT_TYPE_ALARM,
+                    publisher.buildEnvelope(alarm, "HANDLED"), TraceIdFilter.currentOrGenerate());
         }
         log.info("告警人工处理 alarmId={} handler={}", alarmId, userId);
         return true;
