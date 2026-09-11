@@ -1,0 +1,11 @@
+﻿== S4-pre gate: dev reset ==
+03:22:02 reset#1 cabinets=10 cancelled=0 occupied=60 extras=0
+03:22:02 PASS reset#1 occupied = cabinets x full(6)
+03:22:02 reset#2 cancelled=0 occupied=60 extras=0
+03:22:02 PASS reset#2 idempotent (no active orders cancelled)
+03:22:02 PASS reset#2 occupied stable
+03:22:02 smoke user=13800000001 orderNo=SW91976568120938496
+03:22:02 PASS smoke order created after reset
+03:22:03 PASS order opened (2)
+03:22:03 PASS order completed (5) - E2E re-runnable
+03:22:03 GATE-DEV-RESET PASS

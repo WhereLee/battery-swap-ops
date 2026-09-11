@@ -39,15 +39,24 @@ public class DevOpsController {
     private final CabinetDao cabinetDao;
     private final CellDao cellDao;
     private final BatteryDao batteryDao;
+    private final DevResetService devResetService;
 
     public DevOpsController(CommandDispatchService commandDispatchService, CommandLogService commandLogService,
-                            MonitorService monitorService, CabinetDao cabinetDao, CellDao cellDao, BatteryDao batteryDao) {
+                            MonitorService monitorService, CabinetDao cabinetDao, CellDao cellDao,
+                            BatteryDao batteryDao, DevResetService devResetService) {
         this.commandDispatchService = commandDispatchService;
         this.commandLogService = commandLogService;
         this.monitorService = monitorService;
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
         this.batteryDao = batteryDao;
+        this.devResetService = devResetService;
+    }
+
+    /** 联调数据重置：活跃订单取消 + 电池归位 + 分配池重建（幂等；剧本 _c0 前置） */
+    @PostMapping("/reset")
+    public Result<Map<String, Object>> reset() {
+        return Result.ok(devResetService.reset());
     }
 
     @PostMapping("/open")
