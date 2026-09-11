@@ -2,6 +2,7 @@ package com.swapops.server.order.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.swapops.contract.OrderStatus;
+import com.swapops.server.alarm.service.TaskWatchdog;
 import com.swapops.server.common.lock.JobLockService;
 import com.swapops.server.config.BillingProperties;
 import com.swapops.server.order.dao.SwapOrderDao;
@@ -31,13 +32,16 @@ public class OrderSweepTask {
     private final SwapOrderService swapOrderService;
     private final BillingProperties billingProperties;
     private final JobLockService jobLockService;
+    private final TaskWatchdog watchdog;
 
     public OrderSweepTask(SwapOrderDao orderDao, SwapOrderService swapOrderService,
-                          BillingProperties billingProperties, JobLockService jobLockService) {
+                          BillingProperties billingProperties, JobLockService jobLockService,
+                          TaskWatchdog watchdog) {
         this.orderDao = orderDao;
         this.swapOrderService = swapOrderService;
         this.billingProperties = billingProperties;
         this.jobLockService = jobLockService;
+        this.watchdog = watchdog;
     }
 
     @Scheduled(fixedDelayString = "${swap.order.sweep-interval-ms:5000}")
@@ -64,5 +68,6 @@ public class OrderSweepTask {
         for (SwapOrderEntity order : pickupTimeouts) {
             swapOrderService.closeTimedOut(order, "PICKUP_TIMEOUT");
         }
+        watchdog.beat("order-sweep");
     }
 }

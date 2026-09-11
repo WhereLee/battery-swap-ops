@@ -25,6 +25,8 @@ class OrderTimeoutHandlersTest {
 
     @Mock
     private SwapOrderService swapOrderService;
+    @Mock
+    private com.swapops.server.alarm.service.AlarmService alarmService;
 
     private SwapOrderEntity order(OrderStatus status) {
         SwapOrderEntity order = new SwapOrderEntity();
@@ -78,7 +80,7 @@ class OrderTimeoutHandlersTest {
         SwapOrderEntity order = order(OrderStatus.TAKEN);
         when(swapOrderService.findByOrderNo("SWO-1")).thenReturn(order);
         when(swapOrderService.markOverdue(order)).thenReturn(true);
-        new OrderOverdueHandler(swapOrderService).handle(OrderDelayPayload.of("SWO-1"));
+        new OrderOverdueHandler(swapOrderService, alarmService).handle(OrderDelayPayload.of("SWO-1"));
 
         verify(swapOrderService).markOverdue(order);
     }
@@ -87,7 +89,7 @@ class OrderTimeoutHandlersTest {
     @DisplayName("归还超期：已归还（COMPLETED）→ 空转")
     void 归还超期已还空转() {
         when(swapOrderService.findByOrderNo("SWO-1")).thenReturn(order(OrderStatus.COMPLETED));
-        new OrderOverdueHandler(swapOrderService).handle(OrderDelayPayload.of("SWO-1"));
+        new OrderOverdueHandler(swapOrderService, alarmService).handle(OrderDelayPayload.of("SWO-1"));
 
         verify(swapOrderService, never()).markOverdue(any());
     }
@@ -97,7 +99,7 @@ class OrderTimeoutHandlersTest {
     void 非法载荷与订单不存在跳过() {
         new OrderPreemptTimeoutHandler(swapOrderService).handle("not-json");
         when(swapOrderService.findByOrderNo(eq("SWO-1"))).thenReturn(null);
-        new OrderOverdueHandler(swapOrderService).handle(OrderDelayPayload.of("SWO-1"));
+        new OrderOverdueHandler(swapOrderService, alarmService).handle(OrderDelayPayload.of("SWO-1"));
 
         verify(swapOrderService, never()).markOverdue(any());
         verify(swapOrderService, never()).closeTimedOut(any(), anyString());

@@ -2,6 +2,9 @@ package com.swapops.server.device.service;
 
 import com.swapops.contract.CommandAction;
 import com.swapops.contract.OrderStatus;
+import com.swapops.server.alarm.AlarmType;
+import com.swapops.server.alarm.service.AlarmService;
+import com.swapops.server.alarm.service.TaskWatchdog;
 import com.swapops.server.common.RRException;
 import com.swapops.server.common.lock.JobLockService;
 import com.swapops.server.device.config.DeviceChannelProperties;
@@ -37,17 +40,22 @@ public class MonitorReconcileTask {
     private final SwapOrderService swapOrderService;
     private final CellDao cellDao;
     private final JobLockService jobLockService;
+    private final AlarmService alarmService;
+    private final TaskWatchdog watchdog;
 
     public MonitorReconcileTask(DeviceChannelProperties properties, CommandLogService commandLogService,
                                 CommandDispatchService commandDispatchService,
                                 SwapOrderService swapOrderService, CellDao cellDao,
-                                JobLockService jobLockService) {
+                                JobLockService jobLockService, AlarmService alarmService,
+                                TaskWatchdog watchdog) {
         this.properties = properties;
         this.commandLogService = commandLogService;
         this.commandDispatchService = commandDispatchService;
         this.swapOrderService = swapOrderService;
         this.cellDao = cellDao;
         this.jobLockService = jobLockService;
+        this.alarmService = alarmService;
+        this.watchdog = watchdog;
     }
 
     @Scheduled(fixedDelayString = "${swap.device.reconcile-interval-ms:15000}")
@@ -69,6 +77,7 @@ public class MonitorReconcileTask {
                         cmd.getCabinetNo(), cmd.getCommandSeq(), e.getMessage());
             }
         }
+        watchdog.beat("monitor-reconcile");
     }
 
     private void reconcileOne(CommandLogEntity cmd) {
@@ -102,8 +111,9 @@ public class MonitorReconcileTask {
         int maxRetry = properties.getMaxRetry();
         if (cmd.getRetryCount() != null && cmd.getRetryCount() >= maxRetry) {
             if (commandLogService.markRetryExceeded(cmd.getId())) {
-                log.error("指令重试超限停止重试（转人工；告警 RETRY_EXCEEDED 由 S3.6 接管）"
-                                + " cabinetNo={} seq={} retry={}",
+                alarmService.raise(AlarmService.DEVICE_CABINET, cmd.getCabinetNo(), AlarmType.RETRY_EXCEEDED,
+                        "指令重试超限转人工 seq=" + cmd.getCommandSeq() + " retry=" + cmd.getRetryCount());
+                log.error("指令重试超限停止重试（转人工）cabinetNo={} seq={} retry={}",
                         cmd.getCabinetNo(), cmd.getCommandSeq(), cmd.getRetryCount());
             }
             return;

@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.swapops.contract.BatteryStatus;
 import com.swapops.contract.OrderStatus;
+import com.swapops.server.alarm.AlarmType;
+import com.swapops.server.alarm.service.AlarmService;
 import com.swapops.server.config.BillingProperties;
 import com.swapops.server.device.config.DeviceChannelProperties;
 import com.swapops.server.device.dao.BatteryDao;
@@ -51,6 +53,7 @@ public class ReconcileService {
     private final CommandLogDao commandLogDao;
     private final BillingProperties billingProperties;
     private final DeviceChannelProperties deviceProperties;
+    private final AlarmService alarmService;
     private final long staleMarginSeconds;
     private final int windowHours;
     private final int sampleLimit;
@@ -58,6 +61,7 @@ public class ReconcileService {
     public ReconcileService(SwapOrderDao orderDao, BatteryDao batteryDao, CellDao cellDao,
                             PaymentRecordDao paymentRecordDao, CommandLogDao commandLogDao,
                             BillingProperties billingProperties, DeviceChannelProperties deviceProperties,
+                            AlarmService alarmService,
                             @Value("${swap.reconcile.stale-margin-seconds:3600}") long staleMarginSeconds,
                             @Value("${swap.reconcile.window-hours:24}") int windowHours,
                             @Value("${swap.reconcile.sample-limit:200}") int sampleLimit) {
@@ -68,6 +72,7 @@ public class ReconcileService {
         this.commandLogDao = commandLogDao;
         this.billingProperties = billingProperties;
         this.deviceProperties = deviceProperties;
+        this.alarmService = alarmService;
         this.staleMarginSeconds = staleMarginSeconds;
         this.windowHours = windowHours;
         this.sampleLimit = sampleLimit;
@@ -112,9 +117,11 @@ public class ReconcileService {
                 checkAgingCommands());
         ReconcileReport report = new ReconcileReport(start, System.currentTimeMillis() - start, checks);
         if (report.totalViolations() > 0) {
-            log.error("[日终对账] 发现差异 total={}（告警升级 S3.6 RECONCILE_ERROR 接管） report={}",
-                    report.totalViolations(), report.toMap());
+            alarmService.raise(AlarmService.DEVICE_SYSTEM, "daily-reconcile", AlarmType.RECONCILE_ERROR,
+                    "日终对账差异 total=" + report.totalViolations() + " checks=" + summarize(checks));
+            log.error("[日终对账] 发现差异 total={} report={}", report.totalViolations(), report.toMap());
         } else {
+            alarmService.markRecovered(AlarmService.DEVICE_SYSTEM, "daily-reconcile", AlarmType.RECONCILE_ERROR);
             log.info("[日终对账] 五组不变量零差异 durationMs={}", report.durationMs());
         }
         return report;
@@ -262,5 +269,18 @@ public class ReconcileService {
         if (samples.size() < 5) {
             samples.add(sample);
         }
+    }
+
+    private String summarize(List<CheckResult> checks) {
+        StringBuilder sb = new StringBuilder();
+        for (CheckResult check : checks) {
+            if (check.violations() > 0) {
+                if (sb.length() > 0) {
+                    sb.append(';');
+                }
+                sb.append(check.name()).append('=').append(check.violations());
+            }
+        }
+        return sb.toString();
     }
 }

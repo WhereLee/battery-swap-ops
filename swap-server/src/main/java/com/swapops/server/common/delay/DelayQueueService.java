@@ -1,5 +1,7 @@
 package com.swapops.server.common.delay;
 
+import com.swapops.server.alarm.AlarmType;
+import com.swapops.server.alarm.service.AlarmService;
 import com.swapops.server.device.config.SwapRedisKeys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -24,10 +26,13 @@ public class DelayQueueService {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final DelayProperties properties;
+    private final AlarmService alarmService;
 
-    public DelayQueueService(StringRedisTemplate stringRedisTemplate, DelayProperties properties) {
+    public DelayQueueService(StringRedisTemplate stringRedisTemplate, DelayProperties properties,
+                             AlarmService alarmService) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.properties = properties;
+        this.alarmService = alarmService;
     }
 
     /** 到期任务（领取结果） */
@@ -86,6 +91,8 @@ public class DelayQueueService {
             stringRedisTemplate.opsForHash().put(deadKey(task.topic()), task.taskId(), task.payload());
             stringRedisTemplate.opsForHash().delete(payloadKey(task.topic()), task.taskId());
             stringRedisTemplate.opsForHash().delete(attemptKey(task.topic()), task.taskId());
+            alarmService.raise(AlarmService.DEVICE_SYSTEM, task.topic(), AlarmType.DELAY_DEAD,
+                    "延迟任务死信 taskId=" + task.taskId() + " attempts=" + next + " cause=" + cause);
             log.error("延迟任务超限移入死信 topic={} taskId={} attempts={} cause={}",
                     task.topic(), task.taskId(), next, cause);
             return;

@@ -39,6 +39,8 @@ class RefundCompensationTaskTest {
     private RefundService refundService;
     @Mock
     private JobLockService jobLockService;
+    @Mock
+    private com.swapops.server.alarm.service.TaskWatchdog watchdog;
 
     private RefundCompensationTask task;
 
@@ -50,7 +52,7 @@ class RefundCompensationTaskTest {
 
     @BeforeEach
     void setUp() {
-        task = new RefundCompensationTask(orderDao, refundService, jobLockService);
+        task = new RefundCompensationTask(orderDao, refundService, jobLockService, watchdog);
         when(jobLockService.runWithLock(anyString(), any(Runnable.class))).thenAnswer(inv -> {
             inv.getArgument(1, Runnable.class).run();
             return true;

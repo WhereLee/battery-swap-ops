@@ -2,6 +2,7 @@ package com.swapops.server.order.service.pay;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.swapops.contract.OrderStatus;
+import com.swapops.server.alarm.service.TaskWatchdog;
 import com.swapops.server.common.lock.JobLockService;
 import com.swapops.server.order.dao.SwapOrderDao;
 import com.swapops.server.order.entity.SwapOrderEntity;
@@ -26,11 +27,14 @@ public class RefundCompensationTask {
     private final SwapOrderDao orderDao;
     private final RefundService refundService;
     private final JobLockService jobLockService;
+    private final TaskWatchdog watchdog;
 
-    public RefundCompensationTask(SwapOrderDao orderDao, RefundService refundService, JobLockService jobLockService) {
+    public RefundCompensationTask(SwapOrderDao orderDao, RefundService refundService, JobLockService jobLockService,
+                                  TaskWatchdog watchdog) {
         this.orderDao = orderDao;
         this.refundService = refundService;
         this.jobLockService = jobLockService;
+        this.watchdog = watchdog;
     }
 
     @Scheduled(fixedDelayString = "${swap.pay.refund-compensation-interval-ms:30000}")
@@ -49,5 +53,6 @@ public class RefundCompensationTask {
             int amount = refundService.refundableAmount(order.getId());
             refundService.refund(order.getId(), order.getUserId(), amount, REASON);
         }
+        watchdog.beat("refund-compensation");
     }
 }

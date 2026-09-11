@@ -73,6 +73,14 @@ swap:
     stale-margin-seconds: 3600
     window-hours: 24
     sample-limit: 200
+  alarm:
+    # 告警治理（S3.6）
+    dedup-window-seconds: 300
+    rate-limit-per-minute: 30
+    batch-offline-threshold: 5
+    offline-scan-interval-ms: 30000
+    watchdog-interval-ms: 60000
+    event-enabled: true
   dev:
     # 本地联调开关：默认关闭；运行参数 -Dspring-boot.run.arguments=--swap.dev.enabled=true 打开
     enabled: false

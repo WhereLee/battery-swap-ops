@@ -6,6 +6,8 @@ import com.swapops.contract.BatteryStatus;
 import com.swapops.contract.CellStatus;
 import com.swapops.contract.CommandAction;
 import com.swapops.contract.EventType;
+import com.swapops.server.alarm.AlarmType;
+import com.swapops.server.alarm.service.AlarmService;
 import com.swapops.server.common.RRException;
 import com.swapops.server.device.config.DeviceChannelProperties;
 import com.swapops.server.device.dao.BatteryDao;
@@ -39,11 +41,12 @@ public class DeviceEventService {
     private final AllocationService allocationService;
     private final OrderEventService orderEventService;
     private final DeviceBootGenerationGuard bootGenerationGuard;
+    private final AlarmService alarmService;
 
     public DeviceEventService(CabinetDao cabinetDao, CellDao cellDao, BatteryDao batteryDao,
                               CommandLogService commandLogService, DeviceChannelProperties properties,
                               AllocationService allocationService, OrderEventService orderEventService,
-                              DeviceBootGenerationGuard bootGenerationGuard) {
+                              DeviceBootGenerationGuard bootGenerationGuard, AlarmService alarmService) {
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
         this.batteryDao = batteryDao;
@@ -52,6 +55,7 @@ public class DeviceEventService {
         this.allocationService = allocationService;
         this.orderEventService = orderEventService;
         this.bootGenerationGuard = bootGenerationGuard;
+        this.alarmService = alarmService;
     }
 
     @Transactional
@@ -183,6 +187,8 @@ public class DeviceEventService {
                 CellEntity cell = requireCell(cabinet, form);
                 updateCell(cell.getId(), CellStatus.FAULT, cell.getBatteryId());
                 allocationService.refreshByCellId(cell.getId());
+                alarmService.raise(AlarmService.DEVICE_CELL, form.getCabinetNo() + "-" + form.getCellNo(),
+                        AlarmType.CELL_FAULT, "仓位故障（电池 " + form.getBatteryNo() + "）");
                 log.warn("仓位故障 cabinetNo={} cellNo={}", form.getCabinetNo(), form.getCellNo());
             }
             case DOOR_CLOSED -> log.debug("门关闭 cabinetNo={} cellNo={}（审计，不推进订单）",
@@ -191,8 +197,9 @@ public class DeviceEventService {
                 // S3.2：柜故障 = 在途指令中断（显式 EXEC_FAILED）+ 活跃订单转人工
                 int interrupted = commandLogService.markExecFailedByCabinet(form.getCabinetNo());
                 orderEventService.onCabinetFault(cabinet);
-                log.warn("柜级故障 cabinetNo={} 中断在途指令={}（告警 S3.6 接管）",
-                        form.getCabinetNo(), interrupted);
+                alarmService.raise(AlarmService.DEVICE_CABINET, form.getCabinetNo(),
+                        AlarmType.CABINET_FAULT, "柜级故障（中断在途指令 " + interrupted + " 条）");
+                log.warn("柜级故障 cabinetNo={} 中断在途指令={}", form.getCabinetNo(), interrupted);
             }
             default -> log.warn("事件语义未实现（忽略） type={}", type);
         }

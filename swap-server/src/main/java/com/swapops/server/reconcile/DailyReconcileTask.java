@@ -1,6 +1,7 @@
 package com.swapops.server.reconcile;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.swapops.server.alarm.service.TaskWatchdog;
 import com.swapops.server.common.lock.JobLockService;
 import com.swapops.server.device.config.SwapRedisKeys;
 import lombok.extern.slf4j.Slf4j;
@@ -22,13 +23,15 @@ public class DailyReconcileTask {
     private final ReconcileService reconcileService;
     private final JobLockService jobLockService;
     private final StringRedisTemplate stringRedisTemplate;
+    private final TaskWatchdog watchdog;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public DailyReconcileTask(ReconcileService reconcileService, JobLockService jobLockService,
-                              StringRedisTemplate stringRedisTemplate) {
+                              StringRedisTemplate stringRedisTemplate, TaskWatchdog watchdog) {
         this.reconcileService = reconcileService;
         this.jobLockService = jobLockService;
         this.stringRedisTemplate = stringRedisTemplate;
+        this.watchdog = watchdog;
     }
 
     @Scheduled(cron = "${swap.reconcile.cron:0 0 2 * * ?}")
@@ -48,6 +51,7 @@ public class DailyReconcileTask {
         } catch (Exception e) {
             log.warn("对账报告写 Redis 失败（不影响核查结论） cause={}", e.getMessage());
         }
+        watchdog.beat("daily-reconcile");
         return map;
     }
 

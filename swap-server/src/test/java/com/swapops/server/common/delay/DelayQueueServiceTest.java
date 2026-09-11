@@ -43,6 +43,8 @@ class DelayQueueServiceTest {
     private ZSetOperations<String, String> zset;
     @Mock
     private HashOperations<String, Object, Object> hash;
+    @Mock
+    private com.swapops.server.alarm.service.AlarmService alarmService;
 
     private DelayProperties properties;
     private DelayQueueService service;
@@ -50,7 +52,7 @@ class DelayQueueServiceTest {
     @BeforeEach
     void setUp() {
         properties = new DelayProperties();
-        service = new DelayQueueService(redis, properties);
+        service = new DelayQueueService(redis, properties, alarmService);
         when(redis.opsForZSet()).thenReturn(zset);
         when(redis.opsForHash()).thenReturn(hash);
     }

@@ -50,6 +50,15 @@ public final class SwapRedisKeys {
     /** 最近一次日终对账报告（JSON，管理端可查） */
     public static final String RECONCILE_LAST = "swap:reconcile:last";
 
+    /** 告警去重键（SETNX+TTL；成员=type:deviceNo） */
+    public static final String ALARM_DEDUP_PREFIX = "swap:alarm:dedup:";
+
+    /** 告警限速 ZSET（type 维度滑动窗口） */
+    public static final String ALARM_RATE_PREFIX = "swap:alarm:rate:";
+
+    /** 定时任务最近成功时刻（看护） */
+    public static final String JOB_LAST_PREFIX = "swap:job-last:";
+
     private SwapRedisKeys() {
     }
 }

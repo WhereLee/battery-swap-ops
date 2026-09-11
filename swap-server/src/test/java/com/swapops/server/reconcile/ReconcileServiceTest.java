@@ -47,6 +47,8 @@ class ReconcileServiceTest {
     private PaymentRecordDao paymentRecordDao;
     @Mock
     private CommandLogDao commandLogDao;
+    @Mock
+    private com.swapops.server.alarm.service.AlarmService alarmService;
 
     private ReconcileService service;
 
@@ -62,7 +64,7 @@ class ReconcileServiceTest {
     @BeforeEach
     void setUp() {
         service = new ReconcileService(orderDao, batteryDao, cellDao, paymentRecordDao, commandLogDao,
-                new BillingProperties(), new DeviceChannelProperties(), 3600, 24, 200);
+                new BillingProperties(), new DeviceChannelProperties(), alarmService, 3600, 24, 200);
     }
 
     @Test

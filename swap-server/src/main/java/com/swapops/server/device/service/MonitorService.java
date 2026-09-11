@@ -2,6 +2,7 @@ package com.swapops.server.device.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.swapops.contract.CabinetStatus;
+import com.swapops.server.alarm.service.AlarmService;
 import com.swapops.server.common.RRException;
 import com.swapops.server.device.config.DeviceChannelProperties;
 import com.swapops.server.device.config.SwapRedisKeys;
@@ -24,12 +25,14 @@ public class MonitorService {
     private final CabinetDao cabinetDao;
     private final StringRedisTemplate stringRedisTemplate;
     private final DeviceChannelProperties properties;
+    private final AlarmService alarmService;
 
     public MonitorService(CabinetDao cabinetDao, StringRedisTemplate stringRedisTemplate,
-                          DeviceChannelProperties properties) {
+                          DeviceChannelProperties properties, AlarmService alarmService) {
         this.cabinetDao = cabinetDao;
         this.stringRedisTemplate = stringRedisTemplate;
         this.properties = properties;
+        this.alarmService = alarmService;
     }
 
     public void heartbeat(DeviceHeartbeatForm form) {
@@ -60,6 +63,8 @@ public class MonitorService {
             }
         }
         cabinetDao.updateById(update);
+        // S3.6：心跳恢复自动关离线告警（判活不依赖 MQ/延迟队列）
+        alarmService.markOnlineRecovered(form.getCabinetNo());
         log.debug("心跳已刷新 cabinetNo={} status={}", form.getCabinetNo(), form.getStatus());
     }
 

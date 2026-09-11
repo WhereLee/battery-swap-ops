@@ -1,5 +1,6 @@
 package com.swapops.server.common.delay;
 
+import com.swapops.server.alarm.service.TaskWatchdog;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -18,12 +19,14 @@ public class DelayScheduler {
 
     private final DelayQueueService queue;
     private final DelayProperties properties;
+    private final TaskWatchdog watchdog;
     private final Map<String, DelayTaskHandler> handlers = new LinkedHashMap<>();
 
     public DelayScheduler(DelayQueueService queue, DelayProperties properties,
-                          List<DelayTaskHandler> handlerList) {
+                          List<DelayTaskHandler> handlerList, TaskWatchdog watchdog) {
         this.queue = queue;
         this.properties = properties;
+        this.watchdog = watchdog;
         for (DelayTaskHandler handler : handlerList) {
             DelayTaskHandler previous = handlers.put(handler.topic(), handler);
             if (previous != null) {
@@ -54,5 +57,6 @@ public class DelayScheduler {
                 }
             }
         }
+        watchdog.beat("delay-scheduler");
     }
 }

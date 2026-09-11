@@ -61,6 +61,8 @@ class DeviceEventServiceTest {
     private OrderEventService orderEventService;
     @Mock
     private DeviceBootGenerationGuard bootGenerationGuard;
+    @Mock
+    private com.swapops.server.alarm.service.AlarmService alarmService;
     @InjectMocks
     private DeviceEventService service;
 

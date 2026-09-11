@@ -48,6 +48,10 @@ class MonitorReconcileTaskTest {
     private CellDao cellDao;
     @Mock
     private JobLockService jobLockService;
+    @Mock
+    private com.swapops.server.alarm.service.AlarmService alarmService;
+    @Mock
+    private com.swapops.server.alarm.service.TaskWatchdog watchdog;
     @InjectMocks
     private MonitorReconcileTask task;
 

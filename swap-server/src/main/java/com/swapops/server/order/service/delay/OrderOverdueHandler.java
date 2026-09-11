@@ -1,6 +1,8 @@
 package com.swapops.server.order.service.delay;
 
 import com.swapops.contract.OrderStatus;
+import com.swapops.server.alarm.AlarmType;
+import com.swapops.server.alarm.service.AlarmService;
 import com.swapops.server.common.delay.DelayTaskHandler;
 import com.swapops.server.order.entity.SwapOrderEntity;
 import com.swapops.server.order.service.SwapOrderService;
@@ -9,16 +11,18 @@ import org.springframework.stereotype.Component;
 
 /**
  * 归还超期（S3.3）：SWAP 取电后超过 overdueHours 未归还 → OVERDUE（进入超时计费）。
- * 幂等：以 DB 现态为准；已归还（COMPLETED）则空转。告警在 S3.6 接管（此处仅 error 日志埋点）。
+ * 幂等：以 DB 现态为准；已归还（COMPLETED）则空转。转 OVERDUE 同时产生 ORDER_OVERDUE 告警（S3.6）。
  */
 @Slf4j
 @Component
 public class OrderOverdueHandler implements DelayTaskHandler {
 
     private final SwapOrderService swapOrderService;
+    private final AlarmService alarmService;
 
-    public OrderOverdueHandler(SwapOrderService swapOrderService) {
+    public OrderOverdueHandler(SwapOrderService swapOrderService, AlarmService alarmService) {
         this.swapOrderService = swapOrderService;
+        this.alarmService = alarmService;
     }
 
     @Override
@@ -39,7 +43,9 @@ public class OrderOverdueHandler implements DelayTaskHandler {
         }
         if (order.getStatus() == OrderStatus.TAKEN.getCode()) {
             if (swapOrderService.markOverdue(order)) {
-                log.error("订单归还超期转 OVERDUE orderNo={} userId={} takeTime={}（告警 S3.6 接管）",
+                alarmService.raise(AlarmService.DEVICE_ORDER, order.getOrderNo(), AlarmType.ORDER_OVERDUE,
+                        "归还超期 userId=" + order.getUserId() + " takeTime=" + order.getTakeTime());
+                log.error("订单归还超期转 OVERDUE orderNo={} userId={} takeTime={}",
                         order.getOrderNo(), order.getUserId(), order.getTakeTime());
             }
         }
