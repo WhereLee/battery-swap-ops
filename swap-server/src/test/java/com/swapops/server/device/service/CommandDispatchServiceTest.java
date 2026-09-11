@@ -72,7 +72,12 @@ class CommandDispatchServiceTest {
         properties.setSimBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
         properties.setConnectTimeoutMillis(1000);
         properties.setReadTimeoutMillis(1000);
-        service = new CommandDispatchService(cabinetDao, properties, commandLogService);
+        // 单测用宽松护栏（默认窗口 100 次，不会触发熔断）；护栏行为另有 DeviceDownlinkGuardTest 覆盖
+        com.swapops.server.common.resilience.DeviceDownlinkGuard guard =
+                new com.swapops.server.common.resilience.DeviceDownlinkGuard(
+                        io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry.ofDefaults(),
+                        io.github.resilience4j.bulkhead.BulkheadRegistry.ofDefaults());
+        service = new CommandDispatchService(cabinetDao, properties, commandLogService, guard);
     }
 
     /** 已登记柜 + seq/流水桩（仅需要走完整下发链路的用例调用，避免 UnnecessaryStubbing） */

@@ -27,6 +27,26 @@ spring:
       port: 6379
       database: 0
 
+resilience4j:
+  # S3.8 WP3：设备下行护栏（程序化使用，配置驱动）
+  circuitbreaker:
+    instances:
+      deviceDownlink:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 5s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+        register-health-indicator: true
+  bulkhead:
+    instances:
+      deviceDownlink:
+        # 并发下行封顶（信号量）；拿不到许可 50ms 内快速失败，不排队拖线程
+        max-concurrent-calls: 8
+        max-wait-duration: 50ms
+
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true

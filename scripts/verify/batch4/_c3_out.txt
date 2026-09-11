@@ -1,0 +1,14 @@
+﻿== S3.8 gate: circuit breaker ==
+01:49:49 initial CB state=CLOSED
+01:49:49 PASS initial state CLOSED
+01:49:50 stopping sim pids=12216,34776
+01:49:53 downlink attempts while sim down: failed=6/6
+01:49:53 PASS downlink failures observed
+01:49:53 PASS circuit breaker OPEN after failures
+01:49:53 NOT_PERMITTED events=2
+01:49:53 PASS fast-fail recorded (NOT_PERMITTED event)
+01:49:53 restarting sim
+01:49:57 PASS sim back UP
+01:50:05 final CB state=CLOSED
+01:50:05 PASS circuit breaker recovered to CLOSED
+01:50:05 GATE-BREAKER PASS

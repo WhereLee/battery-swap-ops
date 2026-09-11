@@ -5,6 +5,7 @@ import com.swapops.contract.CommandAction;
 import com.swapops.contract.DeviceSignature;
 import com.swapops.server.common.RRException;
 import com.swapops.server.common.filter.TraceIdFilter;
+import com.swapops.server.common.resilience.DeviceDownlinkGuard;
 import com.swapops.server.device.config.DeviceChannelProperties;
 import com.swapops.server.device.dao.CabinetDao;
 import com.swapops.server.device.entity.CabinetEntity;
@@ -44,12 +45,14 @@ public class CommandDispatchService {
     private final DeviceChannelProperties properties;
     private final CommandLogService commandLogService;
     private final RestTemplate restTemplate;
+    private final DeviceDownlinkGuard downlinkGuard;
 
     public CommandDispatchService(CabinetDao cabinetDao, DeviceChannelProperties properties,
-                                  CommandLogService commandLogService) {
+                                  CommandLogService commandLogService, DeviceDownlinkGuard downlinkGuard) {
         this.cabinetDao = cabinetDao;
         this.properties = properties;
         this.commandLogService = commandLogService;
+        this.downlinkGuard = downlinkGuard;
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(properties.getConnectTimeoutMillis()))
                 .build();
@@ -89,9 +92,10 @@ public class CommandDispatchService {
                 DeviceSignature.canonicalCommand(cabinetNo, cellNo, cmdLog.getCommandSeq())));
         headers.set(TraceIdFilter.TRACE_ID_HEADER, cmdLog.getTraceId());
         try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> resp = restTemplate.postForObject(properties.getSimBaseUrl() + CMD_PATH,
-                    new HttpEntity<>(payload, headers), Map.class);
+            // 熔断/舱壁：设备故障时快速失败（fallback 不执行动作，返回哨兵 code 走拒绝分支）
+            Map<String, Object> resp = downlinkGuard.call(
+                    () -> postJson(properties.getSimBaseUrl() + CMD_PATH, payload, headers),
+                    () -> Map.of("code", -1, "msg", "设备通道熔断/过载（快速失败）"));
             Object code = resp == null ? null : resp.get("code");
             if (resp == null || !Integer.valueOf(0).equals(code)) {
                 Object msg = resp == null ? "空响应" : resp.get("msg");
@@ -143,9 +147,10 @@ public class CommandDispatchService {
                 DeviceSignature.canonicalQuery(cabinetNo)));
         headers.set(TraceIdFilter.TRACE_ID_HEADER, TraceIdFilter.currentOrGenerate());
         try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> resp = restTemplate.postForObject(properties.getSimBaseUrl() + QUERY_PATH,
-                    new HttpEntity<>(payload, headers), Map.class);
+            // 熔断打开/舱壁满：返回 null（与"查询失败"同语义 → 对账任务下轮再试，不阻断业务）
+            Map<String, Object> resp = downlinkGuard.call(
+                    () -> postJson(properties.getSimBaseUrl() + QUERY_PATH, payload, headers),
+                    () -> null);
             if (resp == null || !Integer.valueOf(0).equals(resp.get("code"))) {
                 log.warn("状态查询被拒 cabinetNo={} resp={}", cabinetNo, resp);
                 return null;
@@ -197,6 +202,12 @@ public class CommandDispatchService {
         } catch (RRException e) {
             throw e;
         }
+    }
+
+    /** 统一 HTTP POST（json 响应体）；异常原样抛出交由护栏计数与调用方分级处理 */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> postJson(String url, Map<String, Object> payload, HttpHeaders headers) {
+        return restTemplate.postForObject(url, new HttpEntity<>(payload, headers), Map.class);
     }
 
     private CabinetEntity requireDispatchable(String cabinetNo) {
