@@ -1,13 +1,19 @@
 package com.swapops.server.user.controller;
 
+import com.swapops.server.common.RRException;
 import com.swapops.server.common.Result;
 import com.swapops.server.common.web.UserContext;
+import com.swapops.server.order.entity.PayOrderEntity;
+import com.swapops.server.order.service.pay.PayOrderService;
 import com.swapops.server.user.entity.PlanEntity;
 import com.swapops.server.user.entity.UserPlanEntity;
 import com.swapops.server.user.entity.WalletEntity;
+import com.swapops.server.user.form.RechargeForm;
 import com.swapops.server.user.service.PlanService;
 import com.swapops.server.user.service.WalletService;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -15,7 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 用户端：钱包与套餐摘要（U5）。
+ * 用户端：钱包与套餐摘要（U5）+ 充值下单（S3.4）。
  */
 @RestController
 @RequestMapping("user")
@@ -23,10 +29,23 @@ public class UserWalletController {
 
     private final WalletService walletService;
     private final PlanService planService;
+    private final PayOrderService payOrderService;
 
-    public UserWalletController(WalletService walletService, PlanService planService) {
+    public UserWalletController(WalletService walletService, PlanService planService,
+                                PayOrderService payOrderService) {
         this.walletService = walletService;
         this.planService = planService;
+        this.payOrderService = payOrderService;
+    }
+
+    /** 创建充值单：返回 tradeNo + mock 支付页地址（入账以网关回调为准） */
+    @PostMapping("/wallet/recharge")
+    public Result<Map<String, Object>> recharge(@RequestBody RechargeForm form) {
+        if (form.getAmountFen() == null) {
+            throw new RRException("充值金额必填");
+        }
+        PayOrderEntity order = payOrderService.createRecharge(UserContext.require(), form.getAmountFen());
+        return Result.ok(payOrderService.view(order));
     }
 
     @GetMapping("/wallet")

@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -53,6 +54,28 @@ class WalletServiceTest {
     void 余额转押金() {
         when(walletDao.update(isNull(), any())).thenReturn(1);
         assertThat(service.moveBalanceToDeposit(7L, 9900)).isTrue();
+    }
+
+    @Test
+    @DisplayName("入账：钱包缺行先补建再原子加款（充值/退款兜底）")
+    void 入账与补建() {
+        when(walletDao.selectOne(any())).thenReturn(null);
+        when(walletDao.insert(any(WalletEntity.class))).thenReturn(1);
+        when(walletDao.update(isNull(), any())).thenReturn(1);
+
+        assertThat(service.addBalance(7L, 1000)).isTrue();
+
+        verify(walletDao).insert(any(WalletEntity.class));
+        verify(walletDao).update(isNull(), any());
+    }
+
+    @Test
+    @DisplayName("入账：金额非正拒绝，零 DB 动作")
+    void 入账金额非法() {
+        assertThat(service.addBalance(7L, 0)).isFalse();
+        assertThat(service.addBalance(7L, -1)).isFalse();
+
+        verifyNoInteractions(walletDao);
     }
 
     @Test

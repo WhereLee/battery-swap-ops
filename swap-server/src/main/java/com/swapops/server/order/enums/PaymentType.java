@@ -15,5 +15,9 @@ public enum PaymentType {
     /** 押金退还 */
     DEPOSIT_REFUND,
     /** 超时费 */
-    OVERDUE_FEE
+    OVERDUE_FEE,
+    /** 充值入账（S3.4：外部资金入口，order_id 为空） */
+    RECHARGE,
+    /** 退款出账（S3.4：异常补偿/人工，与收费类型互斥） */
+    REFUND
 }

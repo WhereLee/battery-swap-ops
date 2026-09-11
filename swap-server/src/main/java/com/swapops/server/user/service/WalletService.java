@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.swapops.server.user.dao.WalletDao;
 import com.swapops.server.user.entity.WalletEntity;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -24,6 +25,35 @@ public class WalletService {
     public WalletEntity getByUserId(Long userId) {
         return walletDao.selectOne(new LambdaQueryWrapper<WalletEntity>()
                 .eq(WalletEntity::getUserId, userId));
+    }
+
+    /** 入账（充值/退款）：钱包缺行时补建（历史用户/未播种账号兜底） */
+    public boolean addBalance(Long userId, int amountFen) {
+        if (amountFen <= 0) {
+            return false;
+        }
+        ensureWallet(userId);
+        int rows = walletDao.update(null, new LambdaUpdateWrapper<WalletEntity>()
+                .eq(WalletEntity::getUserId, userId)
+                .setSql("balance_fen = balance_fen + " + amountFen)
+                .set(WalletEntity::getUpdateTime, System.currentTimeMillis()));
+        return rows > 0;
+    }
+
+    private void ensureWallet(Long userId) {
+        if (getByUserId(userId) != null) {
+            return;
+        }
+        WalletEntity wallet = new WalletEntity();
+        wallet.setUserId(userId);
+        wallet.setBalanceFen(0);
+        wallet.setDepositFen(0);
+        wallet.setUpdateTime(System.currentTimeMillis());
+        try {
+            walletDao.insert(wallet);
+        } catch (DuplicateKeyException ignored) {
+            // 并发补建：唯一键兜底，直接走加款
+        }
     }
 
     /** 扣余额：仅当余额充足才成功（原子条件更新） */

@@ -46,6 +46,12 @@ swap:
     overdue-fee-per-hour-fen: 100
     preempt-ttl-seconds: 120
     pickup-timeout-seconds: 120
+  pay:
+    # 支付回调签名密钥：仅环境变量注入（仓库零明文）；未配置启动即失败
+    secret: ${SWAP_PAY_SECRET:}
+    mock-page-base-url: http://127.0.0.1:8400/api/pay/mock
+    max-recharge-fen: 50000
+    refund-compensation-interval-ms: 30000
   order:
     sweep-interval-ms: 5000
   delay:
