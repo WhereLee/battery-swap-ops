@@ -146,6 +146,48 @@ class PayOrderServiceTest {
     }
 
     @Test
+    @DisplayName("迟到成功：FAIL 关闭后 SUCCESS 到达 → 补记入账（资金优先）")
+    void 迟到成功补记() {
+        when(paySignatureService.verify("R1", "SUCCESS", "sign-1")).thenReturn(true);
+        when(payOrderDao.selectOne(any())).thenReturn(order("R1", PayOrderStatus.CLOSED.name(), 1000));
+        when(payOrderDao.update(isNull(), any())).thenReturn(0, 1);
+        when(payOrderDao.selectById(1L)).thenReturn(order("R1", PayOrderStatus.CLOSED.name(), 1000));
+
+        PayOrderEntity result = service.handleCallback("R1", "SUCCESS", "sign-1");
+
+        assertThat(result.getStatus()).isEqualTo(PayOrderStatus.SUCCESS.name());
+        verify(walletService).addBalance(7L, 1000);
+        verify(paymentRecordService).record(7L, null, PaymentType.RECHARGE, 1000, "充值:R1");
+    }
+
+    @Test
+    @DisplayName("伪失败：已 SUCCESS 后 FAIL 到达 → 忽略（资金优先，不回退）")
+    void 伪失败忽略() {
+        when(paySignatureService.verify("R1", "FAIL", "sign-1")).thenReturn(true);
+        when(payOrderDao.selectOne(any())).thenReturn(order("R1", PayOrderStatus.SUCCESS.name(), 1000));
+
+        PayOrderEntity result = service.handleCallback("R1", "FAIL", "sign-1");
+
+        assertThat(result.getStatus()).isEqualTo(PayOrderStatus.SUCCESS.name());
+        verify(payOrderDao, never()).update(isNull(), any());
+        verifyNoInteractions(walletService, paymentRecordService);
+    }
+
+    @Test
+    @DisplayName("重复失败：已 CLOSED → 幂等返回不改状态")
+    void 重复失败幂等() {
+        when(paySignatureService.verify("R1", "FAIL", "sign-1")).thenReturn(true);
+        when(payOrderDao.selectOne(any())).thenReturn(order("R1", PayOrderStatus.CLOSED.name(), 1000));
+        when(payOrderDao.update(isNull(), any())).thenReturn(0);
+        when(payOrderDao.selectById(1L)).thenReturn(order("R1", PayOrderStatus.CLOSED.name(), 1000));
+
+        PayOrderEntity result = service.handleCallback("R1", "FAIL", "sign-1");
+
+        assertThat(result.getStatus()).isEqualTo(PayOrderStatus.CLOSED.name());
+        verifyNoInteractions(walletService, paymentRecordService);
+    }
+
+    @Test
     @DisplayName("CAS 未命中且现态非 SUCCESS：状态冲突拒绝")
     void 状态冲突拒绝() {
         when(paySignatureService.verify("R1", "SUCCESS", "sign-1")).thenReturn(true);

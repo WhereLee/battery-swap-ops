@@ -10,16 +10,21 @@ import org.apache.rocketmq.client.apis.ClientConfiguration;
 import org.apache.rocketmq.client.apis.ClientServiceProvider;
 import org.apache.rocketmq.client.apis.message.Message;
 import org.apache.rocketmq.client.apis.producer.Producer;
+import org.apache.rocketmq.client.apis.producer.SendReceipt;
 import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * MQ 事件上报（S3.5，契约 §7）：
@@ -51,6 +56,9 @@ public class MqEventReporter implements EventReporter {
 
     /** producer 懒构建（volatile：发送线程持写，关闭线程读） */
     private volatile Producer producer;
+
+    /** 连续失败计数（仅发送线程读写）：达阈值回收 producer，触发重建 */
+    private int consecutiveFailures;
 
     /** 运行标志（关闭后拒收新事件；在途重试退出，剩余队列尽力补发） */
     private volatile boolean running = true;
@@ -117,7 +125,7 @@ public class MqEventReporter implements EventReporter {
         int attempt = 0;
         while (running) {
             try {
-                ensureProducer().send(mqMessage);
+                sendWithTimeout(mqMessage);
                 log.info("[MQ上报成功] cabinetNo={} eventType={} eventSeq={} commandSeq={}",
                         message.cabinetNo(), message.eventType(), message.eventSeq(), message.commandSeq());
                 return;
@@ -169,21 +177,67 @@ public class MqEventReporter implements EventReporter {
         }
     }
 
-    /** producer 懒重建：broker 未就绪延迟不炸应用；构建失败抛给重试循环兜底 */
+    /**
+     * 单条发送（带超时）：send() 阻塞无上限，broker 挂起时会卡住队首（实测恢复慢）；
+     * 标准形态 = sendAsync + get(timeout)：超时即回收 producer 触发重建，
+     * 事件保持队首等待重试（保序不破）。
+     */
+    private void sendWithTimeout(Message mqMessage) throws Exception {
+        Producer p = ensureProducer();
+        CompletableFuture<SendReceipt> future = p.sendAsync(mqMessage);
+        try {
+            future.get(properties.getMq().getSendTimeoutMillis(), TimeUnit.MILLISECONDS);
+            consecutiveFailures = 0;
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            recycleProducer("发送超时 " + properties.getMq().getSendTimeoutMillis() + "ms");
+            throw new IOException("MQ send timeout", e);
+        } catch (Exception e) {
+            consecutiveFailures++;
+            if (consecutiveFailures >= 3) {
+                recycleProducer("连续失败 " + consecutiveFailures + " 次");
+            }
+            throw e;
+        }
+    }
+
+    /** 回收 producer（关闭+置空，下次发送重建）；失败方等待队列不丢 */
+    private void recycleProducer(String cause) {
+        synchronized (this) {
+            Producer p = producer;
+            producer = null;
+            consecutiveFailures = 0;
+            if (p != null) {
+                try {
+                    p.close();
+                } catch (Exception e) {
+                    log.debug("[MQ] 旧 producer 关闭异常（忽略）: {}", e.getMessage());
+                }
+            }
+        }
+        log.warn("[MQ] producer 已回收（{}），下次发送重建", cause);
+    }
+
+    /** producer 懒重建：broker 未就绪延迟不炸应用；构建失败抛给重试循环兜底（protected：测试接缝） */
+    protected Producer createProducer() throws Exception {
+        ClientConfiguration config = ClientConfiguration.newBuilder()
+                .setEndpoints(properties.getMq().getEndpoint())
+                .build();
+        Producer p = provider.newProducerBuilder()
+                .setClientConfiguration(config)
+                .setTopics(properties.getMq().getTopic())
+                .build();
+        log.info("[MQ] producer 已就绪 endpoint={} topic={}",
+                properties.getMq().getEndpoint(), properties.getMq().getTopic());
+        return p;
+    }
+
     private Producer ensureProducer() throws Exception {
         Producer p = producer;
         if (p == null) {
             synchronized (this) {
                 if (producer == null) {
-                    ClientConfiguration config = ClientConfiguration.newBuilder()
-                            .setEndpoints(properties.getMq().getEndpoint())
-                            .build();
-                    producer = provider.newProducerBuilder()
-                            .setClientConfiguration(config)
-                            .setTopics(properties.getMq().getTopic())
-                            .build();
-                    log.info("[MQ] producer 已就绪 endpoint={} topic={}",
-                            properties.getMq().getEndpoint(), properties.getMq().getTopic());
+                    producer = createProducer();
                 }
                 p = producer;
             }

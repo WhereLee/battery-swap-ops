@@ -93,8 +93,14 @@ $swapNo = $swap.data.orderNo
 $swapOpened = Wait-Status $swapNo 2
 Check "SWAP opened" ($swapOpened -ne $null)
 Invoke-RestMethod -Method Post "$sim/sim/battery/out?cabinetNo=$($swapOpened.cabinetNo)&cellNo=$($swapOpened.cellNo)" -TimeoutSec 5 | Out-Null
-$taken = Wait-Status $swapNo 3
-if ($taken -eq $null) { $taken = Wait-Status $swapNo 3 }
+# fast mode: TAKEN 窗口可能短于轮询间隔（overdue-hours=0），接受 TAKEN 或已 OVERDUE
+$taken = $null
+$deadline = (Get-Date).AddSeconds(15)
+while ((Get-Date) -lt $deadline) {
+    $r = Invoke-RestMethod "$server/user/order/$swapNo" -Headers $H -TimeoutSec 5
+    if ($r.data.status -eq 3 -or $r.data.status -eq 4) { $taken = $r.data; break }
+    Start-Sleep -Milliseconds 300
+}
 Check "SWAP taken (TAKEN or already OVERDUE)" ($taken -ne $null)
 $overdue = Wait-Status $swapNo 4 15
 Check "overdue migrated (OVERDUE)" ($overdue -ne $null)

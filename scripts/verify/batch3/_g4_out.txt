@@ -1,13 +1,13 @@
 ﻿== S3 gate: replay/ordering/cross-generation ==
-17:54:22 baseline cabinetNo=SWAP-C-001 bootId=7008e83d6c784454b9c20dbadb4d3c40 lastEventSeq=7
-17:54:22 PASS baseline event accepted
-17:54:22 PASS state advanced to genA
-17:54:22 PASS replay delivered (HTTP ok)
-17:54:22 PASS same-generation replay rejected (state unchanged)
-17:54:22 PASS out-of-order delivered
-17:54:22 PASS out-of-order rejected (state unchanged)
-17:54:22 PASS new generation accepted
-17:54:22 PASS state advanced to genB
-17:54:22 PASS cross-generation replay delivered
-17:54:22 PASS cross-generation replay rejected (state stays genB/5000)
-17:54:22 GATE-4 PASS
+19:07:14 baseline cabinetNo=SWAP-C-001 bootId=9e2d728f7b7b4e08bc494831e2ebb255 lastEventSeq=2
+19:07:14 PASS baseline event accepted
+19:07:14 PASS state advanced to genA
+19:07:14 PASS replay delivered (HTTP ok)
+19:07:14 PASS same-generation replay rejected (state unchanged)
+19:07:14 PASS out-of-order delivered
+19:07:14 PASS out-of-order rejected (state unchanged)
+19:07:14 PASS new generation accepted
+19:07:14 PASS state advanced to genB
+19:07:14 PASS cross-generation replay delivered
+19:07:14 PASS cross-generation replay rejected (state stays genB/5000)
+19:07:14 GATE-4 PASS

@@ -1,0 +1,6 @@
+﻿== S3.8 gate: graceful shutdown ==
+19:09:19 PASS actuator shutdown accepted
+19:09:22 PASS port 8400 released within 40s
+19:09:22 PASS log: Commencing graceful shutdown
+19:09:22 PASS log: Graceful shutdown complete
+19:09:22 GATE-8 PASS

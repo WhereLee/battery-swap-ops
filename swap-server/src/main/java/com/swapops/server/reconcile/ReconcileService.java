@@ -28,13 +28,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 日终对账（S3.5）：五组不变量核查，输出计数报告（不自动修数——差异升级告警交人工/S3.6）。
+ * 日终对账（S3.5 + S3.8 增补）：六组不变量核查，输出计数报告（不自动修数——差异升级告警交人工/S3.6）。
  * <ol>
  *   <li>无隔日卡滞活跃单：PENDING_OPEN/OPENED/TAKEN 超过阈值仍活跃；</li>
  *   <li>电池-仓双向一致：battery.cell_id ↔ cell.battery_id；</li>
  *   <li>完成单必有支付流水（SWAP/TAKE 完成窗口内）；</li>
  *   <li>持有人一致：有持有人的电池必为 LOANED 且一人一电；</li>
- *   <li>指令无超龄 PENDING。</li>
+ *   <li>指令无超龄 PENDING；</li>
+ *   <li>无逃逸电池（LOANED 且无仓无持有人，关单后取电产物）。</li>
  * </ol>
  * 核查均为"抽样+计数"口径（样本上限 sampleLimit，报告给差异样例）。
  */
@@ -114,7 +115,8 @@ public class ReconcileService {
                 checkCellBatteryConsistency(),
                 checkCompletedHasPayment(),
                 checkHolderConsistency(),
-                checkAgingCommands());
+                checkAgingCommands(),
+                checkEscapedBatteries());
         ReconcileReport report = new ReconcileReport(start, System.currentTimeMillis() - start, checks);
         if (report.totalViolations() > 0) {
             alarmService.raise(AlarmService.DEVICE_SYSTEM, "daily-reconcile", AlarmType.RECONCILE_ERROR,
@@ -247,6 +249,24 @@ public class ReconcileService {
             addSample(samples, "holder-duplicate: userId=" + row.get("holderUserId") + " count=" + row.get("cnt"));
         }
         return new CheckResult("holder-consistency", violations, samples);
+    }
+
+    /**
+     * ⑥ 无逃逸电池：BATTERY_OUT 先 detach（LOANED + cell_id=null），持有人由订单域绑定；
+     * 若取电时订单已被关单（超时/取消），电池会停在"既不在仓又无人持有"——对账必须显式暴露。
+     */
+    protected CheckResult checkEscapedBatteries() {
+        List<BatteryEntity> escaped = batteryDao.selectList(new LambdaQueryWrapper<BatteryEntity>()
+                .eq(BatteryEntity::getStatus, BatteryStatus.LOANED.getCode())
+                .isNull(BatteryEntity::getCellId)
+                .isNull(BatteryEntity::getHolderUserId)
+                .last("LIMIT " + sampleLimit));
+        List<String> samples = new ArrayList<>();
+        for (BatteryEntity battery : escaped) {
+            addSample(samples, "escaped: batteryNo=" + battery.getBatteryNo()
+                    + " status=LOANED holder=null cell=null updateTime=" + battery.getUpdateTime());
+        }
+        return new CheckResult("escaped-batteries", escaped.size(), samples);
     }
 
     /** ⑤ 指令无超龄 PENDING（正常应被对账/重试收敛） */

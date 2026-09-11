@@ -2,10 +2,20 @@ server:
   port: 8400
   servlet:
     context-path: /api
+  # S3.8：优雅停机——停止接收新请求，等待在途请求/调度任务收尾（预算 30s）
+  shutdown: graceful
 
 spring:
   application:
     name: swap-server
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  task:
+    scheduling:
+      shutdown:
+        # 定时任务（对账/扫描/中继）停机等待收尾，避免半执行
+        await-termination: true
+        await-termination-period: 20s
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://127.0.0.1:3306/swap_ops?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true

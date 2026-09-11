@@ -1,20 +1,22 @@
 ﻿== S3 gate: outage/retry/overdue/recharge ==
-18:01:34 skip phone=13800000025 cause=远程服务器返回错误: (400) 错误的请求。
-18:01:34 skip phone=13800000024 cause=远程服务器返回错误: (400) 错误的请求。
-18:01:34 selected clean user phone=13800000023 (TAKE created orderNo=SW17891208948387e39e4)
-18:01:34 recharge created tradeNo=R17891208949716795d5 amountFen=20000 balanceBefore=20000
-18:01:35 PASS callback 1 SUCCESS
-18:01:35 PASS balance credited once (+20000)
-18:01:35 PASS callback 2 idempotent (no double credit)
-18:01:35 PASS tampered sign rejected
-18:01:35 PASS TAKE opened
-18:01:35 PASS TAKE completed
-18:01:36 PASS SWAP opened
-18:01:36 PASS SWAP taken (TAKEN or already OVERDUE)
-18:01:37 PASS overdue migrated (OVERDUE)
-18:01:39 PASS ORDER_OVERDUE alarm raised
-18:01:39 stopping sim pids=18624,29980 (outage simulation)
-18:01:51 PASS BATCH_OFFLINE raised while sim down
-18:01:51 restarting sim (dual channel launcher)
-18:02:16 PASS BATCH_OFFLINE auto-recovered after sim up
-18:02:16 GATE-5 PASS
+19:06:10 skip phone=13800000025 cause=远程服务器返回错误: (400) 错误的请求。
+19:06:10 skip phone=13800000024 cause=远程服务器返回错误: (400) 错误的请求。
+19:06:10 skip phone=13800000023 cause=远程服务器返回错误: (400) 错误的请求。
+19:06:10 skip phone=13800000022 cause=远程服务器返回错误: (400) 错误的请求。
+19:06:10 selected clean user phone=13800000021 (TAKE created orderNo=SW1789124770066f1e8ac)
+19:06:10 recharge created tradeNo=R1789124770213e24544 amountFen=20000 balanceBefore=20000
+19:06:10 PASS callback 1 SUCCESS
+19:06:10 PASS balance credited once (+20000)
+19:06:10 PASS callback 2 idempotent (no double credit)
+19:06:10 PASS tampered sign rejected
+19:06:10 PASS TAKE opened
+19:06:11 PASS TAKE completed
+19:06:11 PASS SWAP opened
+19:06:11 PASS SWAP taken (TAKEN or already OVERDUE)
+19:06:11 PASS overdue migrated (OVERDUE)
+19:06:13 PASS ORDER_OVERDUE alarm raised
+19:06:14 stopping sim pids=23024,1312 (outage simulation)
+19:06:26 PASS BATCH_OFFLINE raised while sim down
+19:06:26 restarting sim (dual channel launcher)
+19:06:51 PASS BATCH_OFFLINE auto-recovered after sim up
+19:06:51 GATE-5 PASS

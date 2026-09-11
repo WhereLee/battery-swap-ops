@@ -78,7 +78,7 @@ class ReconcileServiceTest {
 
         ReconcileService.ReconcileReport report = service.run();
 
-        assertThat(report.checks()).hasSize(5);
+        assertThat(report.checks()).hasSize(6);
         assertThat(report.totalViolations()).isZero();
     }
 
@@ -143,6 +143,22 @@ class ReconcileServiceTest {
         when(batteryDao.selectMaps(any())).thenReturn(List.of(Map.of("holderUserId", 7L, "cnt", 2L)));
 
         assertThat(service.checkHolderConsistency().violations()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("⑥ 逃逸电池（LOANED 且无仓无持有人）：检出")
+    void 逃逸电池检出() {
+        BatteryEntity escaped = new BatteryEntity();
+        escaped.setBatteryNo("BAT-ESCAPED");
+        escaped.setStatus(com.swapops.contract.BatteryStatus.LOANED.getCode());
+        escaped.setCellId(null);
+        escaped.setHolderUserId(null);
+        when(batteryDao.selectList(any())).thenReturn(List.of(escaped));
+
+        ReconcileService.CheckResult result = service.checkEscapedBatteries();
+
+        assertThat(result.violations()).isEqualTo(1);
+        assertThat(result.samples()).hasSize(1);
     }
 
     @Test

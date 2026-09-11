@@ -87,50 +87,77 @@ public class PayOrderService {
             log.info("支付回调幂等命中（已入账） tradeNo={}", tradeNo);
             return order;
         }
-        if (PayOrderStatus.CLOSED.name().equals(order.getStatus())) {
-            throw new RRException("支付单已关闭: " + tradeNo);
-        }
         long now = System.currentTimeMillis();
         if (RESULT_SUCCESS.equalsIgnoreCase(result)) {
-            int rows = payOrderDao.update(null, new LambdaUpdateWrapper<PayOrderEntity>()
-                    .eq(PayOrderEntity::getId, order.getId())
-                    .eq(PayOrderEntity::getStatus, PayOrderStatus.WAIT.name())
-                    .set(PayOrderEntity::getStatus, PayOrderStatus.SUCCESS.name())
-                    .set(PayOrderEntity::getCallbackTime, now)
-                    .set(PayOrderEntity::getUpdateTime, now));
-            if (rows == 0) {
+            // 终态仲裁（S3.8，资金优先）：SUCCESS 以网关实收为准——即使此前被 FAIL 关闭也补记入账；
+            // CAS 是唯一入账权（并发/重复回调只有一个赢家，不会双记）
+            PayOrderEntity accepted = tryAcceptSuccess(order, tradeNo, now);
+            if (accepted == null) {
                 PayOrderEntity current = payOrderDao.selectById(order.getId());
-                if (current != null && PayOrderStatus.SUCCESS.name().equals(current.getStatus())) {
-                    return current; // 并发回调已被对方入账
-                }
-                throw new RRException("支付单状态冲突: " + tradeNo);
+                return current == null ? order : current;
             }
             walletService.addBalance(order.getUserId(), order.getAmountFen());
             paymentRecordService.record(order.getUserId(), null, PaymentType.RECHARGE,
                     order.getAmountFen(), "充值:" + tradeNo);
-            order.setStatus(PayOrderStatus.SUCCESS.name());
-            order.setCallbackTime(now);
             log.info("充值入账成功 tradeNo={} userId={} amountFen={}",
                     tradeNo, order.getUserId(), order.getAmountFen());
+            return accepted;
+        }
+        // 失败结果：仅在 WAIT 生效；已 SUCCESS 视为无效的"伪失败"（资金优先，不回退）；已 CLOSED 幂等
+        int rows = casStatus(order.getId(), PayOrderStatus.WAIT, PayOrderStatus.CLOSED, now);
+        if (rows > 0) {
+            order.setStatus(PayOrderStatus.CLOSED.name());
+            order.setCallbackTime(now);
+            log.warn("充值支付失败/取消，单据关闭 tradeNo={} result={}", tradeNo, result);
             return order;
         }
-        int rows = payOrderDao.update(null, new LambdaUpdateWrapper<PayOrderEntity>()
-                .eq(PayOrderEntity::getId, order.getId())
-                .eq(PayOrderEntity::getStatus, PayOrderStatus.WAIT.name())
-                .set(PayOrderEntity::getStatus, PayOrderStatus.CLOSED.name())
+        PayOrderEntity current = payOrderDao.selectById(order.getId());
+        if (current != null && (PayOrderStatus.SUCCESS.name().equals(current.getStatus())
+                || PayOrderStatus.CLOSED.name().equals(current.getStatus()))) {
+            return current;
+        }
+        throw new RRException("支付单状态冲突: " + tradeNo);
+    }
+
+    /**
+     * 尝试取得"成功入账权"（幂等闸）。
+     * WAIT→SUCCESS 命中即赢；未命中：已 SUCCESS=他人已入账（返回 null），
+     * 已 CLOSED=迟到的成功（网关实收必须补记，再 CAS CLOSED→SUCCESS）；仍失败则冲突拒绝。
+     *
+     * @return 赢得入账权的单据（调用方执行资金动作）；null=无需重复入账
+     */
+    private PayOrderEntity tryAcceptSuccess(PayOrderEntity order, String tradeNo, long now) {
+        if (casStatus(order.getId(), PayOrderStatus.WAIT, PayOrderStatus.SUCCESS, now) > 0) {
+            order.setStatus(PayOrderStatus.SUCCESS.name());
+            order.setCallbackTime(now);
+            return order;
+        }
+        PayOrderEntity current = payOrderDao.selectById(order.getId());
+        if (current == null || PayOrderStatus.SUCCESS.name().equals(current.getStatus())) {
+            return null;
+        }
+        if (PayOrderStatus.CLOSED.name().equals(current.getStatus())) {
+            if (casStatus(order.getId(), PayOrderStatus.CLOSED, PayOrderStatus.SUCCESS, now) > 0) {
+                log.warn("迟到的成功回调：CLOSED→SUCCESS 补记入账 tradeNo={}", tradeNo);
+                current.setStatus(PayOrderStatus.SUCCESS.name());
+                current.setCallbackTime(now);
+                return current;
+            }
+            PayOrderEntity again = payOrderDao.selectById(order.getId());
+            if (again != null && PayOrderStatus.SUCCESS.name().equals(again.getStatus())) {
+                return null; // 并发迟成功已被对方补记
+            }
+        }
+        throw new RRException("支付单状态冲突: " + tradeNo);
+    }
+
+    private int casStatus(Long id, PayOrderStatus from, PayOrderStatus to, long now) {
+        return payOrderDao.update(null, new LambdaUpdateWrapper<PayOrderEntity>()
+                .eq(PayOrderEntity::getId, id)
+                .eq(PayOrderEntity::getStatus, from.name())
+                .set(PayOrderEntity::getStatus, to.name())
                 .set(PayOrderEntity::getCallbackTime, now)
                 .set(PayOrderEntity::getUpdateTime, now));
-        if (rows == 0) {
-            PayOrderEntity current = payOrderDao.selectById(order.getId());
-            if (current != null && PayOrderStatus.SUCCESS.name().equals(current.getStatus())) {
-                return current; // 已入账：支付结果以成功为准
-            }
-            throw new RRException("支付单状态冲突: " + tradeNo);
-        }
-        order.setStatus(PayOrderStatus.CLOSED.name());
-        order.setCallbackTime(now);
-        log.warn("充值支付失败/取消，单据关闭 tradeNo={} result={}", tradeNo, result);
-        return order;
     }
 
     /** 视图（充值单） */

@@ -17,10 +17,14 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -65,11 +69,14 @@ class MqEventReporterTest {
     void 正常发送信封() throws Exception {
         properties = properties("0123456789abcdef0123456789abcdef");
         reporter = new MqEventReporter(properties, producer);
+        when(producer.sendAsync(any(Message.class)))
+                .thenReturn(CompletableFuture.completedFuture(null));
 
         reporter.report(message());
 
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
-        await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> verify(producer).send(captor.capture()));
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() ->
+                verify(producer, atLeastOnce()).sendAsync(captor.capture()));
         Message sent = captor.getValue();
         Map<String, String> props = sent.getProperties();
         assertThat(props).containsKeys("X-Device-No", "X-Device-Sign", "traceId")
@@ -93,6 +100,31 @@ class MqEventReporterTest {
 
         Thread.sleep(300);
         verify(producer, never()).send(any(Message.class));
+    }
+
+    @Test
+    @DisplayName("发送超时：回收 producer 并重建，事件保持队首直到成功")
+    void 超时回收重建() throws Exception {
+        properties = properties("0123456789abcdef0123456789abcdef");
+        properties.getMq().setSendTimeoutMillis(50);
+        Producer slow = mock(Producer.class);
+        Producer fast = mock(Producer.class);
+        when(slow.sendAsync(any(Message.class))).thenReturn(new CompletableFuture<>());
+        when(fast.sendAsync(any(Message.class))).thenReturn(CompletableFuture.completedFuture(null));
+        AtomicInteger created = new AtomicInteger();
+        reporter = new MqEventReporter(properties) {
+            @Override
+            protected Producer createProducer() {
+                return created.incrementAndGet() == 1 ? slow : fast;
+            }
+        };
+
+        reporter.report(message());
+
+        await().atMost(Duration.ofSeconds(6)).untilAsserted(() ->
+                verify(fast, atLeastOnce()).sendAsync(any(Message.class)));
+        assertThat(created.get()).isGreaterThanOrEqualTo(2);
+        verify(slow).close();
     }
 
     @Test
