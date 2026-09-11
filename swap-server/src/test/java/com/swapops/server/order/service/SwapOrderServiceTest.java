@@ -228,6 +228,36 @@ class SwapOrderServiceTest {
     }
 
     @Test
+    @DisplayName("对账证据推进：PENDING_OPEN→OPENED（设备已执行开仓）")
+    void 对账证据开仓() {
+        SwapOrderEntity order = new SwapOrderEntity();
+        order.setId(99L);
+        order.setStatus(OrderStatus.PENDING_OPEN.getCode());
+        when(orderDao.update(any(), any())).thenReturn(1);
+
+        assertThat(service.markOpenedByEvidence(order)).isTrue();
+    }
+
+    @Test
+    @DisplayName("异常终止：活跃态→EXCEPTION + 释放预占；终态拒绝（幂等）")
+    void 异常终止释放预占() {
+        SwapOrderEntity order = new SwapOrderEntity();
+        order.setId(99L);
+        order.setOrderNo("SWO-1");
+        order.setStatus(OrderStatus.OPENED.getCode());
+        order.setCellId(11L);
+        when(orderDao.update(any(), any())).thenReturn(1);
+
+        assertThat(service.markException(order, "CABINET_FAULT")).isTrue();
+        verify(allocationService).release(11L, 99L, "SWO-1");
+
+        SwapOrderEntity done = new SwapOrderEntity();
+        done.setId(100L);
+        done.setStatus(OrderStatus.COMPLETED.getCode());
+        assertThat(service.markException(done, "X")).isFalse();
+    }
+
+    @Test
     @DisplayName("超时关闭：CAS 成功 → 释放预占")
     void 超时关闭释放() {
         SwapOrderEntity order = new SwapOrderEntity();

@@ -36,6 +36,7 @@ import java.util.Map;
 public class CommandDispatchService {
 
     private static final String CMD_PATH = "/cmd";
+    private static final String QUERY_PATH = "/cmd/query";
     private static final String DEVICE_HEADER = "X-Device-No";
     private static final String SIGN_HEADER = "X-Device-Sign";
 
@@ -66,6 +67,17 @@ public class CommandDispatchService {
 
     /** 下发已准备的指令（同步 HTTP；失败记 SEND_FAILED 并抛业务异常） */
     public void dispatchPrepared(CommandLogEntity cmdLog, String cabinetNo, int cellNo) {
+        dispatchPrepared(cmdLog, cabinetNo, cellNo, true);
+    }
+
+    /**
+     * 下发已准备的指令。
+     *
+     * @param terminalOnFailure true=失败记 SEND_FAILED（业务下发语义）；
+     *                          false=失败不记终态（对账重试语义：由重试分层决定去留）
+     */
+    public void dispatchPrepared(CommandLogEntity cmdLog, String cabinetNo, int cellNo,
+                                 boolean terminalOnFailure) {
         CabinetEntity cabinet = requireDispatchable(cabinetNo);
         Map<String, Object> payload = new HashMap<>();
         payload.put("cabinetNo", cabinetNo);
@@ -83,17 +95,95 @@ public class CommandDispatchService {
             Object code = resp == null ? null : resp.get("code");
             if (resp == null || !Integer.valueOf(0).equals(code)) {
                 Object msg = resp == null ? "空响应" : resp.get("msg");
-                commandLogService.markSendFailed(cmdLog.getId());
+                if (terminalOnFailure) {
+                    commandLogService.markSendFailed(cmdLog.getId());
+                }
                 throw new RRException("柜拒绝指令: " + msg);
             }
             log.info("开仓指令已下发 cabinetNo={} cellNo={} seq={} -> 等待门开事件",
                     cabinetNo, cellNo, cmdLog.getCommandSeq());
         } catch (HttpStatusCodeException e) {
-            commandLogService.markSendFailed(cmdLog.getId());
+            if (terminalOnFailure) {
+                commandLogService.markSendFailed(cmdLog.getId());
+            }
             throw new RRException("柜拒绝指令(HTTP " + e.getStatusCode().value() + "): " + e.getResponseBodyAsString());
         } catch (RestClientException e) {
-            commandLogService.markSendFailed(cmdLog.getId());
+            if (terminalOnFailure) {
+                commandLogService.markSendFailed(cmdLog.getId());
+            }
             throw new RRException("柜无响应(连接失败): " + cabinetNo + " cause=" + e.getMessage());
+        }
+    }
+
+    /** 实况快照查询结果（QUERY_STATE 对账，S3.2） */
+    public record QueryResult(Integer state, Map<Integer, CellSnapshot> cells,
+                              String bootId, Long eventSeq, Long lastCommandSeq) {
+    }
+
+    /** 单仓快照 */
+    public record CellSnapshot(int cellNo, boolean hasBattery, String batteryNo, Integer soc) {
+    }
+
+    /**
+     * 查询设备实况（QUERY_STATE，canonicalQuery 签名）：失败（无响应/被拒/应答缺字段）返回 null，
+     * 与"查到非目标态"区分（调用方决策不同：前者走重试，后者按实况仲裁）。
+     */
+    public QueryResult queryState(String cabinetNo) {
+        CabinetEntity cabinet = cabinetDao.selectOne(new LambdaQueryWrapper<CabinetEntity>()
+                .eq(CabinetEntity::getCabinetNo, cabinetNo));
+        if (cabinet == null || cabinet.getSecret() == null || cabinet.getSecret().isEmpty()) {
+            log.warn("状态查询取消：柜未登记或密钥缺失 cabinetNo={}", cabinetNo);
+            return null;
+        }
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("cabinetNo", cabinetNo);
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(DEVICE_HEADER, cabinetNo);
+        headers.set(SIGN_HEADER, DeviceSignature.sign(cabinet.getSecret(),
+                DeviceSignature.canonicalQuery(cabinetNo)));
+        headers.set(TraceIdFilter.TRACE_ID_HEADER, TraceIdFilter.currentOrGenerate());
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> resp = restTemplate.postForObject(properties.getSimBaseUrl() + QUERY_PATH,
+                    new HttpEntity<>(payload, headers), Map.class);
+            if (resp == null || !Integer.valueOf(0).equals(resp.get("code"))) {
+                log.warn("状态查询被拒 cabinetNo={} resp={}", cabinetNo, resp);
+                return null;
+            }
+            Object dataObj = resp.get("data");
+            if (!(dataObj instanceof Map<?, ?> data) || data.get("state") == null) {
+                log.warn("状态查询应答缺 data/state cabinetNo={}", cabinetNo);
+                return null;
+            }
+            Map<Integer, CellSnapshot> cells = new HashMap<>();
+            if (data.get("cells") instanceof Map<?, ?> cellViews) {
+                for (Map.Entry<?, ?> entry : cellViews.entrySet()) {
+                    int cellNo;
+                    try {
+                        cellNo = Integer.parseInt(String.valueOf(entry.getKey()));
+                    } catch (NumberFormatException e) {
+                        continue;
+                    }
+                    if (entry.getValue() instanceof Map<?, ?> cv) {
+                        boolean hasBattery = Boolean.TRUE.equals(cv.get("hasBattery"));
+                        String batteryNo = cv.get("batteryNo") == null ? null : String.valueOf(cv.get("batteryNo"));
+                        Integer soc = cv.get("soc") instanceof Number n ? n.intValue() : null;
+                        cells.put(cellNo, new CellSnapshot(cellNo, hasBattery, batteryNo, soc));
+                    }
+                }
+            }
+            QueryResult result = new QueryResult(
+                    ((Number) data.get("state")).intValue(),
+                    cells,
+                    data.get("bootId") == null ? null : String.valueOf(data.get("bootId")),
+                    data.get("eventSeq") instanceof Number es ? es.longValue() : null,
+                    data.get("lastCommandSeq") instanceof Number ls ? ls.longValue() : null);
+            log.info("状态查询成功 cabinetNo={} state={} lastCommandSeq={} cells={}",
+                    cabinetNo, result.state(), result.lastCommandSeq(), cells.size());
+            return result;
+        } catch (RestClientException e) {
+            log.warn("状态查询失败(设备无响应) cabinetNo={} cause={}", cabinetNo, e.getMessage());
+            return null;
         }
     }
 

@@ -14,7 +14,9 @@ public enum CommandStatus {
     /** 重试超限（转人工） */
     RETRY_EXCEEDED(4),
     /** 被更新指令取代 */
-    SUPERSEDED(5);
+    SUPERSEDED(5),
+    /** 设备故障中断（FAULT 证据：在途指令永不执行） */
+    EXEC_FAILED(6);
 
     private final int code;
 

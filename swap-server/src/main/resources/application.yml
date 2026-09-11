@@ -32,6 +32,10 @@ swap:
     soc-full-threshold: 90
     connect-timeout-millis: 2000
     read-timeout-millis: 3000
+    command-timeout-seconds: 60
+    max-retry: 3
+    reconcile-interval-ms: 15000
+    reconcile-batch: 100
   admin:
     # 管理端静态 token：仅环境变量注入（仓库零明文）；未配置启动即失败
     token: ${SWAP_ADMIN_TOKEN:}

@@ -226,6 +226,21 @@ class DeviceEventServiceTest {
     }
 
     @Test
+    @DisplayName("柜故障（S3.2）：中断在途指令 + 活跃订单转异常")
+    void 柜故障事件_中断在途与订单() {
+        when(cabinetDao.update(isNull(), any())).thenReturn(1);
+        CabinetEntity cabinet = new CabinetEntity();
+        cabinet.setId(1L);
+        when(cabinetDao.selectOne(any())).thenReturn(cabinet);
+
+        boolean accepted = service.handle(form(EventType.CABINET_FAULT, null, null, "boot-1", 8L, null, null));
+
+        assertThat(accepted).isTrue();
+        verify(commandLogService).markExecFailedByCabinet("SWAP-C-001");
+        verify(orderEventService).onCabinetFault(cabinet);
+    }
+
+    @Test
     @DisplayName("未登记的柜事件：显式失败（配置错位）")
     void 未登记柜_显式失败() {
         when(cabinetDao.update(isNull(), any())).thenReturn(0);

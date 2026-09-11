@@ -21,6 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -42,6 +43,8 @@ class OrderEventServiceTest {
     private BatteryDao batteryDao;
     @Mock
     private BillingService billingService;
+    @Mock
+    private SwapOrderService swapOrderService;
     @InjectMocks
     private OrderEventService service;
 
@@ -160,6 +163,17 @@ class OrderEventServiceTest {
         service.onBatteryIn(cabinet(), cell(15L, 7), battery(20L, "BAT-0009"), 7L);
 
         verify(billingService).charge(any(SwapOrderEntity.class), anyLong());
+    }
+
+    @Test
+    @DisplayName("柜故障（S3.2）：活跃订单全部转 EXCEPTION 交人工")
+    void 柜故障活跃订单转异常() {
+        SwapOrderEntity active = order(99L, "SWO-1", "TAKE", OrderStatus.PENDING_OPEN, 11L, null);
+        when(orderDao.selectList(any())).thenReturn(java.util.List.of(active));
+
+        service.onCabinetFault(cabinet());
+
+        verify(swapOrderService).markException(any(SwapOrderEntity.class), eq("CABINET_FAULT"));
     }
 
     @Test

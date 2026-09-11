@@ -122,4 +122,17 @@ class CommandLogServiceTest {
 
         assertThatCode(() -> service.seedSeqFromDb()).doesNotThrowAnyException();
     }
+
+    @Test
+    @DisplayName("超时查询与重试分层：findTimeoutPending / markRetried / RETRY_EXCEEDED / SUPERSEDED / 故障全断")
+    void 重试分层与故障全断() {
+        when(commandLogDao.selectList(any())).thenReturn(List.of());
+        assertThat(service.findTimeoutPending(60, 100)).isEmpty();
+
+        when(commandLogDao.update(isNull(), any())).thenReturn(1);
+        service.markRetried(100L);
+        assertThat(service.markRetryExceeded(100L)).isTrue();
+        assertThat(service.markSuperseded(100L)).isTrue();
+        assertThat(service.markExecFailedByCabinet("SWAP-C-001")).isEqualTo(1);
+    }
 }

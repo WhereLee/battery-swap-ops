@@ -187,7 +187,13 @@ public class DeviceEventService {
             }
             case DOOR_CLOSED -> log.debug("门关闭 cabinetNo={} cellNo={}（审计，不推进订单）",
                     form.getCabinetNo(), form.getCellNo());
-            case CABINET_FAULT -> log.warn("柜级故障 cabinetNo={}", form.getCabinetNo());
+            case CABINET_FAULT -> {
+                // S3.2：柜故障 = 在途指令中断（显式 EXEC_FAILED）+ 活跃订单转人工
+                int interrupted = commandLogService.markExecFailedByCabinet(form.getCabinetNo());
+                orderEventService.onCabinetFault(cabinet);
+                log.warn("柜级故障 cabinetNo={} 中断在途指令={}（告警 S3.6 接管）",
+                        form.getCabinetNo(), interrupted);
+            }
             default -> log.warn("事件语义未实现（忽略） type={}", type);
         }
     }

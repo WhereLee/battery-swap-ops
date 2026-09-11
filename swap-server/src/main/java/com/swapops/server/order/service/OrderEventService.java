@@ -14,6 +14,7 @@ import com.swapops.server.device.dao.CellDao;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -28,13 +29,27 @@ public class OrderEventService {
     private final CellDao cellDao;
     private final BatteryDao batteryDao;
     private final BillingService billingService;
+    private final SwapOrderService swapOrderService;
 
     public OrderEventService(SwapOrderDao orderDao, CellDao cellDao, BatteryDao batteryDao,
-                             BillingService billingService) {
+                             BillingService billingService, SwapOrderService swapOrderService) {
         this.orderDao = orderDao;
         this.cellDao = cellDao;
         this.batteryDao = batteryDao;
         this.billingService = billingService;
+        this.swapOrderService = swapOrderService;
+    }
+
+    /** 柜故障（S3.2）：该柜活跃订单全部转 EXCEPTION 交人工；在途指令由 DeviceEventService 中断 */
+    public void onCabinetFault(CabinetEntity cabinet) {
+        List<SwapOrderEntity> actives = orderDao.selectList(new LambdaQueryWrapper<SwapOrderEntity>()
+                .eq(SwapOrderEntity::getCabinetId, cabinet.getId())
+                .in(SwapOrderEntity::getStatus,
+                        OrderStatus.PENDING_OPEN.getCode(), OrderStatus.OPENED.getCode(),
+                        OrderStatus.TAKEN.getCode(), OrderStatus.OVERDUE.getCode()));
+        for (SwapOrderEntity order : actives) {
+            swapOrderService.markException(order, "CABINET_FAULT");
+        }
     }
 
     /** 门开事件：PENDING_OPEN → OPENED（校验目标仓一致） */

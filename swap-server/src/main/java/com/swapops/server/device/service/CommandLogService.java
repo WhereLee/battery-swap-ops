@@ -121,6 +121,48 @@ public class CommandLogService {
         cas(commandId, CommandStatus.PENDING, CommandStatus.SEND_FAILED);
     }
 
+    /** 超时待对账指令（按创建时间升序，单轮限量） */
+    public List<CommandLogEntity> findTimeoutPending(int timeoutSeconds, int limit) {
+        long deadline = System.currentTimeMillis() - timeoutSeconds * 1000L;
+        return commandLogDao.selectList(new LambdaQueryWrapper<CommandLogEntity>()
+                .eq(CommandLogEntity::getCommandStatus, CommandStatus.PENDING.getCode())
+                .lt(CommandLogEntity::getCreateTime, deadline)
+                .orderByAsc(CommandLogEntity::getCreateTime)
+                .last("LIMIT " + limit));
+    }
+
+    /** 重试计数 +1（PENDING 守卫：已终态的流水不再计数） */
+    public void markRetried(Long commandId) {
+        commandLogDao.update(null, new LambdaUpdateWrapper<CommandLogEntity>()
+                .eq(CommandLogEntity::getId, commandId)
+                .eq(CommandLogEntity::getCommandStatus, CommandStatus.PENDING.getCode())
+                .setSql("retry_count = retry_count + 1")
+                .set(CommandLogEntity::getUpdateTime, System.currentTimeMillis()));
+    }
+
+    /** 重试超限定格（CAS：事件恰好到位时未命中=指令实际成功，不误告警） */
+    public boolean markRetryExceeded(Long commandId) {
+        return cas(commandId, CommandStatus.PENDING, CommandStatus.RETRY_EXCEEDED);
+    }
+
+    /** 被更新指令取代（同设备更晚 seq 的指令已接管） */
+    public boolean markSuperseded(Long commandId) {
+        return cas(commandId, CommandStatus.PENDING, CommandStatus.SUPERSEDED);
+    }
+
+    /** 设备故障中断：该柜全部在途指令显式终止（FAULT 证据，永不执行） */
+    public int markExecFailedByCabinet(String cabinetNo) {
+        int rows = commandLogDao.update(null, new LambdaUpdateWrapper<CommandLogEntity>()
+                .eq(CommandLogEntity::getCabinetNo, cabinetNo)
+                .eq(CommandLogEntity::getCommandStatus, CommandStatus.PENDING.getCode())
+                .set(CommandLogEntity::getCommandStatus, CommandStatus.EXEC_FAILED.getCode())
+                .set(CommandLogEntity::getUpdateTime, System.currentTimeMillis()));
+        if (rows > 0) {
+            log.warn("设备故障中断在途指令 cabinetNo={} rows={}", cabinetNo, rows);
+        }
+        return rows;
+    }
+
     public CommandLogEntity getByCabinetSeq(String cabinetNo, long seq) {
         return commandLogDao.selectOne(new LambdaQueryWrapper<CommandLogEntity>()
                 .eq(CommandLogEntity::getCabinetNo, cabinetNo)

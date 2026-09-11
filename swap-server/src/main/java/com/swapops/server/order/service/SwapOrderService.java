@@ -215,6 +215,43 @@ public class SwapOrderService {
         return orderDao.selectById(order.getId());
     }
 
+    /** 按柜+指令 seq 定位活跃订单（对账路径） */
+    public SwapOrderEntity findByOpenCommand(String cabinetNo, long commandSeq) {
+        CabinetEntity cabinet = cabinetDao.selectOne(new LambdaQueryWrapper<CabinetEntity>()
+                .eq(CabinetEntity::getCabinetNo, cabinetNo));
+        if (cabinet == null) {
+            return null;
+        }
+        return orderDao.selectOne(new LambdaQueryWrapper<SwapOrderEntity>()
+                .eq(SwapOrderEntity::getCabinetId, cabinet.getId())
+                .eq(SwapOrderEntity::getOpenCommandSeq, commandSeq)
+                .in(SwapOrderEntity::getStatus, ACTIVE_STATUSES)
+                .orderByDesc(SwapOrderEntity::getId)
+                .last("LIMIT 1"));
+    }
+
+    /** 对账证据推进：设备已执行开仓（lastCommandSeq≥seq）且仓未取 → PENDING_OPEN→OPENED */
+    public boolean markOpenedByEvidence(SwapOrderEntity order) {
+        return cas(order.getId(), OrderStatus.PENDING_OPEN, OrderStatus.OPENED,
+                w -> w.set(SwapOrderEntity::getOpenTime, System.currentTimeMillis()));
+    }
+
+    /** 异常终止（设备故障/证据丢失）：任意活跃态 → EXCEPTION + 释放预占（交人工处置） */
+    public boolean markException(SwapOrderEntity order, String reason) {
+        OrderStatus from = OrderStatus.fromCode(order.getStatus());
+        if (isTerminal(order.getStatus())) {
+            return false;
+        }
+        boolean marked = cas(order.getId(), from, OrderStatus.EXCEPTION,
+                w -> w.set(SwapOrderEntity::getCancelTime, System.currentTimeMillis())
+                        .set(SwapOrderEntity::getCloseReason, reason));
+        if (marked) {
+            allocationService.release(order.getCellId(), order.getId(), order.getOrderNo());
+            log.warn("订单转人工异常 orderNo={} reason={}", order.getOrderNo(), reason);
+        }
+        return marked;
+    }
+
     /** 超时关闭（扫描任务调用）：任意活跃态 → TIMEOUT_CLOSED + 释放预占 */
     public boolean closeTimedOut(SwapOrderEntity order, String reason) {
         OrderStatus from = OrderStatus.fromCode(order.getStatus());
