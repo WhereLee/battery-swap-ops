@@ -25,9 +25,11 @@
 ### block-records
 - block-records/批次1-骨架与指令闭环.md
 - block-records/批次1-复审与优化.md
+- block-records/批次2-换电闭环.md
 
 ### pitfalls
 - pitfalls/gbk-source-encoding.md
+- pitfalls/ps-utf8-bom-and-mojibake.md
 
 ### 外部关联（工作区根，不入本仓库）
 - `项目一-换电运营平台-设计备忘.md`（项目定位/架构/分期）
