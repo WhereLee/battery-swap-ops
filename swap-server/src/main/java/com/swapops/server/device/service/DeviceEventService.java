@@ -14,6 +14,7 @@ import com.swapops.server.device.dao.CellDao;
 import com.swapops.server.device.entity.BatteryEntity;
 import com.swapops.server.device.entity.CabinetEntity;
 import com.swapops.server.device.entity.CellEntity;
+import com.swapops.server.device.config.DeviceBootGenerationGuard;
 import com.swapops.server.device.form.DeviceEventForm;
 import com.swapops.server.order.service.AllocationService;
 import com.swapops.server.order.service.OrderEventService;
@@ -37,10 +38,12 @@ public class DeviceEventService {
     private final DeviceChannelProperties properties;
     private final AllocationService allocationService;
     private final OrderEventService orderEventService;
+    private final DeviceBootGenerationGuard bootGenerationGuard;
 
     public DeviceEventService(CabinetDao cabinetDao, CellDao cellDao, BatteryDao batteryDao,
                               CommandLogService commandLogService, DeviceChannelProperties properties,
-                              AllocationService allocationService, OrderEventService orderEventService) {
+                              AllocationService allocationService, OrderEventService orderEventService,
+                              DeviceBootGenerationGuard bootGenerationGuard) {
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
         this.batteryDao = batteryDao;
@@ -48,6 +51,7 @@ public class DeviceEventService {
         this.properties = properties;
         this.allocationService = allocationService;
         this.orderEventService = orderEventService;
+        this.bootGenerationGuard = bootGenerationGuard;
     }
 
     @Transactional
@@ -66,6 +70,14 @@ public class DeviceEventService {
                 || bootId == null || bootId.isEmpty()
                 || eventSeq == null) {
             throw new RRException("事件缺必填字段(cabinetNo/eventType/bootId/eventSeq)");
+        }
+
+        // 1.5 跨代际重放守卫（S3.1）：序守卫对 bootId 变化一律接受，旧代际事件重放会借"新代际"过关——
+        // 历史已见的代际在此拒绝（DB 序守卫仍守同代际乱序/重复，两层互补）
+        if (bootGenerationGuard.isReplay(cabinetNo, bootId)) {
+            log.warn("柜代际重放拒绝（已见代际事件重放，不推进台账/流水/订单） cabinetNo={} bootId={} eventSeq={} eventType={}",
+                    cabinetNo, bootId, eventSeq, type);
+            return false;
         }
 
         // 2. 序守卫（单条条件 UPDATE：守卫+推进基线原子完成）
@@ -89,6 +101,9 @@ public class DeviceEventService {
                     cabinetNo, bootId, eventSeq, cabinet.getLastBootId(), cabinet.getLastEventSeq());
             return false;
         }
+
+        // 序守卫接受：登记代际（供后续重放判定；新代际首见，同代际幂等）
+        bootGenerationGuard.register(cabinetNo, bootId);
 
         // 3. 事件语义（柜档案一次加载，供仓定位与日志使用）
         CabinetEntity cabinet = cabinetDao.selectOne(new LambdaQueryWrapper<CabinetEntity>()

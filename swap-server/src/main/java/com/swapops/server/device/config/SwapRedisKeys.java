@@ -26,6 +26,12 @@ public final class SwapRedisKeys {
     /** 用户端 token（value=userId，TTL=会话时长） */
     public static final String USER_TOKEN_PREFIX = "swap:user-token:";
 
+    /** 柜当前代际（value=bootId；与 DB last_boot_id 同语义的读优化） */
+    public static final String BOOT_CURRENT_PREFIX = "swap:boot-current:";
+
+    /** 柜已见代际集合（SET，成员=bootId，TTL 30 天；命中=旧代际重放） */
+    public static final String BOOT_HISTORY_PREFIX = "swap:boot-history:";
+
     private SwapRedisKeys() {
     }
 }

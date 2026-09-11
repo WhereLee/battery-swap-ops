@@ -7,6 +7,7 @@ import com.swapops.contract.BatteryStatus;
 import com.swapops.contract.CommandAction;
 import com.swapops.contract.EventType;
 import com.swapops.server.common.RRException;
+import com.swapops.server.device.config.DeviceBootGenerationGuard;
 import com.swapops.server.device.config.DeviceChannelProperties;
 import com.swapops.server.device.dao.BatteryDao;
 import com.swapops.server.device.dao.CabinetDao;
@@ -58,6 +59,8 @@ class DeviceEventServiceTest {
     private AllocationService allocationService;
     @Mock
     private OrderEventService orderEventService;
+    @Mock
+    private DeviceBootGenerationGuard bootGenerationGuard;
     @InjectMocks
     private DeviceEventService service;
 
@@ -117,6 +120,19 @@ class DeviceEventServiceTest {
         assertThat(accepted).isTrue();
         verify(commandLogService).markArrivedBySeq("SWAP-C-001", 7L, CommandAction.OPEN_CELL);
         verify(orderEventService).onDoorOpened(any(CabinetEntity.class), eq(3), eq(7L));
+        verify(bootGenerationGuard).register("SWAP-C-001", "boot-1");
+    }
+
+    @Test
+    @DisplayName("跨代际重放（S3.1）：已见代际事件被拒——不推进台账/流水/订单")
+    void 代际重放拒绝() {
+        when(bootGenerationGuard.isReplay("SWAP-C-001", "boot-old")).thenReturn(true);
+
+        boolean accepted = service.handle(form(EventType.DOOR_OPENED, 3, null,
+                "boot-old", 9L, 7L, null));
+
+        assertThat(accepted).isFalse();
+        verifyNoInteractions(cabinetDao, cellDao, batteryDao, commandLogService, orderEventService);
     }
 
     @Test
