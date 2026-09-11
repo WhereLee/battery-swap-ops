@@ -1,5 +1,6 @@
 package com.swapops.sim.model;
 
+import com.swapops.contract.CabinetStatus;
 import com.swapops.contract.EventType;
 import com.swapops.sim.config.SimProperties;
 import com.swapops.sim.reporter.DeviceEventMessage;
@@ -137,6 +138,16 @@ public class CabinetSim {
         log.warn("[{}] 门锁故障注入置为 {}", cabinetNo, stuck);
     }
 
+    /** 心跳自述状态：无空仓上报 FULL(2)，否则 ONLINE(1)（S0.3 §2.1 语义） */
+    public int reportStatus() {
+        for (CellSim cell : cells.values()) {
+            if (!cell.isHasBattery()) {
+                return CabinetStatus.ONLINE.getCode();
+            }
+        }
+        return CabinetStatus.FULL.getCode();
+    }
+
     public Map<String, Object> snapshot() {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("cabinetNo", cabinetNo);
@@ -144,13 +155,15 @@ public class CabinetSim {
         view.put("eventSeq", eventCounter.get());
         view.put("lastCommandSeq", lastSeq);
         Map<Integer, Map<String, Object>> cellViews = new LinkedHashMap<>();
-        for (Map.Entry<Integer, CellSim> e : cells.entrySet()) {
-            CellSim cell = e.getValue();
-            Map<String, Object> cv = new LinkedHashMap<>();
-            cv.put("hasBattery", cell.isHasBattery());
-            cv.put("batteryNo", cell.getBatteryNo());
-            cv.put("soc", cell.getSoc());
-            cellViews.put(e.getKey(), cv);
+        synchronized (this) {
+            for (Map.Entry<Integer, CellSim> e : cells.entrySet()) {
+                CellSim cell = e.getValue();
+                Map<String, Object> cv = new LinkedHashMap<>();
+                cv.put("hasBattery", cell.isHasBattery());
+                cv.put("batteryNo", cell.getBatteryNo());
+                cv.put("soc", cell.getSoc());
+                cellViews.put(e.getKey(), cv);
+            }
         }
         view.put("cells", cellViews);
         return view;

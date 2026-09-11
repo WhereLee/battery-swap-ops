@@ -1,6 +1,5 @@
 package com.swapops.sim.reporter;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.swapops.contract.DeviceSignature;
 import com.swapops.sim.config.SimProperties;
 import com.swapops.sim.config.TraceIds;
@@ -34,7 +33,6 @@ public class HttpEventReporter implements EventReporter {
     private static final int MAX_RETRY = 3;
 
     private final SimProperties properties;
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private final BlockingQueue<DeviceEventMessage> queue = new ArrayBlockingQueue<>(500);
     private final ExecutorService sender;
     private final RestTemplate restTemplate;
@@ -57,12 +55,18 @@ public class HttpEventReporter implements EventReporter {
 
     @Override
     public void report(DeviceEventMessage message) {
-        if (!queue.offer(message)) {
-            DeviceEventMessage dropped = queue.poll();
-            queue.offer(message);
-            log.error("[事件缓冲溢出-丢弃最旧] cabinetNo={} eventSeq={}", dropped == null ? "?" : dropped.cabinetNo(),
-                    dropped == null ? "?" : dropped.eventSeq());
+        if (queue.offer(message)) {
+            return;
         }
+        // 队列满：丢弃最旧为新事件腾位（S3 升级为队首持留；当前如实告警）
+        DeviceEventMessage dropped = queue.poll();
+        if (!queue.offer(message)) {
+            log.error("[事件缓冲溢出-丢弃新事件] cabinetNo={} eventSeq={}",
+                    message.cabinetNo(), message.eventSeq());
+            return;
+        }
+        log.error("[事件缓冲溢出-丢弃最旧] cabinetNo={} eventSeq={}",
+                dropped == null ? "?" : dropped.cabinetNo(), dropped == null ? "?" : dropped.eventSeq());
     }
 
     private void drainLoop() {

@@ -1,6 +1,7 @@
 package com.swapops.server.device.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.swapops.contract.CommandAction;
 import com.swapops.contract.CommandStatus;
@@ -8,9 +9,16 @@ import com.swapops.server.common.RRException;
 import com.swapops.server.device.config.SwapRedisKeys;
 import com.swapops.server.device.dao.CommandLogDao;
 import com.swapops.server.device.entity.CommandLogEntity;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 指令流水：Redis INCR 生成柜内单调 seq（跨重启持久）；状态跃迁全部 CAS（from 守卫），
@@ -20,12 +28,52 @@ import org.springframework.stereotype.Service;
 @Service
 public class CommandLogService {
 
+    /**
+     * 启动对齐脚本：GET 现值比对 DB MAX，仅当 key 缺失或现值更小时 SET——LUA 原子
+     */
+    private static final RedisScript<Long> ALIGN_SEQ_SCRIPT = new DefaultRedisScript<>(
+            "local cur = redis.call('GET', KEYS[1]) "
+                    + "if not cur or tonumber(cur) < tonumber(ARGV[1]) then "
+                    + "redis.call('SET', KEYS[1], ARGV[1]) "
+                    + "return 1 end "
+                    + "return 0",
+            Long.class);
+
     private final CommandLogDao commandLogDao;
     private final StringRedisTemplate stringRedisTemplate;
 
     public CommandLogService(CommandLogDao commandLogDao, StringRedisTemplate stringRedisTemplate) {
         this.commandLogDao = commandLogDao;
         this.stringRedisTemplate = stringRedisTemplate;
+    }
+
+    /**
+     * 启动播种/对齐：Redis 数据丢失/回退后 INCR 从 1 重来会撞 uk_cabinet_seq——
+     * 把每柜 seq 对齐为 max(Redis 现值, DB 历史最大值)，单调性跨 Redis 丢失仍成立（沿用范例）。
+     * 对齐失败不阻断启动（尽力恢复而非启动强依赖）。
+     */
+    @PostConstruct
+    public void seedSeqFromDb() {
+        try {
+            List<Map<String, Object>> rows = commandLogDao.selectMaps(new QueryWrapper<CommandLogEntity>()
+                    .select("cabinet_no", "MAX(command_seq) AS max_seq")
+                    .groupBy("cabinet_no"));
+            for (Map<String, Object> row : rows) {
+                Object cabinetNo = row.get("cabinet_no");
+                Object maxSeq = row.get("max_seq");
+                if (cabinetNo != null && maxSeq != null) {
+                    Long aligned = stringRedisTemplate.execute(ALIGN_SEQ_SCRIPT,
+                            Collections.singletonList(SwapRedisKeys.CMD_SEQ_PREFIX + cabinetNo),
+                            String.valueOf(maxSeq));
+                    if (aligned != null && aligned == 1L) {
+                        log.info("指令序号对齐 cabinetNo={} seq={}（DB 历史最大值；Redis 缺失或落后已校正）",
+                                cabinetNo, maxSeq);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("指令序号对齐失败（不阻断启动；Redis 数据丢失场景下首次下发可能撞唯一索引）", e);
+        }
     }
 
     /** 柜内单调指令序号（Redis INCR；不可用即快速失败——宁可不发也不发重） */

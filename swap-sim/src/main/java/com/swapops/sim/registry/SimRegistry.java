@@ -31,12 +31,15 @@ public class SimRegistry {
         this.reporter = reporter;
     }
 
+    private static final String SECRET_PATTERN = "^[0-9a-f]{32}$";
+
     @PostConstruct
     public void init() {
         int index = 0;
         for (SimProperties.CabinetCfg cfg : properties.getCabinets()) {
-            if (cfg.getSecret() == null || cfg.getSecret().isBlank()) {
-                throw new IllegalStateException("柜密钥未配置（经 SWAP_DEV_SECRET 环境变量注入）: " + cfg.getCabinetNo());
+            if (cfg.getSecret() == null || !cfg.getSecret().matches(SECRET_PATTERN)) {
+                throw new IllegalStateException(
+                        "柜密钥未配置或格式非法（须 32hex，经 SWAP_DEV_SECRET 注入）: " + cfg.getCabinetNo());
             }
             index++;
             cabinets.put(cfg.getCabinetNo(), new CabinetSim(cfg.getCabinetNo(), bootId, properties,

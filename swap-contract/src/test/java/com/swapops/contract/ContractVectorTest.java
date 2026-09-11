@@ -28,6 +28,8 @@ class ContractVectorTest {
                 .isEqualTo("SWAP-C-001|1");
         assertThat(DeviceSignature.canonicalCommand("SWAP-C-001", 3, 7L))
                 .isEqualTo("SWAP-C-001|3|7");
+        assertThat(DeviceSignature.canonicalQuery("SWAP-C-001"))
+                .isEqualTo("SWAP-C-001|QUERY|0");
     }
 
     @Test
@@ -39,6 +41,8 @@ class ContractVectorTest {
                 .isEqualTo("d0111f2a6a98ba22bed538c537353981c7340c3f5e08b62d620d9605c7a31263");
         assertThat(DeviceSignature.sign(SECRET, "SWAP-C-001|3|7"))
                 .isEqualTo("cb33dd8b834c32363b7935b4cb8ae8385b15641e8594acec6e9dc2aefed36152");
+        assertThat(DeviceSignature.sign(SECRET, "SWAP-C-001|QUERY|0"))
+                .isEqualTo("2478e9a62da7e6555f7e603d9076e4098d4936a7f3f31f63bda55697b31262ab");
     }
 
     @Test

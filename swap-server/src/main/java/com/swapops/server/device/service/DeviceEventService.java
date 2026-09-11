@@ -83,15 +83,19 @@ public class DeviceEventService {
             return false;
         }
 
-        // 3. 事件语义
-        apply(type, form);
+        // 3. 事件语义（柜档案一次加载，供仓定位与日志使用）
+        CabinetEntity cabinet = cabinetDao.selectOne(new LambdaQueryWrapper<CabinetEntity>()
+                .eq(CabinetEntity::getCabinetNo, cabinetNo));
+        if (cabinet == null) {
+            throw new RRException("未登记的柜事件: " + cabinetNo);
+        }
+        apply(type, form, cabinet);
         log.info("事件已受理 cabinetNo={} eventType={} cellNo={} batteryNo={} bootId={} eventSeq={}",
-                form.getCabinetNo(), type, form.getCellNo(), form.getBatteryNo(),
-                form.getBootId(), form.getEventSeq());
+                cabinetNo, type, form.getCellNo(), form.getBatteryNo(), bootId, eventSeq);
         return true;
     }
 
-    private void apply(EventType type, DeviceEventForm form) {
+    private void apply(EventType type, DeviceEventForm form, CabinetEntity cabinet) {
         switch (type) {
             case DOOR_OPENED -> {
                 log.info("门已开 cabinetNo={} cellNo={} commandSeq={}",
@@ -102,15 +106,24 @@ public class DeviceEventService {
                 }
             }
             case BATTERY_OUT -> {
-                CellEntity cell = requireCell(form);
+                CellEntity cell = requireCell(cabinet, form);
                 BatteryEntity battery = requireBattery(form);
+                if (cell.getBatteryId() != null && !cell.getBatteryId().equals(battery.getId())) {
+                    // 事件是唯一事实源：仍按事件执行，但台账不一致必须留痕（S3 对账的输入）
+                    log.warn("台账不一致：取出电池与仓内登记不符 cabinetNo={} cellNo={} 台账={} 事件={}",
+                            form.getCabinetNo(), form.getCellNo(), cell.getBatteryId(), battery.getId());
+                }
                 updateCell(cell.getId(), CellStatus.EMPTY, null);
                 detachBattery(battery.getId());
                 log.info("取电 cabinetNo={} cellNo={} batteryNo={}", form.getCabinetNo(), form.getCellNo(), form.getBatteryNo());
             }
             case BATTERY_IN -> {
-                CellEntity cell = requireCell(form);
+                CellEntity cell = requireCell(cabinet, form);
                 BatteryEntity battery = requireBattery(form);
+                if (cell.getBatteryId() != null && !cell.getBatteryId().equals(battery.getId())) {
+                    log.warn("台账不一致：还入电池覆盖了仓内登记 cabinetNo={} cellNo={} 原={} 新={}",
+                            form.getCabinetNo(), form.getCellNo(), cell.getBatteryId(), battery.getId());
+                }
                 updateCell(cell.getId(), CellStatus.OCCUPIED, battery.getId());
                 attachBattery(battery.getId(), cell.getId(), form.getSoc());
                 log.info("还电 cabinetNo={} cellNo={} batteryNo={} soc={}", form.getCabinetNo(), form.getCellNo(), form.getBatteryNo(), form.getSoc());
@@ -118,13 +131,22 @@ public class DeviceEventService {
             case SOC_REPORT -> {
                 BatteryEntity battery = requireBattery(form);
                 Integer soc = form.getSoc();
-                Integer status = (soc != null && soc >= properties.getSocFullThreshold())
-                        ? BatteryStatus.FULL.getCode() : BatteryStatus.CHARGING.getCode();
-                updateSoc(battery.getId(), soc, status);
-                log.info("电量上报 batteryNo={} soc={} -> status={}", form.getBatteryNo(), soc, status);
+                BatteryStatus current = BatteryStatus.fromCode(battery.getStatus());
+                if (current == BatteryStatus.LOANED || current == BatteryStatus.REPAIR
+                        || current == BatteryStatus.RETIRED) {
+                    // 借出/维修/退役电池不应因电量上报被改回在仓态：只更新电量，状态不动
+                    log.warn("非在仓电池上报电量，仅更新 soc 不改状态 batteryNo={} status={} soc={}",
+                            form.getBatteryNo(), current, soc);
+                    updateSoc(battery.getId(), soc, null);
+                } else {
+                    Integer status = (soc != null && soc >= properties.getSocFullThreshold())
+                            ? BatteryStatus.FULL.getCode() : BatteryStatus.CHARGING.getCode();
+                    updateSoc(battery.getId(), soc, status);
+                    log.info("电量上报 batteryNo={} soc={} -> status={}", form.getBatteryNo(), soc, status);
+                }
             }
             case CELL_FAULT -> {
-                CellEntity cell = requireCell(form);
+                CellEntity cell = requireCell(cabinet, form);
                 updateCell(cell.getId(), CellStatus.FAULT, cell.getBatteryId());
                 log.warn("仓位故障 cabinetNo={} cellNo={}", form.getCabinetNo(), form.getCellNo());
             }
@@ -135,12 +157,10 @@ public class DeviceEventService {
         }
     }
 
-    private CellEntity requireCell(DeviceEventForm form) {
+    private CellEntity requireCell(CabinetEntity cabinet, DeviceEventForm form) {
         if (form.getCellNo() == null) {
             throw new RRException("事件缺 cellNo: " + form.getEventType());
         }
-        CabinetEntity cabinet = cabinetDao.selectOne(new LambdaQueryWrapper<CabinetEntity>()
-                .eq(CabinetEntity::getCabinetNo, form.getCabinetNo()));
         CellEntity cell = cellDao.selectOne(new LambdaQueryWrapper<CellEntity>()
                 .eq(CellEntity::getCabinetId, cabinet.getId())
                 .eq(CellEntity::getCellNo, form.getCellNo()));
@@ -193,12 +213,14 @@ public class DeviceEventService {
         batteryDao.update(null, wrapper);
     }
 
-    /** 电量上报：更新时间与状态（充电中/满电） */
+    /** 电量上报：更新电量（status 为 null 时不动状态——非在仓电池只记电量） */
     private void updateSoc(Long batteryId, Integer soc, Integer status) {
         LambdaUpdateWrapper<BatteryEntity> wrapper = new LambdaUpdateWrapper<BatteryEntity>()
                 .eq(BatteryEntity::getId, batteryId)
-                .set(BatteryEntity::getStatus, status)
                 .set(BatteryEntity::getUpdateTime, System.currentTimeMillis());
+        if (status != null) {
+            wrapper.set(BatteryEntity::getStatus, status);
+        }
         if (soc != null) {
             wrapper.set(BatteryEntity::getSoc, soc);
         }

@@ -61,6 +61,14 @@ public final class DeviceSignature {
                 commandSeq == null ? "" : String.valueOf(commandSeq));
     }
 
+    /**
+     * 状态查询规范化串（S0.3 §2.4）：命令面同权鉴权，动作位固定 QUERY、seq 位固定 0
+     * （查询不是动作，不占用指令 seq——与范例 QUERY_STATE 语义一致）。
+     */
+    public static String canonicalQuery(String cabinetNo) {
+        return join(nz(cabinetNo), "QUERY", "0");
+    }
+
     private static String nz(String s) {
         return s == null ? "" : s;
     }

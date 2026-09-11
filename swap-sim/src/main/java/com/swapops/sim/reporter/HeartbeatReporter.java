@@ -1,6 +1,5 @@
 package com.swapops.sim.reporter;
 
-import com.swapops.contract.CabinetStatus;
 import com.swapops.contract.DeviceSignature;
 import com.swapops.sim.config.SimProperties;
 import com.swapops.sim.config.TraceIds;
@@ -75,7 +74,7 @@ public class HeartbeatReporter {
         MDC.put(TraceIds.MDC_KEY, traceId);
         try {
             String secret = properties.secretOf(cabinet.getCabinetNo());
-            int status = CabinetStatus.ONLINE.getCode();
+            int status = cabinet.reportStatus();
             Map<String, Object> body = Map.of("cabinetNo", cabinet.getCabinetNo(), "status", status);
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);

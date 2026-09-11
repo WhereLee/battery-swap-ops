@@ -1,11 +1,11 @@
 ﻿== S1 gate: open-cell loop ==
-13:53:28 health-server  UP
-13:53:28 health-sim     UP
-13:53:28 online=True lastEventSeq=1 cells=12
-13:53:28 open sent: commandSeq=3 traceId=70256ed92d49446a
-13:53:29 command status=2 (expect 2=ARRIVED)
-13:53:29 online cabinets=10/10 (expect 10)
-13:53:29 after lastEventSeq=2 lastBootId=195f888300ce4d4c8ac641ec27bb759b
-13:53:29 cell#1 status=2 batteryStatus=2 (door open does not change physical state)
-13:53:29 sequence advanced=True (bootId changed or eventSeq increased)
-13:53:29 GATE-1 PASS
+16:00:21 health-server  UP
+16:00:21 health-sim     UP
+16:00:22 online=True lastEventSeq=2 cells=12
+16:00:22 open sent: commandSeq=4 traceId=5c9a72f0dd5f43c2
+16:00:22 command status=2 (expect 2=ARRIVED)
+16:00:22 online cabinets=10/10 (expect 10)
+16:00:22 after lastEventSeq=1 lastBootId=e6bde1de7a8340a4a1e90b8861a5e676
+16:00:22 cell#1 status=2 batteryStatus=2 (door open does not change physical state)
+16:00:22 sequence advanced=True (bootId changed or eventSeq increased)
+16:00:22 GATE-1 PASS

@@ -75,6 +75,20 @@ class CabinetSimTest {
     }
 
     @Test
+    @DisplayName("心跳状态：无空仓上报 FULL(2)，出现空仓回落 ONLINE(1)")
+    void 心跳状态按空仓计算() {
+        SimProperties fullProps = new SimProperties();
+        fullProps.setCellsPerCabinet(3);
+        fullProps.setFullCells(3);
+        fullProps.setOpenDelayMillis(0);
+        CabinetSim full = new CabinetSim("SWAP-C-009", "boot-1", fullProps, mock(EventReporter.class), 0);
+
+        assertThat(full.reportStatus()).isEqualTo(2);
+        full.devTake(1, "t");
+        assertThat(full.reportStatus()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("取电/还电：先 BATTERY_OUT 后 BATTERY_IN，仓态可查询")
     void 取还电事件() {
         cabinet.devTake(1, "t1");

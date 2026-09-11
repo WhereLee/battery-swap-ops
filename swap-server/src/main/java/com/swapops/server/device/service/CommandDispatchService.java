@@ -63,8 +63,10 @@ public class CommandDispatchService {
             throw new RRException("柜密钥缺失，拒绝下发: " + cabinetNo);
         }
         long seq = commandLogService.nextSeq(cabinetNo);
+        // 链路号只取一次：流水与下行请求头必须同号（否则对账 grep 断链）
+        String traceId = TraceIdFilter.currentOrGenerate();
         CommandLogEntity cmdLog = commandLogService.recordPending(cabinetNo, CommandAction.OPEN_CELL,
-                seq, TraceIdFilter.currentOrGenerate());
+                seq, traceId);
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("cabinetNo", cabinetNo);
@@ -74,7 +76,7 @@ public class CommandDispatchService {
         headers.set(DEVICE_HEADER, cabinetNo);
         headers.set(SIGN_HEADER, DeviceSignature.sign(cabinet.getSecret(),
                 DeviceSignature.canonicalCommand(cabinetNo, cellNo, seq)));
-        headers.set(TraceIdFilter.TRACE_ID_HEADER, TraceIdFilter.currentOrGenerate());
+        headers.set(TraceIdFilter.TRACE_ID_HEADER, traceId);
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> resp = restTemplate.postForObject(properties.getSimBaseUrl() + CMD_PATH,

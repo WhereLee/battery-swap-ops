@@ -16,11 +16,19 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -91,5 +99,27 @@ class CommandLogServiceTest {
         service.markSendFailed(100L);
 
         verify(commandLogDao).update(isNull(), any());
+    }
+
+    @Test
+    @DisplayName("seedSeqFromDb：Redis 缺失/落后时按 DB 历史最大值对齐（LUA 原子）")
+    void seedSeq_db更高_对齐() {
+        Map<String, Object> row = new HashMap<>();
+        row.put("cabinet_no", "SWAP-C-001");
+        row.put("max_seq", 9L);
+        when(commandLogDao.selectMaps(any())).thenReturn(List.of(row));
+        when(stringRedisTemplate.execute(any(RedisScript.class), anyList(), eq("9"))).thenReturn(1L);
+
+        service.seedSeqFromDb();
+
+        verify(stringRedisTemplate).execute(any(RedisScript.class), anyList(), eq("9"));
+    }
+
+    @Test
+    @DisplayName("seedSeqFromDb：对齐失败不阻断启动（尽力恢复）")
+    void seedSeq_失败不阻断() {
+        when(commandLogDao.selectMaps(any())).thenThrow(new RuntimeException("db down"));
+
+        assertThatCode(() -> service.seedSeqFromDb()).doesNotThrowAnyException();
     }
 }

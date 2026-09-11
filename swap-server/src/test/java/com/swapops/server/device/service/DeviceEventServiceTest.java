@@ -1,7 +1,9 @@
 package com.swapops.server.device.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.swapops.contract.BatteryStatus;
 import com.swapops.contract.CommandAction;
 import com.swapops.contract.EventType;
 import com.swapops.server.common.RRException;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -97,6 +100,9 @@ class DeviceEventServiceTest {
     @DisplayName("DOOR_OPENED（携 commandSeq）：按 seq 精确销账指令流水")
     void 门开事件_销账指令() {
         when(cabinetDao.update(isNull(), any())).thenReturn(1);
+        CabinetEntity cabinet = new CabinetEntity();
+        cabinet.setId(1L);
+        when(cabinetDao.selectOne(any())).thenReturn(cabinet);
 
         boolean accepted = service.handle(form(EventType.DOOR_OPENED, 3, null,
                 "boot-1", 5L, 7L, null));
@@ -147,6 +153,49 @@ class DeviceEventServiceTest {
                 .isInstanceOf(RRException.class)
                 .hasMessageContaining("未知事件类型");
         verifyNoInteractions(cabinetDao);
+    }
+
+    @Test
+    @DisplayName("SOC_REPORT：借出电池只更新电量、不把状态改回在仓（防台账污染）")
+    void soc借出电池_不改状态() {
+        when(cabinetDao.update(isNull(), any())).thenReturn(1);
+        CabinetEntity cabinet = new CabinetEntity();
+        cabinet.setId(1L);
+        when(cabinetDao.selectOne(any())).thenReturn(cabinet);
+        BatteryEntity battery = new BatteryEntity();
+        battery.setId(21L);
+        battery.setStatus(BatteryStatus.LOANED.getCode());
+        when(batteryDao.selectOne(any())).thenReturn(battery);
+
+        service.handle(form(EventType.SOC_REPORT, 1, "BAT-0001", "boot-1", 7L, null, 55));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaUpdateWrapper<BatteryEntity>> captor =
+                ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(batteryDao).update(isNull(), captor.capture());
+        assertThat(captor.getValue().getSqlSet()).contains("soc").doesNotContain("status");
+    }
+
+    @Test
+    @DisplayName("SOC_REPORT：在仓电池达阈值转 FULL")
+    void soc在仓电池_满电转FULL() {
+        when(cabinetDao.update(isNull(), any())).thenReturn(1);
+        CabinetEntity cabinet = new CabinetEntity();
+        cabinet.setId(1L);
+        when(cabinetDao.selectOne(any())).thenReturn(cabinet);
+        BatteryEntity battery = new BatteryEntity();
+        battery.setId(21L);
+        battery.setStatus(BatteryStatus.CHARGING.getCode());
+        when(batteryDao.selectOne(any())).thenReturn(battery);
+        when(properties.getSocFullThreshold()).thenReturn(90);
+
+        service.handle(form(EventType.SOC_REPORT, 1, "BAT-0001", "boot-1", 7L, null, 95));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaUpdateWrapper<BatteryEntity>> captor =
+                ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(batteryDao).update(isNull(), captor.capture());
+        assertThat(captor.getValue().getSqlSet()).contains("status");
     }
 
     @Test

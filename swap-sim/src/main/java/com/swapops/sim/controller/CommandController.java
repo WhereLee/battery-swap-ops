@@ -57,7 +57,7 @@ public class CommandController {
             if (cabinetNo == null) {
                 return Map.of("code", 1, "msg", "缺 cabinetNo");
             }
-            authenticate(cabinetNo, null, null, signature);
+            authenticateQuery(cabinetNo, signature);
             CabinetSim cabinet = registry.get(cabinetNo);
             if (cabinet == null) {
                 return Map.of("code", 1, "msg", "柜不存在: " + cabinetNo);
@@ -106,6 +106,17 @@ public class CommandController {
         }
         String canonical = DeviceSignature.canonicalCommand(cabinetNo, cellNo, seq);
         if (!DeviceSignature.verify(secret, canonical, signature)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "平台签名无效: " + cabinetNo);
+        }
+    }
+
+    /** 查询验签（canonical = cabinetNo|QUERY|0，与 S0.3 §2.4 一致） */
+    private void authenticateQuery(String cabinetNo, String signature) {
+        String secret = properties.secretOf(cabinetNo);
+        if (secret == null || secret.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "柜未配置密钥: " + cabinetNo);
+        }
+        if (!DeviceSignature.verify(secret, DeviceSignature.canonicalQuery(cabinetNo), signature)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "平台签名无效: " + cabinetNo);
         }
     }
