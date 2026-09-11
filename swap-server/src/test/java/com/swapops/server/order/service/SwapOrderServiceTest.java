@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.swapops.contract.OrderStatus;
 import com.swapops.server.asset.dao.StationDao;
 import com.swapops.server.common.RRException;
+import com.swapops.server.common.id.SnowflakeIdGenerator;
 import com.swapops.server.config.BillingProperties;
 import com.swapops.server.device.dao.BatteryDao;
 import com.swapops.server.device.dao.CabinetDao;
@@ -30,6 +31,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -46,6 +49,7 @@ import static org.mockito.Mockito.when;
  */
 @DisplayName("换电订单服务")
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class SwapOrderServiceTest {
 
     @Mock
@@ -70,6 +74,8 @@ class SwapOrderServiceTest {
     private CommandDispatchService commandDispatchService;
     @Mock
     private OrderDelayService orderDelayService;
+    @Mock
+    private SnowflakeIdGenerator idGenerator;
 
     private SwapOrderService service;
 
@@ -83,9 +89,10 @@ class SwapOrderServiceTest {
 
     @BeforeEach
     void setUp() {
+        when(idGenerator.nextIdString()).thenReturn("123456");
         service = new SwapOrderService(orderDao, cabinetDao, cellDao, batteryDao, stationDao,
                 userAccountService, walletService, planService, allocationService,
-                commandDispatchService, new BillingProperties(), orderDelayService);
+                commandDispatchService, new BillingProperties(), orderDelayService, idGenerator);
     }
 
     private CreateOrderForm form(String type, String cabinetNo) {

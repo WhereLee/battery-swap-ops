@@ -59,6 +59,9 @@ public final class SwapRedisKeys {
     /** 定时任务最近成功时刻（看护） */
     public static final String JOB_LAST_PREFIX = "swap:job-last:";
 
+    /** Snowflake workerId 租约（SET NX + owner + TTL） */
+    public static final String ID_WORKER_PREFIX = "swap:id:worker:";
+
     private SwapRedisKeys() {
     }
 }

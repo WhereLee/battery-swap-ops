@@ -3,6 +3,7 @@ package com.swapops.server.order.service.pay;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.swapops.server.common.delay.DelayQueueService;
+import com.swapops.server.common.id.SnowflakeIdGenerator;
 import com.swapops.server.order.dao.PaymentRecordDao;
 import com.swapops.server.order.dao.RefundRecordDao;
 import com.swapops.server.order.entity.PaymentRecordEntity;
@@ -19,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.dao.DuplicateKeyException;
 
 import java.util.List;
@@ -40,6 +43,7 @@ import static org.mockito.Mockito.when;
  */
 @DisplayName("退款服务（幂等 + 补偿）")
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class RefundServiceTest {
 
     @Mock
@@ -52,6 +56,8 @@ class RefundServiceTest {
     private WalletService walletService;
     @Mock
     private DelayQueueService delayQueueService;
+    @Mock
+    private SnowflakeIdGenerator idGenerator;
 
     private RefundService service;
 
@@ -64,8 +70,9 @@ class RefundServiceTest {
 
     @BeforeEach
     void setUp() {
+        when(idGenerator.nextIdString()).thenReturn("123456");
         service = new RefundService(refundRecordDao, paymentRecordDao,
-                paymentRecordService, walletService, delayQueueService);
+                paymentRecordService, walletService, delayQueueService, idGenerator);
     }
 
     private RefundRecordEntity record(String status, int amountFen) {

@@ -3,6 +3,7 @@ package com.swapops.server.order.service.pay;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.swapops.server.common.RRException;
+import com.swapops.server.common.id.SnowflakeIdGenerator;
 import com.swapops.server.config.PayProperties;
 import com.swapops.server.order.dao.PayOrderDao;
 import com.swapops.server.order.entity.PayOrderEntity;
@@ -16,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * 充值支付单（S3.4）：创建 WAIT 单 → 网关回调 → CAS 命中才入账（幂等）。
@@ -33,15 +33,18 @@ public class PayOrderService {
     private final PaymentRecordService paymentRecordService;
     private final PaySignatureService paySignatureService;
     private final PayProperties payProperties;
+    private final SnowflakeIdGenerator idGenerator;
 
     public PayOrderService(PayOrderDao payOrderDao, WalletService walletService,
                            PaymentRecordService paymentRecordService,
-                           PaySignatureService paySignatureService, PayProperties payProperties) {
+                           PaySignatureService paySignatureService, PayProperties payProperties,
+                           SnowflakeIdGenerator idGenerator) {
         this.payOrderDao = payOrderDao;
         this.walletService = walletService;
         this.paymentRecordService = paymentRecordService;
         this.paySignatureService = paySignatureService;
         this.payProperties = payProperties;
+        this.idGenerator = idGenerator;
     }
 
     /** 创建充值单（WAIT） */
@@ -51,7 +54,7 @@ public class PayOrderService {
         }
         long now = System.currentTimeMillis();
         PayOrderEntity order = new PayOrderEntity();
-        order.setTradeNo("R" + now + UUID.randomUUID().toString().replace("-", "").substring(0, 6));
+        order.setTradeNo("R" + idGenerator.nextIdString());
         order.setUserId(userId);
         order.setAmountFen(amountFen);
         order.setPurpose("RECHARGE");

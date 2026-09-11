@@ -83,6 +83,13 @@ swap:
     stale-margin-seconds: 3600
     window-hours: 24
     sample-limit: 200
+  id:
+    # Snowflake（S3.8）：workerId 走 Redis 租约；-1=自动申请（0~31 第一个空闲）
+    datacenter-id: 1
+    worker-id: -1
+    worker-lease-seconds: 120
+    worker-renew-interval-ms: 30000
+    rollback-tolerance-millis: 5
   alarm:
     # 告警治理（S3.6）
     dedup-window-seconds: 300

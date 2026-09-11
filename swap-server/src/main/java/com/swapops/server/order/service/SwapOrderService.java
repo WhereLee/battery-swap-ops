@@ -7,6 +7,7 @@ import com.swapops.server.asset.dao.StationDao;
 import com.swapops.server.asset.entity.StationEntity;
 import com.swapops.server.common.RRException;
 import com.swapops.server.common.filter.TraceIdFilter;
+import com.swapops.server.common.id.SnowflakeIdGenerator;
 import com.swapops.server.common.utils.StringUtils;
 import com.swapops.server.config.BillingProperties;
 import com.swapops.server.device.dao.BatteryDao;
@@ -36,7 +37,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * 换电订单：下单（资格校验 + 幂等 + 分配预占）、开仓下发（事务外补偿）、取消、超时关闭、视图。
@@ -64,13 +64,14 @@ public class SwapOrderService {
     private final CommandDispatchService commandDispatchService;
     private final BillingProperties billingProperties;
     private final OrderDelayService orderDelayService;
+    private final SnowflakeIdGenerator idGenerator;
 
     public SwapOrderService(SwapOrderDao orderDao, CabinetDao cabinetDao, CellDao cellDao,
                             BatteryDao batteryDao, StationDao stationDao,
                             UserAccountService userAccountService, WalletService walletService,
                             PlanService planService, AllocationService allocationService,
                             CommandDispatchService commandDispatchService, BillingProperties billingProperties,
-                            OrderDelayService orderDelayService) {
+                            OrderDelayService orderDelayService, SnowflakeIdGenerator idGenerator) {
         this.orderDao = orderDao;
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
@@ -83,6 +84,7 @@ public class SwapOrderService {
         this.commandDispatchService = commandDispatchService;
         this.billingProperties = billingProperties;
         this.orderDelayService = orderDelayService;
+        this.idGenerator = idGenerator;
     }
 
     /**
@@ -400,7 +402,7 @@ public class SwapOrderService {
     }
 
     private String generateOrderNo() {
-        return "SW" + System.currentTimeMillis() + UUID.randomUUID().toString().replace("-", "").substring(0, 6);
+        return "SW" + idGenerator.nextIdString();
     }
 
     private boolean isTerminal(Integer status) {

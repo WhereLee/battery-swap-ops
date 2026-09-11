@@ -2,6 +2,7 @@ package com.swapops.server.order.service.pay;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.swapops.server.common.id.SnowflakeIdGenerator;
 import com.swapops.server.config.PayProperties;
 import com.swapops.server.order.dao.PayOrderDao;
 import com.swapops.server.order.entity.PayOrderEntity;
@@ -42,6 +43,8 @@ class PayOrderServiceTest {
     private PaymentRecordService paymentRecordService;
     @Mock
     private PaySignatureService paySignatureService;
+    @Mock
+    private SnowflakeIdGenerator idGenerator;
 
     private PayProperties payProperties;
     private PayOrderService service;
@@ -57,7 +60,7 @@ class PayOrderServiceTest {
         payProperties = new PayProperties();
         payProperties.setSecret("0123456789abcdef0123456789abcdef");
         service = new PayOrderService(payOrderDao, walletService, paymentRecordService,
-                paySignatureService, payProperties);
+                paySignatureService, payProperties, idGenerator);
     }
 
     private PayOrderEntity order(String tradeNo, String status, int amountFen) {
@@ -77,6 +80,7 @@ class PayOrderServiceTest {
     @Test
     @DisplayName("创建充值单：WAIT + 金额校验 + 视图含支付地址")
     void 创建充值单() {
+        when(idGenerator.nextIdString()).thenReturn("123456");
         PayOrderEntity created = service.createRecharge(7L, 1000);
 
         assertThat(created.getStatus()).isEqualTo(PayOrderStatus.WAIT.name());

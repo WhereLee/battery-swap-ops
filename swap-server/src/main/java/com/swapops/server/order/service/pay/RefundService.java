@@ -2,6 +2,7 @@ package com.swapops.server.order.service.pay;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.swapops.server.common.delay.DelayQueueService;
+import com.swapops.server.common.id.SnowflakeIdGenerator;
 import com.swapops.server.order.dao.RefundRecordDao;
 import com.swapops.server.order.entity.PaymentRecordEntity;
 import com.swapops.server.order.entity.RefundRecordEntity;
@@ -16,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 
 /**
  * 退款服务（S3.4）：幂等闸 = unique(order_id, reason) + CAS WAIT→SUCCESS。
@@ -39,16 +39,18 @@ public class RefundService {
     private final PaymentRecordService paymentRecordService;
     private final WalletService walletService;
     private final DelayQueueService delayQueueService;
+    private final SnowflakeIdGenerator idGenerator;
 
     public RefundService(RefundRecordDao refundRecordDao,
                          com.swapops.server.order.dao.PaymentRecordDao paymentRecordDao,
                          PaymentRecordService paymentRecordService, WalletService walletService,
-                         DelayQueueService delayQueueService) {
+                         DelayQueueService delayQueueService, SnowflakeIdGenerator idGenerator) {
         this.refundRecordDao = refundRecordDao;
         this.paymentRecordDao = paymentRecordDao;
         this.paymentRecordService = paymentRecordService;
         this.walletService = walletService;
         this.delayQueueService = delayQueueService;
+        this.idGenerator = idGenerator;
     }
 
     /**
@@ -62,7 +64,7 @@ public class RefundService {
         }
         long now = System.currentTimeMillis();
         RefundRecordEntity record = new RefundRecordEntity();
-        record.setRefundNo("RF" + now + UUID.randomUUID().toString().replace("-", "").substring(0, 6));
+        record.setRefundNo("RF" + idGenerator.nextIdString());
         record.setOrderId(orderId);
         record.setUserId(userId);
         record.setAmountFen(amountFen);
