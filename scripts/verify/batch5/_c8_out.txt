@@ -1,0 +1,10 @@
+﻿== S4.5 gate: dashboard ==
+07:24:38 overview#1 full=59/60 rate=0.9833 stations=1/1 turnover=0.0167 generatedAt=1789169078529
+07:24:38 PASS fullBatteries <= totalBatteries
+07:24:38 PASS fullBatteryRate in [0,1]
+07:24:38 PASS stationAvailabilityRate in [0,1]
+07:24:38 PASS turnoverRate >= 0
+07:24:40 PASS second read served from cache (same generatedAt)
+07:24:40 dashboard rebuild count before=0 after=1
+07:24:40 PASS exactly one rebuild across two reads
+07:24:40 GATE-DASHBOARD PASS

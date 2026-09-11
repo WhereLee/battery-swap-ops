@@ -11,6 +11,9 @@ public final class CacheKeys {
     /** 运营中站点元数据列表（不含实时可换/可还计数） */
     public static final String STATION_ACTIVE_LIST = "station:active:list";
 
+    /** 运营看板总览（S4.5；短 TTL 聚合） */
+    public static final String DASHBOARD_OVERVIEW = "dashboard:overview";
+
     private CacheKeys() {
     }
 

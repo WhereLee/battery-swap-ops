@@ -67,16 +67,25 @@ public class TwoLevelCacheService {
 
     /** 单对象缓存读（类型化） */
     public <T> T getEntity(String key, Class<T> type, Supplier<T> loader) {
-        return get(key, objectMapper.getTypeFactory().constructType(type), loader);
+        return getEntity(key, type, loader, null);
+    }
+
+    /**
+     * 单对象缓存读（L2 TTL 覆盖，S4.5 看板用：短 TTL 聚合与长 TTL 字典共存）：
+     *
+     * @param l2TtlSecondsOverride null=用全局默认；否则该 key 的 L2 TTL（仍带抖动）
+     */
+    public <T> T getEntity(String key, Class<T> type, Supplier<T> loader, Integer l2TtlSecondsOverride) {
+        return get(key, objectMapper.getTypeFactory().constructType(type), loader, l2TtlSecondsOverride);
     }
 
     /** 列表缓存读（类型化元素） */
     public <T> List<T> getList(String key, Class<T> elementType, Supplier<List<T>> loader) {
-        return get(key, objectMapper.getTypeFactory().constructCollectionType(List.class, elementType), loader);
+        return get(key, objectMapper.getTypeFactory().constructCollectionType(List.class, elementType), loader, null);
     }
 
     @SuppressWarnings("unchecked")
-    private <T> T get(String key, JavaType type, Supplier<T> loader) {
+    private <T> T get(String key, JavaType type, Supplier<T> loader, Integer l2TtlOverrideSeconds) {
         if (!properties.isEnabled()) {
             return loader.get();
         }
@@ -92,11 +101,11 @@ public class TwoLevelCacheService {
             l2Hits.increment();
             return value;
         }
-        return rebuild(key, type, loader);
+        return rebuild(key, type, loader, l2TtlOverrideSeconds);
     }
 
     @SuppressWarnings("unchecked")
-    private <T> T rebuild(String key, JavaType type, Supplier<T> loader) {
+    private <T> T rebuild(String key, JavaType type, Supplier<T> loader, Integer l2TtlOverrideSeconds) {
         Object lock = localLocks.computeIfAbsent(key, k -> new Object());
         synchronized (lock) {
             // 双检：等锁期间可能已被同进程线程重建
@@ -126,19 +135,19 @@ public class TwoLevelCacheService {
             } else {
                 try {
                     log.info("[cache] rebuild key={} (L1 miss, L2 miss)", key);
-                    return loadAndCache(key, type, loader);
+                    return loadAndCache(key, type, loader, l2TtlOverrideSeconds);
                 } finally {
                     releaseRebuildLock(key);
                 }
             }
-            return loadAndCache(key, type, loader);
+            return loadAndCache(key, type, loader, l2TtlOverrideSeconds);
         }
     }
 
-    private <T> T loadAndCache(String key, JavaType type, Supplier<T> loader) {
+    private <T> T loadAndCache(String key, JavaType type, Supplier<T> loader, Integer l2TtlOverrideSeconds) {
         T value = loader.get();
         localCache.put(key, value);
-        l2Set(key, value, type);
+        l2Set(key, value, type, l2TtlOverrideSeconds);
         rebuildsByKey.computeIfAbsent(key, k -> new LongAdder()).increment();
         return value;
     }
@@ -204,8 +213,9 @@ public class TwoLevelCacheService {
         }
     }
 
-    private void l2Set(String key, Object value, JavaType type) {
-        int ttlSeconds = value == null ? properties.getNullTtlSeconds() : jitteredL2TtlSeconds();
+    private void l2Set(String key, Object value, JavaType type, Integer l2TtlOverrideSeconds) {
+        int ttlSeconds = value == null ? properties.getNullTtlSeconds()
+                : jitteredL2TtlSeconds(l2TtlOverrideSeconds);
         try {
             String json = objectMapper.writerFor(type).writeValueAsString(value);
             redis.opsForValue().set(CacheKeys.l2Key(key), json, Duration.ofSeconds(ttlSeconds));
@@ -214,8 +224,9 @@ public class TwoLevelCacheService {
         }
     }
 
-    private int jitteredL2TtlSeconds() {
-        int base = properties.getL2TtlSeconds();
+    private int jitteredL2TtlSeconds(Integer overrideSeconds) {
+        int base = overrideSeconds != null && overrideSeconds > 0
+                ? overrideSeconds : properties.getL2TtlSeconds();
         int jitter = Math.max(0, base * properties.getTtlJitterPercent() / 100);
         return base + (jitter == 0 ? 0 : ThreadLocalRandom.current().nextInt(jitter + 1));
     }
