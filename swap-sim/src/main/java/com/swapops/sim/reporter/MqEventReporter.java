@@ -55,6 +55,7 @@ public class MqEventReporter implements EventReporter {
     /** 运行标志（关闭后拒收新事件；在途重试退出，剩余队列尽力补发） */
     private volatile boolean running = true;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public MqEventReporter(SimProperties properties) {
         this(properties, null);
     }
