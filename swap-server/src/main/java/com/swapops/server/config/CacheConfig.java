@@ -1,6 +1,7 @@
 package com.swapops.server.config;
 
 import com.swapops.server.common.cache.LocalCacheInvalidator;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -14,6 +15,8 @@ import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 public class CacheConfig {
 
     @Bean
+    @ConditionalOnProperty(prefix = "swap.cache", name = "listener-enabled",
+            havingValue = "true", matchIfMissing = true)
     public RedisMessageListenerContainer cacheInvalidateListenerContainer(
             RedisConnectionFactory connectionFactory, LocalCacheInvalidator invalidator,
             CacheProperties properties) {

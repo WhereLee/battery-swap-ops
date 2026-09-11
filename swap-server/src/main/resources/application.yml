@@ -4,6 +4,13 @@ server:
     context-path: /api
   # S3.8：优雅停机——停止接收新请求，等待在途请求/调度任务收尾（预算 30s）
   shutdown: graceful
+  tomcat:
+    # S3.8 WP4：Tomcat 线程 100（有界），与应用池(16)/DB 池(20) 形成递减基线
+    threads:
+      max: 100
+      min-spare: 10
+    accept-count: 100
+    max-connections: 2000
 
 spring:
   application:
@@ -12,6 +19,9 @@ spring:
     timeout-per-shutdown-phase: 30s
   task:
     scheduling:
+      # S3.8 WP4：多个 @Scheduled（对账/扫描/看护/补偿）共用调度池——单线程会互相阻塞
+      pool:
+        size: 4
       shutdown:
         # 定时任务（对账/扫描/中继）停机等待收尾，避免半执行
         await-termination: true
@@ -21,6 +31,16 @@ spring:
     url: jdbc:mysql://127.0.0.1:3306/swap_ops?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true
     username: root
     password: root
+    hikari:
+      # S3.8 WP4：连接池基线——拿不到连接 2s 快速失败（不无限排队），泄漏 20s 打点
+      pool-name: swap-hikari
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 2000
+      validation-timeout: 1000
+      idle-timeout: 600000
+      max-lifetime: 1700000
+      leak-detection-threshold: 20000
   data:
     redis:
       host: 127.0.0.1

@@ -42,4 +42,7 @@ public class CacheProperties {
 
     /** 延迟双删毫秒（防"旧值读回填"竞态；二删只删 L2，不再广播 L1） */
     private long delayedEvictMillis = 500;
+
+    /** 失效广播监听容器开关（单测/无 Redis 环境关闭；生产必须开启） */
+    private boolean listenerEnabled = true;
 }
