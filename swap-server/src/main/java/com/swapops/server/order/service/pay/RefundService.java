@@ -3,6 +3,7 @@ package com.swapops.server.order.service.pay;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.swapops.server.common.delay.DelayQueueService;
 import com.swapops.server.common.id.SnowflakeIdGenerator;
+import com.swapops.server.common.retry.DeadlockRetryExecutor;
 import com.swapops.server.order.dao.RefundRecordDao;
 import com.swapops.server.order.entity.PaymentRecordEntity;
 import com.swapops.server.order.entity.RefundRecordEntity;
@@ -40,17 +41,20 @@ public class RefundService {
     private final WalletService walletService;
     private final DelayQueueService delayQueueService;
     private final SnowflakeIdGenerator idGenerator;
+    private final DeadlockRetryExecutor deadlockRetryExecutor;
 
     public RefundService(RefundRecordDao refundRecordDao,
                          com.swapops.server.order.dao.PaymentRecordDao paymentRecordDao,
                          PaymentRecordService paymentRecordService, WalletService walletService,
-                         DelayQueueService delayQueueService, SnowflakeIdGenerator idGenerator) {
+                         DelayQueueService delayQueueService, SnowflakeIdGenerator idGenerator,
+                         DeadlockRetryExecutor deadlockRetryExecutor) {
         this.refundRecordDao = refundRecordDao;
         this.paymentRecordDao = paymentRecordDao;
         this.paymentRecordService = paymentRecordService;
         this.walletService = walletService;
         this.delayQueueService = delayQueueService;
         this.idGenerator = idGenerator;
+        this.deadlockRetryExecutor = deadlockRetryExecutor;
     }
 
     /**
@@ -58,6 +62,11 @@ public class RefundService {
      * 执行异常不抛出：记日志 + 延迟重投（补偿任务/人工可反复触达）。
      */
     public RefundRecordEntity refund(Long orderId, Long userId, int amountFen, String reason) {
+        // 死锁重试（插入/流水更新可能与其他补偿并发触发 1213；动作本身幂等，重试安全）
+        return deadlockRetryExecutor.execute(() -> doRefund(orderId, userId, amountFen, reason));
+    }
+
+    private RefundRecordEntity doRefund(Long orderId, Long userId, int amountFen, String reason) {
         RefundRecordEntity existing = findByOrderReason(orderId, reason);
         if (existing != null) {
             return existing;

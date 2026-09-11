@@ -72,7 +72,8 @@ class RefundServiceTest {
     void setUp() {
         when(idGenerator.nextIdString()).thenReturn("123456");
         service = new RefundService(refundRecordDao, paymentRecordDao,
-                paymentRecordService, walletService, delayQueueService, idGenerator);
+                paymentRecordService, walletService, delayQueueService, idGenerator,
+                new com.swapops.server.common.retry.DeadlockRetryExecutor());
     }
 
     private RefundRecordEntity record(String status, int amountFen) {

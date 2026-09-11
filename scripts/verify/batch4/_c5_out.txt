@@ -1,0 +1,8 @@
+﻿== S3.8 gate: MySQL deadlock ==
+02:13:30 opposite order: sessionA_deadlock=False sessionB_deadlock=True
+02:13:30 PASS deadlock reproduced (one session rolled back with 1213)
+02:13:36 consistent order: sessionC_deadlock=False sessionD_deadlock=False
+02:13:36 PASS consistent order: no deadlock
+02:13:37 innodb status contains LATEST DETECTED DEADLOCK: True
+02:13:37 PASS InnoDB deadlock log present
+02:13:37 GATE-DEADLOCK PASS
