@@ -123,6 +123,88 @@ class PlanServiceTest {
                 .hasMessageContaining("下架");
     }
 
+    private com.swapops.server.user.form.PlanAdminForm form(String type, Integer price,
+                                                           Integer totalTimes, Integer durationDays) {
+        com.swapops.server.user.form.PlanAdminForm form = new com.swapops.server.user.form.PlanAdminForm();
+        form.setName("管理端套餐");
+        form.setPlanType(type);
+        form.setPriceFen(price);
+        form.setTotalTimes(totalTimes);
+        form.setDurationDays(durationDays);
+        return form;
+    }
+
+    @Test
+    @DisplayName("管理端创建：落库 + 目录缓存失效")
+    void 管理端创建() {
+        when(planDao.insert(any(PlanEntity.class))).thenAnswer(inv -> {
+            inv.getArgument(0, PlanEntity.class).setId(200L);
+            return 1;
+        });
+
+        PlanEntity created = service.createPlan(form("TIMES", 100, 5, null));
+
+        assertThat(created.getId()).isEqualTo(200L);
+        assertThat(created.getStatus()).isEqualTo(1);
+        assertThat(created.getTotalTimes()).isEqualTo(5);
+        assertThat(created.getDurationDays()).isNull();
+        verify(cache).evict(com.swapops.server.common.cache.CacheKeys.PLAN_ACTIVE_LIST);
+    }
+
+    @Test
+    @DisplayName("管理端创建校验：TIMES 缺次数 / MONTHLY 缺天数 / 名称为空均拒绝")
+    void 管理端创建校验() {
+        assertThatThrownBy(() -> service.createPlan(form("TIMES", 100, null, null)))
+                .isInstanceOf(RRException.class).hasMessageContaining("总次数");
+        assertThatThrownBy(() -> service.createPlan(form("MONTHLY", 100, null, null)))
+                .isInstanceOf(RRException.class).hasMessageContaining("有效天数");
+        com.swapops.server.user.form.PlanAdminForm blank = form("TIMES", 100, 5, null);
+        blank.setName(" ");
+        assertThatThrownBy(() -> service.createPlan(blank))
+                .isInstanceOf(RRException.class).hasMessageContaining("名称");
+        assertThatThrownBy(() -> service.createPlan(form("DAILY", 100, 5, null)))
+                .isInstanceOf(RRException.class).hasMessageContaining("类型非法");
+    }
+
+    @Test
+    @DisplayName("管理端更新：全字段替换 + 缓存失效")
+    void 管理端更新() {
+        when(planDao.selectById(100L)).thenReturn(plan());
+        when(planDao.updateById(any(PlanEntity.class))).thenReturn(1);
+
+        service.updatePlan(100L, form("MONTHLY", 9900, null, 30));
+
+        verify(planDao).updateById(any(PlanEntity.class));
+        verify(cache).evict(com.swapops.server.common.cache.CacheKeys.PLAN_ACTIVE_LIST);
+    }
+
+    @Test
+    @DisplayName("管理端上下架：非法状态拒绝；合法变更失效缓存")
+    void 管理端上下架() {
+        assertThatThrownBy(() -> service.changePlanStatus(100L, 3))
+                .isInstanceOf(RRException.class).hasMessageContaining("状态");
+
+        when(planDao.selectById(100L)).thenReturn(plan());
+        when(planDao.updateById(any(PlanEntity.class))).thenReturn(1);
+        service.changePlanStatus(100L, 2);
+        verify(cache).evict(com.swapops.server.common.cache.CacheKeys.PLAN_ACTIVE_LIST);
+    }
+
+    @Test
+    @DisplayName("管理端删除：已购买拒绝；未购买删除 + 缓存失效")
+    void 管理端删除() {
+        when(planDao.selectById(100L)).thenReturn(plan());
+        when(userPlanDao.selectCount(any())).thenReturn(3L);
+        assertThatThrownBy(() -> service.deletePlan(100L))
+                .isInstanceOf(RRException.class).hasMessageContaining("已被购买");
+
+        when(userPlanDao.selectCount(any())).thenReturn(0L);
+        when(planDao.deleteById(100L)).thenReturn(1);
+        service.deletePlan(100L);
+        verify(planDao).deleteById(100L);
+        verify(cache).evict(com.swapops.server.common.cache.CacheKeys.PLAN_ACTIVE_LIST);
+    }
+
     @Test
     @DisplayName("次卡扣次：CAS 命中=成功，扣穿=失败")
     void 扣次CAS() {
