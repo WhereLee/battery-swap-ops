@@ -14,6 +14,7 @@ import com.swapops.server.device.dao.CommandLogDao;
 import com.swapops.server.device.entity.BatteryEntity;
 import com.swapops.server.device.entity.CellEntity;
 import com.swapops.server.device.entity.CommandLogEntity;
+import com.swapops.server.device.service.BatteryCycleService;
 import com.swapops.server.order.dao.PaymentRecordDao;
 import com.swapops.server.order.dao.SwapOrderDao;
 import com.swapops.server.order.entity.PaymentRecordEntity;
@@ -55,6 +56,7 @@ public class ReconcileService {
     private final BillingProperties billingProperties;
     private final DeviceChannelProperties deviceProperties;
     private final AlarmService alarmService;
+    private final BatteryCycleService batteryCycleService;
     private final long staleMarginSeconds;
     private final int windowHours;
     private final int sampleLimit;
@@ -62,7 +64,7 @@ public class ReconcileService {
     public ReconcileService(SwapOrderDao orderDao, BatteryDao batteryDao, CellDao cellDao,
                             PaymentRecordDao paymentRecordDao, CommandLogDao commandLogDao,
                             BillingProperties billingProperties, DeviceChannelProperties deviceProperties,
-                            AlarmService alarmService,
+                            AlarmService alarmService, BatteryCycleService batteryCycleService,
                             @Value("${swap.reconcile.stale-margin-seconds:3600}") long staleMarginSeconds,
                             @Value("${swap.reconcile.window-hours:24}") int windowHours,
                             @Value("${swap.reconcile.sample-limit:200}") int sampleLimit) {
@@ -74,6 +76,7 @@ public class ReconcileService {
         this.billingProperties = billingProperties;
         this.deviceProperties = deviceProperties;
         this.alarmService = alarmService;
+        this.batteryCycleService = batteryCycleService;
         this.staleMarginSeconds = staleMarginSeconds;
         this.windowHours = windowHours;
         this.sampleLimit = sampleLimit;
@@ -116,7 +119,8 @@ public class ReconcileService {
                 checkCompletedHasPayment(),
                 checkHolderConsistency(),
                 checkAgingCommands(),
-                checkEscapedBatteries());
+                checkEscapedBatteries(),
+                checkBatteryCounters());
         ReconcileReport report = new ReconcileReport(start, System.currentTimeMillis() - start, checks);
         if (report.totalViolations() > 0) {
             alarmService.raise(AlarmService.DEVICE_SYSTEM, "daily-reconcile", AlarmType.RECONCILE_ERROR,
@@ -267,6 +271,30 @@ public class ReconcileService {
                     + " status=LOANED holder=null cell=null updateTime=" + battery.getUpdateTime());
         }
         return new CheckResult("escaped-batteries", escaped.size(), samples);
+    }
+
+    /** ⑦ 电池计数与流水一致（S4.1）：计数器是派生值，流水是事实；不一致=计漏/计重或人工改动未留痕 */
+    protected CheckResult checkBatteryCounters() {
+        List<BatteryEntity> batteries = batteryDao.selectList(new LambdaQueryWrapper<BatteryEntity>()
+                .and(w -> w.gt(BatteryEntity::getSwaps, 0).or().gt(BatteryEntity::getCycleCount, 0))
+                .last("LIMIT " + sampleLimit));
+        List<String> samples = new ArrayList<>();
+        int violations = 0;
+        for (BatteryEntity battery : batteries) {
+            long outLogs = batteryCycleService.countByAction(battery.getBatteryNo(),
+                    BatteryCycleService.ACTION_OUT);
+            long inLogs = batteryCycleService.countByAction(battery.getBatteryNo(),
+                    BatteryCycleService.ACTION_IN);
+            int swaps = battery.getSwaps() == null ? 0 : battery.getSwaps();
+            int cycles = battery.getCycleCount() == null ? 0 : battery.getCycleCount();
+            if (swaps != outLogs || cycles != inLogs) {
+                violations++;
+                addSample(samples, "counter-mismatch: " + battery.getBatteryNo()
+                        + " swaps=" + swaps + "/logs=" + outLogs
+                        + " cycles=" + cycles + "/logs=" + inLogs);
+            }
+        }
+        return new CheckResult("battery-counters", violations, samples);
     }
 
     /** ⑤ 指令无超龄 PENDING（正常应被对账/重试收敛） */

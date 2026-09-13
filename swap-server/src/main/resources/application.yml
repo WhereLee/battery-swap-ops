@@ -144,6 +144,12 @@ swap:
     worker-lease-seconds: 120
     worker-renew-interval-ms: 30000
     rollback-tolerance-millis: 5
+  battery:
+    # S4.1 电池健康：SOH 告警阈值/扫描间隔（联调可缩短）
+    soh-warn-threshold: 80
+    soh-good-threshold: 90
+    soh-fair-threshold: 80
+    scan-interval-ms: 3600000
   workorder:
     # S4.4 工单 SLA（分钟，按严重级；联调可缩短）
     sla-minutes-high: 30

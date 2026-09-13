@@ -25,5 +25,7 @@ public enum AlarmType {
     /** outbox 投递失败超限/无发布器（S3.8 WP6） */
     OUTBOX_DEAD,
     /** 工单 SLA 超时（S4.4） */
-    WORK_ORDER_SLA_BREACH
+    WORK_ORDER_SLA_BREACH,
+    /** 电池健康度低于阈值（S4.1） */
+    BATTERY_HEALTH_LOW
 }

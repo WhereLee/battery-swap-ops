@@ -28,6 +28,9 @@ public class BatteryEntity {
 
     private Integer cycleCount;
 
+    /** 取出次数（换电服务次数，S4.1；来源 BATTERY_OUT 事件，流水可审计） */
+    private Integer swaps;
+
     private Long cellId;
 
     private Long holderUserId;

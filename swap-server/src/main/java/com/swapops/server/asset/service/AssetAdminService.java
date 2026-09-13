@@ -17,7 +17,9 @@ import com.swapops.server.common.cache.CacheKeys;
 import com.swapops.server.common.cache.TwoLevelCacheService;
 import com.swapops.server.common.utils.PageParams;
 import com.swapops.server.common.utils.PageResult;
+import com.swapops.server.config.BatteryHealthProperties;
 import com.swapops.server.device.config.DeviceChannelProperties;
+import com.swapops.server.device.service.BatteryCycleService;
 import com.swapops.server.device.dao.BatteryDao;
 import com.swapops.server.device.dao.CabinetDao;
 import com.swapops.server.device.dao.CellDao;
@@ -64,11 +66,15 @@ public class AssetAdminService {
     private final TwoLevelCacheService cache;
     private final SwapOrderDao orderDao;
     private final DeviceChannelProperties properties;
+    private final BatteryCycleService batteryCycleService;
+    private final BatteryHealthProperties batteryHealthProperties;
 
     public AssetAdminService(StationDao stationDao, CabinetDao cabinetDao, CellDao cellDao,
                              BatteryDao batteryDao, MonitorService monitorService,
                              AllocationService allocationService, TwoLevelCacheService cache,
-                             SwapOrderDao orderDao, DeviceChannelProperties properties) {
+                             SwapOrderDao orderDao, DeviceChannelProperties properties,
+                             BatteryCycleService batteryCycleService,
+                             BatteryHealthProperties batteryHealthProperties) {
         this.stationDao = stationDao;
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
@@ -78,6 +84,34 @@ public class AssetAdminService {
         this.cache = cache;
         this.orderDao = orderDao;
         this.properties = properties;
+        this.batteryCycleService = batteryCycleService;
+        this.batteryHealthProperties = batteryHealthProperties;
+    }
+
+    /** 电池健康档案（S4.1）：计数/分级/最近循环流水（可审计） */
+    public Map<String, Object> batteryHealth(String batteryNo) {
+        BatteryEntity battery = batteryDao.selectOne(new LambdaQueryWrapper<BatteryEntity>()
+                .eq(BatteryEntity::getBatteryNo, batteryNo));
+        if (battery == null) {
+            throw new RRException("电池不存在: " + batteryNo);
+        }
+        int soh = battery.getSoh() == null ? 100 : battery.getSoh();
+        String level = soh >= batteryHealthProperties.getSohGoodThreshold() ? "GOOD"
+                : soh >= batteryHealthProperties.getSohFairThreshold() ? "FAIR" : "POOR";
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("batteryNo", battery.getBatteryNo());
+        view.put("model", battery.getModel());
+        view.put("status", battery.getStatus());
+        view.put("soc", battery.getSoc());
+        view.put("soh", soh);
+        view.put("healthLevel", level);
+        view.put("cycleCount", battery.getCycleCount() == null ? 0 : battery.getCycleCount());
+        view.put("swaps", battery.getSwaps() == null ? 0 : battery.getSwaps());
+        view.put("cellId", battery.getCellId());
+        view.put("holderUserId", battery.getHolderUserId());
+        view.put("sohWarnThreshold", batteryHealthProperties.getSohWarnThreshold());
+        view.put("recentCycles", batteryCycleService.recentLogs(batteryNo, 20));
+        return view;
     }
 
     // ---------- 站点登记（S4.5 批二） ----------

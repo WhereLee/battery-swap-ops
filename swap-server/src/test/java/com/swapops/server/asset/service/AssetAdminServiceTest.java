@@ -69,6 +69,8 @@ class AssetAdminServiceTest {
     private TwoLevelCacheService cache;
     @Mock
     private SwapOrderDao orderDao;
+    @Mock
+    private com.swapops.server.device.service.BatteryCycleService batteryCycleService;
 
     private AssetAdminService service;
 
@@ -85,7 +87,8 @@ class AssetAdminServiceTest {
     @BeforeEach
     void setUp() {
         service = new AssetAdminService(stationDao, cabinetDao, cellDao, batteryDao, monitorService,
-                allocationService, cache, orderDao, new DeviceChannelProperties());
+                allocationService, cache, orderDao, new DeviceChannelProperties(),
+                batteryCycleService, new com.swapops.server.config.BatteryHealthProperties());
     }
 
     private StationEntity station() {

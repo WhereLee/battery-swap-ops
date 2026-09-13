@@ -42,11 +42,13 @@ public class DeviceEventService {
     private final OrderEventService orderEventService;
     private final DeviceBootGenerationGuard bootGenerationGuard;
     private final AlarmService alarmService;
+    private final BatteryCycleService batteryCycleService;
 
     public DeviceEventService(CabinetDao cabinetDao, CellDao cellDao, BatteryDao batteryDao,
                               CommandLogService commandLogService, DeviceChannelProperties properties,
                               AllocationService allocationService, OrderEventService orderEventService,
-                              DeviceBootGenerationGuard bootGenerationGuard, AlarmService alarmService) {
+                              DeviceBootGenerationGuard bootGenerationGuard, AlarmService alarmService,
+                              BatteryCycleService batteryCycleService) {
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
         this.batteryDao = batteryDao;
@@ -56,6 +58,7 @@ public class DeviceEventService {
         this.orderEventService = orderEventService;
         this.bootGenerationGuard = bootGenerationGuard;
         this.alarmService = alarmService;
+        this.batteryCycleService = batteryCycleService;
     }
 
     @Transactional
@@ -143,6 +146,9 @@ public class DeviceEventService {
                 }
                 updateCell(cell.getId(), CellStatus.EMPTY, null);
                 detachBattery(battery.getId());
+                // 健康计数（S4.1，可审计）：先写流水（幂等）再累加 swaps
+                batteryCycleService.record(form.getBatteryNo(), BatteryCycleService.ACTION_OUT, battery.getSoc(),
+                        form.getCabinetNo(), form.getCommandSeq(), form.getBootId(), form.getEventSeq());
                 // 分配集合：仓变空 + 预占锁随订单推进清除；订单域按会话 seq 推进（TAKE 完成 / SWAP 待还）
                 allocationService.onBatteryOut(cell.getId());
                 orderEventService.onBatteryOut(cabinet, cell, battery, form.getCommandSeq());
@@ -157,6 +163,9 @@ public class DeviceEventService {
                 }
                 updateCell(cell.getId(), CellStatus.OCCUPIED, battery.getId());
                 attachBattery(battery.getId(), cell.getId(), form.getSoc());
+                // 健康计数（S4.1，可审计）：先写流水（幂等）再累加 cycle_count（服务循环口径）
+                batteryCycleService.record(form.getBatteryNo(), BatteryCycleService.ACTION_IN, form.getSoc(),
+                        form.getCabinetNo(), form.getCommandSeq(), form.getBootId(), form.getEventSeq());
                 // 分配集合：仓变占用（充电中，未满电不进 full）；订单域推进（SWAP/RETURN 完成）
                 allocationService.onBatteryIn(cell.getId());
                 orderEventService.onBatteryIn(cabinet, cell, battery, form.getCommandSeq());

@@ -49,6 +49,8 @@ class ReconcileServiceTest {
     private CommandLogDao commandLogDao;
     @Mock
     private com.swapops.server.alarm.service.AlarmService alarmService;
+    @Mock
+    private com.swapops.server.device.service.BatteryCycleService batteryCycleService;
 
     private ReconcileService service;
 
@@ -64,7 +66,8 @@ class ReconcileServiceTest {
     @BeforeEach
     void setUp() {
         service = new ReconcileService(orderDao, batteryDao, cellDao, paymentRecordDao, commandLogDao,
-                new BillingProperties(), new DeviceChannelProperties(), alarmService, 3600, 24, 200);
+                new BillingProperties(), new DeviceChannelProperties(), alarmService, batteryCycleService,
+                3600, 24, 200);
     }
 
     @Test
@@ -78,7 +81,7 @@ class ReconcileServiceTest {
 
         ReconcileService.ReconcileReport report = service.run();
 
-        assertThat(report.checks()).hasSize(6);
+        assertThat(report.checks()).hasSize(7);
         assertThat(report.totalViolations()).isZero();
     }
 
@@ -156,6 +159,24 @@ class ReconcileServiceTest {
         when(batteryDao.selectList(any())).thenReturn(List.of(escaped));
 
         ReconcileService.CheckResult result = service.checkEscapedBatteries();
+
+        assertThat(result.violations()).isEqualTo(1);
+        assertThat(result.samples()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("⑦ 电池计数与流水不一致：检出")
+    void 电池计数不一致检出() {
+        com.swapops.server.device.entity.BatteryEntity battery =
+                new com.swapops.server.device.entity.BatteryEntity();
+        battery.setBatteryNo("BAT-X");
+        battery.setSwaps(3);
+        battery.setCycleCount(1);
+        when(batteryDao.selectList(any())).thenReturn(List.of(battery));
+        when(batteryCycleService.countByAction("BAT-X", "OUT")).thenReturn(2L);
+        when(batteryCycleService.countByAction("BAT-X", "IN")).thenReturn(1L);
+
+        ReconcileService.CheckResult result = service.checkBatteryCounters();
 
         assertThat(result.violations()).isEqualTo(1);
         assertThat(result.samples()).hasSize(1);

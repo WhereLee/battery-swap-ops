@@ -1,0 +1,17 @@
+﻿== S4.1 gate: battery health ==
+21:35:18 PASS TAKE opened
+21:35:18 TAKE battery=BAT-0001
+21:35:19 PASS TAKE completed
+21:35:19 health after OUT: swaps=1 cycles=0 logs=1
+21:35:19 PASS swaps incremented
+21:35:19 PASS OUT log recorded
+21:35:19 PASS RETURN opened
+21:35:20 PASS RETURN completed
+21:35:20 health after IN: swaps=1 cycles=1 level=GOOD
+21:35:20 PASS cycle_count incremented
+21:35:20 PASS IN log recorded
+21:35:23 PASS BATTERY_HEALTH_LOW alarm raised
+21:35:26 PASS alarm auto-recovered after SOH restored
+21:35:26 reconcile battery-counters violations=0
+21:35:26 PASS battery counters match cycle logs (no violations)
+21:35:26 GATE-BATTERY-HEALTH PASS

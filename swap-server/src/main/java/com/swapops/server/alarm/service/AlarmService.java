@@ -38,6 +38,7 @@ public class AlarmService {
     public static final String DEVICE_ORDER = "ORDER";
     public static final String DEVICE_JOB = "JOB";
     public static final String DEVICE_SYSTEM = "SYSTEM";
+    public static final String DEVICE_BATTERY = "BATTERY";
 
     private final AlarmDao alarmDao;
     private final StringRedisTemplate stringRedisTemplate;

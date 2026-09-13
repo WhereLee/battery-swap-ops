@@ -35,6 +35,12 @@ public class AdminBatteryController {
         return Result.ok(assetAdminService.pageBatteries(page, limit, status, batteryNo));
     }
 
+    /** 电池健康档案（S4.1）：SOH 分级 + swaps/cycle 计数 + 最近循环流水 */
+    @GetMapping("/{batteryNo}/health")
+    public Result<java.util.Map<String, Object>> health(@PathVariable String batteryNo) {
+        return Result.ok(assetAdminService.batteryHealth(batteryNo));
+    }
+
     @PostMapping
     public Result<BatteryEntity> create(@RequestBody BatteryAdminForm form) {
         return Result.ok(assetAdminService.createBattery(form));
