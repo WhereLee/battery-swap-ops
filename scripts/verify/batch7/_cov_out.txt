@@ -1,0 +1,6 @@
+S5.1 coverage baseline (measured 2026-09-14, clean test + jacoco 0.8.12)
+server: line 69.0% -> threshold 65%
+sim:    line 61.1% -> threshold 55% (raised from 46% after adding CommandController/SimRegistry tests)
+contract: line 77.2% -> threshold 70%
+policy: thresholds in module poms via jacoco.line.minimum; enforced at verify phase (CI runs mvn verify); only ratchet up
+missing branches (known): controllers/interceptors (thin), config classes, error paths

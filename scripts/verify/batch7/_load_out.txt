@@ -1,0 +1,9 @@
+﻿S5 load summary (read path, ratelimit disabled, heap 512m)
+samples=2400 errors=0 errorRate=0% span=5.156s throughput=465.5/s
+avg=5.2ms p95=11ms p99=14ms max=35ms
+label=POST /user/login n=600 err=0 avg=3.8ms p95=6ms max=35ms
+label=GET /user/plans n=600 err=0 avg=3.1ms p95=5ms max=20ms
+label=GET /user/stations n=600 err=0 avg=9.1ms p95=14ms max=21ms
+label=GET /user/wallet n=600 err=0 avg=4.9ms p95=7ms max=11ms
+
+GC: collections=16 totalPauseMs=68.5 maxPauseMs=9.9
