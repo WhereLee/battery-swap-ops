@@ -54,6 +54,7 @@ class PlanServiceTest {
     static void initMybatisPlusLambdaCache() {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
         TableInfoHelper.initTableInfo(assistant, UserPlanEntity.class);
+        TableInfoHelper.initTableInfo(assistant, PlanEntity.class);
     }
 
     private PlanEntity plan() {

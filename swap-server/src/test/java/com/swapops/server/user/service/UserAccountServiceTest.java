@@ -1,8 +1,12 @@
 package com.swapops.server.user.service;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.swapops.server.common.RRException;
 import com.swapops.server.user.dao.SwapUserDao;
 import com.swapops.server.user.entity.SwapUserEntity;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +42,13 @@ class UserAccountServiceTest {
     private ValueOperations<String, String> valueOperations;
     @InjectMocks
     private UserAccountService service;
+
+    @BeforeAll
+    static void initMybatisPlusLambdaCache() {
+        // MP lambda 缓存为全局静态：凡是测试用到 LambdaWrapper 的实体都必须显式初始化（防测试顺序依赖）
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
+        TableInfoHelper.initTableInfo(assistant, SwapUserEntity.class);
+    }
 
     private SwapUserEntity user(long id, int status) {
         SwapUserEntity user = new SwapUserEntity();
