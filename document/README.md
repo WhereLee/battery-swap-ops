@@ -29,6 +29,7 @@
 - block-records/批次2-换电闭环.md
 - block-records/批次3-可靠性深水.md（S3；batch3 剧本 _g4/_g5/_g7 PASS、_g6 部分通过，详见记录）
 - block-records/批次4-S3.8生产化加固.md（S3.8；含标准 vs 降级自查、同步阻塞反思、遗留项）
+- block-records/批次5-S4运营与调度.md（S4-pre/S4.4工单/S4.5看板+CRUD；含实战发现与边界）
 
 ### pitfalls
 - pitfalls/gbk-source-encoding.md
