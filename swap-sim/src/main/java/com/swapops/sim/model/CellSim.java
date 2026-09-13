@@ -36,4 +36,9 @@ public class CellSim {
         this.soc = 0;
         return taken;
     }
+
+    /** 充电仿真推进（S4.3） */
+    public void setSoc(int soc) {
+        this.soc = soc;
+    }
 }

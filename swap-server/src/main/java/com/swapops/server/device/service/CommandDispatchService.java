@@ -192,6 +192,51 @@ public class CommandDispatchService {
         }
     }
 
+    /** 准备一次充电策略下发（S4.3）：seq + PENDING 流水（策略载荷不占 cellNo） */
+    public CommandLogEntity preparePolicy(String cabinetNo, String traceId) {
+        requireDispatchable(cabinetNo);
+        long seq = commandLogService.nextSeq(cabinetNo);
+        return commandLogService.recordPending(cabinetNo, CommandAction.SET_CHARGE_POLICY, seq, traceId);
+    }
+
+    /**
+     * 下发充电策略（S4.3）：canonical 含策略版本（载荷不可篡改）；柜侧版本单调。
+     * 成功（含同版本幂等）销账 ARRIVED；失败记 SEND_FAILED 并抛业务异常。
+     */
+    public void dispatchPolicy(CommandLogEntity cmdLog, String cabinetNo, long version,
+                               Map<String, Object> policy) {
+        CabinetEntity cabinet = requireDispatchable(cabinetNo);
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("action", CommandAction.SET_CHARGE_POLICY.name());
+        payload.put("cabinetNo", cabinetNo);
+        payload.put("commandSeq", cmdLog.getCommandSeq());
+        payload.put("policy", policy);
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(DEVICE_HEADER, cabinetNo);
+        headers.set(SIGN_HEADER, DeviceSignature.sign(cabinet.getSecret(),
+                DeviceSignature.canonicalPolicy(cabinetNo, version, cmdLog.getCommandSeq())));
+        headers.set(TraceIdFilter.TRACE_ID_HEADER, cmdLog.getTraceId());
+        try {
+            Map<String, Object> resp = downlinkGuard.call(
+                    () -> postJson(properties.getSimBaseUrl() + CMD_PATH, payload, headers),
+                    () -> Map.of("code", -1, "msg", "设备通道熔断/过载（快速失败）"));
+            Object code = resp == null ? null : resp.get("code");
+            if (resp == null || !Integer.valueOf(0).equals(code)) {
+                commandLogService.markSendFailed(cmdLog.getId());
+                Object msg = resp == null ? "空响应" : resp.get("msg");
+                throw new RRException("柜拒绝策略: " + msg);
+            }
+            commandLogService.markArrivedBySeq(cabinetNo, cmdLog.getCommandSeq(), CommandAction.SET_CHARGE_POLICY);
+            log.info("充电策略已下发 cabinetNo={} version={} seq={}", cabinetNo, version, cmdLog.getCommandSeq());
+        } catch (HttpStatusCodeException e) {
+            commandLogService.markSendFailed(cmdLog.getId());
+            throw new RRException("柜拒绝策略(HTTP " + e.getStatusCode().value() + ")");
+        } catch (RestClientException e) {
+            commandLogService.markSendFailed(cmdLog.getId());
+            throw new RRException("柜无响应(连接失败): " + cabinetNo + " cause=" + e.getMessage());
+        }
+    }
+
     /** 联调便捷：准备 + 立即下发（DevOpsController 使用） */
     public CommandLogEntity openCell(String cabinetNo, int cellNo) {
         String traceId = TraceIdFilter.currentOrGenerate();

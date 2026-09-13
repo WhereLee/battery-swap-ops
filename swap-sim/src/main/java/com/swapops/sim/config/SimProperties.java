@@ -25,6 +25,26 @@ public class SimProperties {
     /** 开仓动作耗时毫秒（门开事件延迟） */
     private long openDelayMillis = 300;
 
+    // ---------- 充电仿真（S4.3） ----------
+
+    /** 充电 tick 间隔毫秒（仿真心跳） */
+    private long chargeTickMillis = 1000;
+
+    /** 未下发策略时的默认总充电功率（W） */
+    private int defaultChargePowerW = 4000;
+
+    /** 单颗电池充电功率上限（W） */
+    private int maxChargePowerW = 400;
+
+    /** 电池容量（Wh，48V24Ah≈1150Wh） */
+    private int batteryCapacityWh = 1150;
+
+    /** 充电效率（0~1） */
+    private double chargeEfficiency = 0.9;
+
+    /** 仿真倍速（联调放大时间；1=真实时间） */
+    private int chargeSpeedFactor = 1;
+
     /** 每柜仓数 */
     private int cellsPerCabinet = 12;
 

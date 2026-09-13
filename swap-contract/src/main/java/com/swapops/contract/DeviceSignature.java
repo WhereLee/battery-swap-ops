@@ -69,6 +69,14 @@ public final class DeviceSignature {
         return join(nz(cabinetNo), "QUERY", "0");
     }
 
+    /**
+     * 充电策略下发规范化串（S4.3）：策略载荷必须被签名覆盖，故 canonical 含策略版本：
+     * cabinetNo|POLICY|version|commandSeq。柜侧按版本单调应用（旧版本拒绝/同版本幂等）。
+     */
+    public static String canonicalPolicy(String cabinetNo, long policyVersion, long commandSeq) {
+        return join(nz(cabinetNo), "POLICY", String.valueOf(policyVersion), String.valueOf(commandSeq));
+    }
+
     private static String nz(String s) {
         return s == null ? "" : s;
     }

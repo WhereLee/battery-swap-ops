@@ -1,0 +1,19 @@
+﻿== S4.3 gate: charge policy ==
+23:55:43 PASS 3 low batteries prepared
+23:55:45 policy A applied version=7 status=1 valleyHour=23
+23:55:45 PASS policy A ACTIVE (1)
+23:55:51 valley 6s: socSum 400 -> 544 delta=144 powerW=1200 version=7
+23:55:51 PASS SOC rises in valley window
+23:55:51 PASS power within limit (<=2000W)
+23:55:51 PASS sim applied policy version A
+23:55:51 PASS policy B ACTIVE (2)
+23:55:55 peak(0W) 4s: delta=0 powerW=0 version=8
+23:55:55 PASS SOC frozen under 0W policy
+23:55:55 PASS charging power 0 under peak policy
+23:55:55 PASS policy B is next version (monotonic)
+23:55:55 PASS sim applied policy version B
+23:55:55 PASS incomplete coverage windows rejected
+23:55:55 cost compare: valley=300 fen vs flat=1500 fen (10kWh)
+23:55:55 PASS valley cheaper than flat baseline
+23:55:55 PASS default policy restored (next version ACTIVE)
+23:55:55 GATE-CHARGE-POLICY PASS

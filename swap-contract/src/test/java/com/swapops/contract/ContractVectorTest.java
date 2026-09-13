@@ -28,6 +28,8 @@ class ContractVectorTest {
                 .isEqualTo("SWAP-C-001|1");
         assertThat(DeviceSignature.canonicalCommand("SWAP-C-001", 3, 7L))
                 .isEqualTo("SWAP-C-001|3|7");
+        assertThat(DeviceSignature.canonicalPolicy("SWAP-C-001", 3, 9L))
+                .isEqualTo("SWAP-C-001|POLICY|3|9");
         assertThat(DeviceSignature.canonicalQuery("SWAP-C-001"))
                 .isEqualTo("SWAP-C-001|QUERY|0");
     }

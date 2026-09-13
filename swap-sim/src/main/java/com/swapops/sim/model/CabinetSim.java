@@ -48,6 +48,74 @@ public class CabinetSim {
     /** 故障注入：门锁卡死（拒绝开仓） */
     private volatile boolean doorStuck = false;
 
+    /** 充电策略（S4.3）：null=未下发，用 sim 默认功率 */
+    private volatile ChargePolicy chargePolicy;
+
+    /** 最近一次充电 tick 的实际功率（W，供功率不超限断言） */
+    private volatile int chargingPowerW;
+
+    /** 最近一次充电 tick 的实际功率（供查询/剧本断言） */
+    public int getChargingPowerW() {
+        return chargingPowerW;
+    }
+
+    public ChargePolicy getChargePolicy() {
+        return chargePolicy;
+    }
+
+    /**
+     * 下发策略（版本单调）：新版本应用；同版本幂等忽略；旧版本拒绝。
+     *
+     * @return true=已应用；false=同版本重复（幂等忽略）
+     */
+    public synchronized boolean applyPolicy(ChargePolicy policy) {
+        ChargePolicy current = this.chargePolicy;
+        if (current != null) {
+            if (policy.version() < current.version()) {
+                throw new IllegalStateException("策略版本回退被拒: " + policy.version() + " < " + current.version());
+            }
+            if (policy.version() == current.version()) {
+                log.info("[{}] 同版本策略幂等忽略 version={}", cabinetNo, policy.version());
+                return false;
+            }
+        }
+        this.chargePolicy = policy;
+        log.info("[{}] 充电策略已应用 version={} priority={} windows={}",
+                cabinetNo, policy.version(), policy.priority(), policy.windows().size());
+        return true;
+    }
+
+    /**
+     * 充电仿真 tick（S4.3）：按当前小时窗口的功率预算给低电量电池充电；
+     * 每颗按 per=max(0, min(单颗上限, 预算/在充数)) 功率推进 SOC，预算不足=排队（本次不充）。
+     * 时间是注入参数（调度器传真实增量；单测可传固定值）。
+     */
+    public void chargeTick(long nowMillis, long deltaMillis) {
+        int hour = java.time.LocalTime.now(java.time.ZoneId.systemDefault()).getHour();
+        int budgetW = chargePolicy == null
+                ? properties.getDefaultChargePowerW() : chargePolicy.powerLimitAt(hour);
+        java.util.List<CellSim> charging = new java.util.ArrayList<>();
+        synchronized (this) {
+            for (CellSim cell : cells.values()) {
+                if (cell.isHasBattery() && cell.getSoc() < 100) {
+                    charging.add(cell);
+                }
+            }
+            int maxPerBattery = properties.getMaxChargePowerW();
+            int count = budgetW <= 0 ? 0 : Math.min(charging.size(), Math.max(1, budgetW / maxPerBattery));
+            int perW = count == 0 ? 0 : Math.min(maxPerBattery, budgetW / count);
+            for (int i = 0; i < count; i++) {
+                CellSim cell = charging.get(i);
+                double energyWh = perW * properties.getChargeEfficiency()
+                        * (deltaMillis / 3600_000.0) * properties.getChargeSpeedFactor();
+                double socGain = energyWh / properties.getBatteryCapacityWh() * 100.0;
+                int soc = Math.min(100, (int) Math.round(cell.getSoc() + socGain));
+                cell.setSoc(soc);
+            }
+            chargingPowerW = perW * count;
+        }
+    }
+
     /** 开门会话（cellNo → commandSeq/时间）：同一会话内的取/还电事件回带该 seq（协议会话关联） */
     private final Map<Integer, Long> sessionSeq = new ConcurrentHashMap<>();
 
@@ -189,6 +257,9 @@ public class CabinetSim {
             }
         }
         view.put("cells", cellViews);
+        view.put("chargingPowerW", chargingPowerW);
+        ChargePolicy policy = chargePolicy;
+        view.put("policyVersion", policy == null ? null : policy.version());
         return view;
     }
 
