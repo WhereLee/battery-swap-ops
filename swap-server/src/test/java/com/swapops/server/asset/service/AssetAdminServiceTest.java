@@ -39,6 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -237,6 +238,28 @@ class AssetAdminServiceTest {
         when(cellDao.selectById(10L)).thenReturn(occupied);
         assertThatThrownBy(() -> service.createBattery(form))
                 .isInstanceOf(RRException.class).hasMessageContaining("非空或已锁定");
+    }
+
+    @Test
+    @DisplayName("转在途 + 标量编辑：先落标量再显式置空 cell（组合场景回归）")
+    void 转在途保留标量编辑() {
+        BatteryEntity inCell = new BatteryEntity();
+        inCell.setId(30L);
+        inCell.setBatteryNo("BAT-9003");
+        inCell.setCellId(10L);
+        inCell.setSoc(50);
+        when(batteryDao.selectOne(any())).thenReturn(inCell);
+        when(cellDao.selectById(10L)).thenReturn(cell(10L, 1));
+        when(batteryDao.selectById(30L)).thenReturn(inCell);
+
+        BatteryAdminForm form = new BatteryAdminForm();
+        form.setPark(true);
+        form.setSoc(80);
+        service.updateBattery("BAT-9003", form);
+
+        verify(batteryDao).updateById(any(BatteryEntity.class)); // 标量编辑落库
+        verify(batteryDao, org.mockito.Mockito.atLeastOnce()).update(isNull(), any()); // 显式置空 cell
+        verify(allocationService).rebuildFromDb();
     }
 
     @Test

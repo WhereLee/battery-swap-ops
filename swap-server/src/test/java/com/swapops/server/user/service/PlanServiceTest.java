@@ -170,11 +170,12 @@ class PlanServiceTest {
     @DisplayName("管理端更新：全字段替换 + 缓存失效")
     void 管理端更新() {
         when(planDao.selectById(100L)).thenReturn(plan());
-        when(planDao.updateById(any(PlanEntity.class))).thenReturn(1);
+        when(planDao.update(isNull(), any())).thenReturn(1);
 
         service.updatePlan(100L, form("MONTHLY", 9900, null, 30));
 
-        verify(planDao).updateById(any(PlanEntity.class));
+        // 类型互切需显式 set（updateById 忽略 null，无法清空旧类型字段）
+        verify(planDao).update(isNull(), any());
         verify(cache).evict(com.swapops.server.common.cache.CacheKeys.PLAN_ACTIVE_LIST);
     }
 

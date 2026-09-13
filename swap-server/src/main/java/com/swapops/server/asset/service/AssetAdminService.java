@@ -92,7 +92,7 @@ public class AssetAdminService {
         StationEntity station = new StationEntity();
         station.setStationNo(stationNo);
         station.setName(requireText(form.getName(), "站点名称", 32));
-        station.setAddress(trimTo(form.getAddress(), 128));
+        station.setAddress(requireOptionalText(form.getAddress(), "站点地址", 128));
         station.setStatus(1);
         station.setCreateTime(now);
         station.setUpdateTime(now);
@@ -109,7 +109,7 @@ public class AssetAdminService {
             throw new RRException("站点编号不可变更: " + station.getStationNo());
         }
         station.setName(requireText(form.getName(), "站点名称", 32));
-        station.setAddress(trimTo(form.getAddress(), 128));
+        station.setAddress(requireOptionalText(form.getAddress(), "站点地址", 128));
         station.setUpdateTime(System.currentTimeMillis());
         stationDao.updateById(station);
         cache.evict(CacheKeys.STATION_ACTIVE_LIST);
@@ -274,7 +274,8 @@ public class AssetAdminService {
         long now = System.currentTimeMillis();
         BatteryEntity battery = new BatteryEntity();
         battery.setBatteryNo(batteryNo);
-        battery.setModel(trimTo(form.getModel(), 32) == null ? "48V24Ah" : form.getModel().trim());
+        String model = requireOptionalText(form.getModel(), "电池型号", 32);
+        battery.setModel(model == null ? "48V24Ah" : model);
         battery.setSoc(soc);
         battery.setSoh(soh);
         battery.setCycleCount(cycles);
@@ -313,7 +314,7 @@ public class AssetAdminService {
         }
         long now = System.currentTimeMillis();
         if (form.getModel() != null && !form.getModel().isBlank()) {
-            battery.setModel(trimTo(form.getModel(), 32));
+            battery.setModel(requireOptionalText(form.getModel(), "电池型号", 32));
         }
         if (form.getSoc() != null) {
             battery.setSoc(requireRange(form.getSoc(), "SOC", 0, 100, battery.getSoc()));
@@ -330,18 +331,21 @@ public class AssetAdminService {
         if (form.getCellId() != null) {
             moveToCell(battery, form.getCellId(), now);
         } else if (Boolean.TRUE.equals(form.getPark()) && battery.getCellId() != null) {
-            clearCell(battery.getCellId(), now);
+            Long oldCellId = battery.getCellId();
+            // 先持久化标量编辑（此时 cellId 仍为原值；updateById 不会误将非空字段置空）
+            battery.setUpdateTime(now);
+            batteryDao.updateById(battery);
+            clearCell(oldCellId, now);
             // 注意：updateById 默认忽略 null 字段——置空 cell_id 必须走显式 set 的 UPDATE
             battery.setCellId(null);
             battery.setStatus(BatteryStatus.CHARGING.getCode());
-            battery.setUpdateTime(now);
             batteryDao.update(null, new LambdaUpdateWrapper<BatteryEntity>()
                     .eq(BatteryEntity::getId, battery.getId())
                     .set(BatteryEntity::getCellId, null)
                     .set(BatteryEntity::getStatus, BatteryStatus.CHARGING.getCode())
                     .set(BatteryEntity::getUpdateTime, now));
             allocationService.rebuildFromDb();
-            log.info("电池转在途 batteryNo={}", batteryNo);
+            log.info("电池转在途 batteryNo={}（含标量编辑落库）", batteryNo);
             return batteryDao.selectById(battery.getId());
         } else if (battery.getCellId() != null) {
             // 留在原仓：状态随 SOC 修正
@@ -440,12 +444,16 @@ public class AssetAdminService {
         return v;
     }
 
-    private String trimTo(String value, int maxLength) {
+    /** 可选文本：空=null；非空则 trim 并校验长度（超长拒绝，不静默截断） */
+    private String requireOptionalText(String value, String label, int maxLength) {
         if (value == null || value.isBlank()) {
             return null;
         }
         String v = value.trim();
-        return v.length() > maxLength ? v.substring(0, maxLength) : v;
+        if (v.length() > maxLength) {
+            throw new RRException(label + "过长（<=" + maxLength + "）");
+        }
+        return v;
     }
 
     // ---------- 站点 ----------

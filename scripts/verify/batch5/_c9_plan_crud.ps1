@@ -38,6 +38,14 @@ $list2 = @((Invoke-RestMethod "$server/user/plans" -Headers $H -TimeoutSec 5).da
 $updated = @($list2 | Where-Object { $_.name -eq $name })[0]
 Check "price update visible (2)" ($updated.priceFen -eq 2)
 
+# ---- type switch TIMES -> MONTHLY must clear totalTimes (explicit set, not updateById-null-skip) ----
+$formSwitch = @{ name = $name; planType = "MONTHLY"; priceFen = 3; durationDays = 30 } | ConvertTo-Json
+Invoke-RestMethod -Method Post "$server/admin/plan/$($created.id)" -Headers $admin -ContentType "application/json" -Body $formSwitch -TimeoutSec 5 | Out-Null
+$list2b = @((Invoke-RestMethod "$server/user/plans" -Headers $H -TimeoutSec 5).data)
+$switched = @($list2b | Where-Object { $_.name -eq $name })[0]
+Check "type switch to MONTHLY persisted (durationDays=30)" ($switched.durationDays -eq 30)
+Check "type switch cleared totalTimes" ($switched.totalTimes -eq $null)
+
 # ---- off-shelf ----
 Invoke-RestMethod -Method Post "$server/admin/plan/$($created.id)/status?status=2" -Headers $admin -TimeoutSec 5 | Out-Null
 $list3 = @((Invoke-RestMethod "$server/user/plans" -Headers $H -TimeoutSec 5).data)

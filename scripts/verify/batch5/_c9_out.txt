@@ -1,11 +1,13 @@
 ﻿== S4.5 gate: plan CRUD ==
-09:24:30 baseline plans=2 name=E2E-PLAN-092430
-09:24:30 created id=3 status=1
-09:24:30 PASS created active (status=1)
-09:24:30 PASS new plan visible immediately (cache evicted)
-09:24:30 PASS price update visible (2)
-09:24:30 PASS off-shelf plan hidden from user list
-09:24:30 PASS invalid form rejected (TIMES without totalTimes)
-09:24:30 PASS deleted plan gone from admin list
-09:24:30 PASS user plan count back to baseline
-09:24:30 GATE-PLAN-CRUD PASS
+20:52:50 baseline plans=2 name=E2E-PLAN-205250
+20:52:50 created id=4 status=1
+20:52:50 PASS created active (status=1)
+20:52:50 PASS new plan visible immediately (cache evicted)
+20:52:50 PASS price update visible (2)
+20:52:50 PASS type switch to MONTHLY persisted (durationDays=30)
+20:52:50 PASS type switch cleared totalTimes
+20:52:50 PASS off-shelf plan hidden from user list
+20:52:50 PASS invalid form rejected (TIMES without totalTimes)
+20:52:50 PASS deleted plan gone from admin list
+20:52:50 PASS user plan count back to baseline
+20:52:50 GATE-PLAN-CRUD PASS

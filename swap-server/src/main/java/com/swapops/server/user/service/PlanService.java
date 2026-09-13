@@ -127,7 +127,15 @@ public class PlanService {
         PlanEntity plan = requirePlan(id);
         validatePlanForm(form);
         applyForm(plan, form);
-        planDao.updateById(plan);
+        // 显式 set 全部可编辑字段（含 null）：类型互切时清空旧类型字段（updateById 会忽略 null）
+        planDao.update(null, new LambdaUpdateWrapper<PlanEntity>()
+                .eq(PlanEntity::getId, id)
+                .set(PlanEntity::getName, plan.getName())
+                .set(PlanEntity::getPlanType, plan.getPlanType())
+                .set(PlanEntity::getPriceFen, plan.getPriceFen())
+                .set(PlanEntity::getTotalTimes, plan.getTotalTimes())
+                .set(PlanEntity::getDurationDays, plan.getDurationDays())
+                .set(PlanEntity::getDailyLimitTimes, plan.getDailyLimitTimes()));
         cache.evict(CacheKeys.PLAN_ACTIVE_LIST);
         log.info("套餐更新 id={} name={} price={} status={}", plan.getId(), plan.getName(),
                 plan.getPriceFen(), plan.getStatus());
