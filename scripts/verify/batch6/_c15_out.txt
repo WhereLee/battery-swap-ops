@@ -1,0 +1,16 @@
+﻿== S4.6 gate: agent seam ==
+00:16:41 PASS source alarm found
+00:16:41 proposal no=AA92654625647362048 status=1 proposer=agent-ops
+00:16:41 PASS proposed as PROPOSED (1)
+00:16:41 PASS no work order created before confirm
+00:16:41 PASS idempotent replay returns same action
+00:16:41 PASS non-whitelisted action rejected (money)
+00:16:41 confirmed status=2 confirmer=admin result={"workOrderId":3,"woNo":"WO92654698603085824","status":1}
+00:16:41 PASS executed (2) with result
+00:16:41 PASS work order created after confirm
+00:16:41 PASS double confirm refused
+00:16:41 PASS still exactly one work order
+00:16:41 PASS rejected (3)
+00:16:41 PASS no reconcile side effect on reject
+00:16:41 PASS audit list contains both actions
+00:16:41 GATE-AGENT-SEAM PASS
