@@ -1,0 +1,19 @@
+﻿== S4.5 gate: asset CRUD ==
+14:10:54 station created id=3 no=ST-E2E-141054
+14:10:54 PASS station active
+14:10:55 cabinet created id=12 no=SWAP-E2E-141054
+14:10:55 PASS secret masked in response
+14:10:55 PASS 3 cells auto-created
+14:10:55 PASS grow cabinet to 5 cells
+14:10:55 battery created no=BAT-E2E-141054 status=2 cellId=131
+14:10:55 PASS battery FULL in cell
+14:10:55 PASS cell occupied by battery
+14:10:55 PASS delete cabinet refused (battery inside)
+14:10:55 PASS delete in-cell battery refused
+14:10:55 PASS delete station refused (cabinet attached)
+14:10:55 PASS shrink refused (occupied cell beyond)
+14:10:55 PASS battery parked (cellId null)
+14:10:56 PASS shrink cabinet to 3 cells after battery removed
+14:10:56 PASS cabinet cleaned up
+14:10:56 PASS user stations endpoint still healthy
+14:10:56 GATE-ASSET-CRUD PASS

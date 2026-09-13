@@ -1,12 +1,15 @@
 package com.swapops.server.asset.controller;
 
+import com.swapops.server.asset.form.CabinetAdminForm;
 import com.swapops.server.asset.service.AssetAdminService;
 import com.swapops.server.common.Result;
 import com.swapops.server.common.utils.PageResult;
 import com.swapops.server.device.entity.CabinetEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -14,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * 管理端：柜查询 / 实况 / 维护态操作。
+ * 管理端：柜 CRUD（S4.5 批二，secret 响应脱敏）/ 实况 / 维护态操作。
  */
 @RestController
 @RequestMapping("admin/cabinet")
@@ -40,9 +43,25 @@ public class AdminCabinetController {
         return Result.ok(assetAdminService.cabinetState(cabinetNo));
     }
 
+    @PostMapping
+    public Result<CabinetEntity> create(@RequestBody CabinetAdminForm form) {
+        return Result.ok(assetAdminService.createCabinet(form));
+    }
+
+    @PostMapping("/{id}")
+    public Result<CabinetEntity> update(@PathVariable Long id, @RequestBody CabinetAdminForm form) {
+        return Result.ok(assetAdminService.updateCabinet(id, form));
+    }
+
     @PostMapping("/{cabinetNo}/status")
     public Result<Void> updateStatus(@PathVariable String cabinetNo, @RequestParam Integer status) {
         assetAdminService.updateCabinetStatus(cabinetNo, status);
+        return Result.ok();
+    }
+
+    @DeleteMapping("/{id}")
+    public Result<Void> delete(@PathVariable Long id) {
+        assetAdminService.deleteCabinet(id);
         return Result.ok();
     }
 }

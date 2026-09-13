@@ -1,18 +1,21 @@
 package com.swapops.server.asset.controller;
 
+import com.swapops.server.asset.form.BatteryAdminForm;
 import com.swapops.server.asset.service.AssetAdminService;
 import com.swapops.server.common.Result;
 import com.swapops.server.common.utils.PageResult;
 import com.swapops.server.device.entity.BatteryEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 管理端：电池台账查询 + 维修/退役/恢复。
+ * 管理端：电池登记 CRUD（S4.5 批二）+ 台账查询 + 维修/退役/恢复。
  */
 @RestController
 @RequestMapping("admin/battery")
@@ -32,9 +35,25 @@ public class AdminBatteryController {
         return Result.ok(assetAdminService.pageBatteries(page, limit, status, batteryNo));
     }
 
+    @PostMapping
+    public Result<BatteryEntity> create(@RequestBody BatteryAdminForm form) {
+        return Result.ok(assetAdminService.createBattery(form));
+    }
+
+    @PostMapping("/{batteryNo}")
+    public Result<BatteryEntity> update(@PathVariable String batteryNo, @RequestBody BatteryAdminForm form) {
+        return Result.ok(assetAdminService.updateBattery(batteryNo, form));
+    }
+
     @PostMapping("/{batteryNo}/status")
     public Result<Void> updateStatus(@PathVariable String batteryNo, @RequestParam Integer status) {
         assetAdminService.updateBatteryStatus(batteryNo, status);
+        return Result.ok();
+    }
+
+    @DeleteMapping("/{batteryNo}")
+    public Result<Void> delete(@PathVariable String batteryNo) {
+        assetAdminService.deleteBattery(batteryNo);
         return Result.ok();
     }
 }

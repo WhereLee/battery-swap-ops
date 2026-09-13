@@ -9,11 +9,15 @@ import com.swapops.contract.CabinetStatus;
 import com.swapops.contract.CellStatus;
 import com.swapops.server.asset.dao.StationDao;
 import com.swapops.server.asset.entity.StationEntity;
+import com.swapops.server.asset.form.BatteryAdminForm;
+import com.swapops.server.asset.form.CabinetAdminForm;
+import com.swapops.server.asset.form.StationAdminForm;
 import com.swapops.server.common.RRException;
 import com.swapops.server.common.cache.CacheKeys;
 import com.swapops.server.common.cache.TwoLevelCacheService;
 import com.swapops.server.common.utils.PageParams;
 import com.swapops.server.common.utils.PageResult;
+import com.swapops.server.device.config.DeviceChannelProperties;
 import com.swapops.server.device.dao.BatteryDao;
 import com.swapops.server.device.dao.CabinetDao;
 import com.swapops.server.device.dao.CellDao;
@@ -21,9 +25,12 @@ import com.swapops.server.device.entity.BatteryEntity;
 import com.swapops.server.device.entity.CabinetEntity;
 import com.swapops.server.device.entity.CellEntity;
 import com.swapops.server.device.service.MonitorService;
+import com.swapops.server.order.dao.SwapOrderDao;
+import com.swapops.server.order.entity.SwapOrderEntity;
 import com.swapops.server.order.service.AllocationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -40,6 +47,9 @@ import java.util.Set;
 public class AssetAdminService {
 
     private static final Set<Integer> STATION_STATUS = Set.of(1, 2);
+    private static final String ASSET_NO_PATTERN = "^[A-Za-z0-9-]{2,32}$";
+    private static final String SECRET_PATTERN = "^[0-9a-fA-F]{32,64}$";
+    private static final int MAX_CELLS = 48;
     private static final Set<Integer> CABINET_ADMIN_STATUS = Set.of(
             CabinetStatus.ONLINE.getCode(), CabinetStatus.MAINTENANCE.getCode(), CabinetStatus.DISABLED.getCode());
     private static final Set<Integer> CELL_ADMIN_STATUS = Set.of(
@@ -52,10 +62,13 @@ public class AssetAdminService {
     private final MonitorService monitorService;
     private final AllocationService allocationService;
     private final TwoLevelCacheService cache;
+    private final SwapOrderDao orderDao;
+    private final DeviceChannelProperties properties;
 
     public AssetAdminService(StationDao stationDao, CabinetDao cabinetDao, CellDao cellDao,
                              BatteryDao batteryDao, MonitorService monitorService,
-                             AllocationService allocationService, TwoLevelCacheService cache) {
+                             AllocationService allocationService, TwoLevelCacheService cache,
+                             SwapOrderDao orderDao, DeviceChannelProperties properties) {
         this.stationDao = stationDao;
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
@@ -63,6 +76,376 @@ public class AssetAdminService {
         this.monitorService = monitorService;
         this.allocationService = allocationService;
         this.cache = cache;
+        this.orderDao = orderDao;
+        this.properties = properties;
+    }
+
+    // ---------- 站点登记（S4.5 批二） ----------
+
+    public StationEntity createStation(StationAdminForm form) {
+        String stationNo = requirePattern(form.getStationNo(), "站点编号", ASSET_NO_PATTERN);
+        if (stationDao.selectOne(new LambdaQueryWrapper<StationEntity>()
+                .eq(StationEntity::getStationNo, stationNo)) != null) {
+            throw new RRException("站点编号已存在: " + stationNo);
+        }
+        long now = System.currentTimeMillis();
+        StationEntity station = new StationEntity();
+        station.setStationNo(stationNo);
+        station.setName(requireText(form.getName(), "站点名称", 32));
+        station.setAddress(trimTo(form.getAddress(), 128));
+        station.setStatus(1);
+        station.setCreateTime(now);
+        station.setUpdateTime(now);
+        stationDao.insert(station);
+        cache.evict(CacheKeys.STATION_ACTIVE_LIST);
+        log.info("站点创建 stationNo={} name={}", stationNo, station.getName());
+        return station;
+    }
+
+    public StationEntity updateStation(Long id, StationAdminForm form) {
+        StationEntity station = requireStation(id);
+        if (form.getStationNo() != null && !form.getStationNo().isBlank()
+                && !station.getStationNo().equals(form.getStationNo().trim())) {
+            throw new RRException("站点编号不可变更: " + station.getStationNo());
+        }
+        station.setName(requireText(form.getName(), "站点名称", 32));
+        station.setAddress(trimTo(form.getAddress(), 128));
+        station.setUpdateTime(System.currentTimeMillis());
+        stationDao.updateById(station);
+        cache.evict(CacheKeys.STATION_ACTIVE_LIST);
+        log.info("站点更新 id={} name={}", id, station.getName());
+        return stationDao.selectById(id);
+    }
+
+    public void deleteStation(Long id) {
+        StationEntity station = requireStation(id);
+        Long cabinets = cabinetDao.selectCount(new LambdaQueryWrapper<CabinetEntity>()
+                .eq(CabinetEntity::getStationId, id));
+        if (cabinets != null && cabinets > 0) {
+            throw new RRException("站点下仍有 " + cabinets + " 个柜，不能删除");
+        }
+        stationDao.deleteById(id);
+        cache.evict(CacheKeys.STATION_ACTIVE_LIST);
+        log.info("站点删除 id={} stationNo={}", id, station.getStationNo());
+    }
+
+    private StationEntity requireStation(Long id) {
+        StationEntity station = stationDao.selectById(id);
+        if (station == null) {
+            throw new RRException("站点不存在: " + id);
+        }
+        return station;
+    }
+
+    // ---------- 柜登记（S4.5 批二；secret 响应脱敏） ----------
+
+    @Transactional
+    public CabinetEntity createCabinet(CabinetAdminForm form) {
+        String cabinetNo = requirePattern(form.getCabinetNo(), "柜编号", ASSET_NO_PATTERN);
+        if (cabinetDao.selectOne(new LambdaQueryWrapper<CabinetEntity>()
+                .eq(CabinetEntity::getCabinetNo, cabinetNo)) != null) {
+            throw new RRException("柜编号已存在: " + cabinetNo);
+        }
+        StationEntity station = requireStation(form.getStationId());
+        int cellCount = requireCellCount(form.getCellCount());
+        String secret = requirePattern(form.getSecret(), "设备密钥", SECRET_PATTERN);
+        long now = System.currentTimeMillis();
+        CabinetEntity cabinet = new CabinetEntity();
+        cabinet.setCabinetNo(cabinetNo);
+        cabinet.setStationId(station.getId());
+        cabinet.setCellCount(cellCount);
+        cabinet.setStatus(CabinetStatus.ONLINE.getCode());
+        cabinet.setSecret(secret);
+        cabinet.setCreateTime(now);
+        cabinet.setUpdateTime(now);
+        cabinetDao.insert(cabinet);
+        for (int cellNo = 1; cellNo <= cellCount; cellNo++) {
+            CellEntity cell = new CellEntity();
+            cell.setCabinetId(cabinet.getId());
+            cell.setCellNo(cellNo);
+            cell.setStatus(CellStatus.EMPTY.getCode());
+            cell.setUpdateTime(now);
+            cellDao.insert(cell);
+        }
+        allocationService.rebuildFromDb();
+        log.info("柜创建 cabinetNo={} stationId={} cells={}", cabinetNo, station.getId(), cellCount);
+        return maskSecret(cabinet);
+    }
+
+    @Transactional
+    public CabinetEntity updateCabinet(Long id, CabinetAdminForm form) {
+        CabinetEntity cabinet = cabinetDao.selectById(id);
+        if (cabinet == null) {
+            throw new RRException("柜不存在: " + id);
+        }
+        if (form.getStationId() != null && !form.getStationId().equals(cabinet.getStationId())) {
+            StationEntity station = requireStation(form.getStationId());
+            cabinet.setStationId(station.getId());
+        }
+        if (form.getSecret() != null && !form.getSecret().isBlank()) {
+            cabinet.setSecret(requirePattern(form.getSecret(), "设备密钥", SECRET_PATTERN));
+        }
+        if (form.getCellCount() != null && !form.getCellCount().equals(cabinet.getCellCount())) {
+            adjustCells(cabinet, requireCellCount(form.getCellCount()));
+        }
+        cabinet.setUpdateTime(System.currentTimeMillis());
+        cabinetDao.updateById(cabinet);
+        allocationService.rebuildFromDb();
+        log.info("柜更新 id={} cabinetNo={} cells={}", id, cabinet.getCabinetNo(), cabinet.getCellCount());
+        return maskSecret(cabinetDao.selectById(id));
+    }
+
+    @Transactional
+    public void deleteCabinet(Long id) {
+        CabinetEntity cabinet = cabinetDao.selectById(id);
+        if (cabinet == null) {
+            throw new RRException("柜不存在: " + id);
+        }
+        List<CellEntity> cells = cellDao.selectList(new LambdaQueryWrapper<CellEntity>()
+                .eq(CellEntity::getCabinetId, id));
+        for (CellEntity cell : cells) {
+            if (cell.getBatteryId() != null || cell.getLockOrderId() != null) {
+                throw new RRException("柜内仍有电池或锁定的仓（cellNo=" + cell.getCellNo() + "），不能删除");
+            }
+        }
+        cellDao.delete(new LambdaQueryWrapper<CellEntity>().eq(CellEntity::getCabinetId, id));
+        cabinetDao.deleteById(id);
+        allocationService.rebuildFromDb();
+        log.info("柜删除 id={} cabinetNo={}", id, cabinet.getCabinetNo());
+    }
+
+    /** 增减仓：增加补建；减少仅允许尾部"无电池且无锁"的仓 */
+    private void adjustCells(CabinetEntity cabinet, int newCount) {
+        List<CellEntity> cells = cellDao.selectList(new LambdaQueryWrapper<CellEntity>()
+                .eq(CellEntity::getCabinetId, cabinet.getId())
+                .orderByAsc(CellEntity::getCellNo));
+        int current = cells.size();
+        if (newCount > current) {
+            long now = System.currentTimeMillis();
+            for (int cellNo = current + 1; cellNo <= newCount; cellNo++) {
+                CellEntity cell = new CellEntity();
+                cell.setCabinetId(cabinet.getId());
+                cell.setCellNo(cellNo);
+                cell.setStatus(CellStatus.EMPTY.getCode());
+                cell.setUpdateTime(now);
+                cellDao.insert(cell);
+            }
+        } else if (newCount < current) {
+            for (CellEntity cell : cells) {
+                if (cell.getCellNo() > newCount
+                        && (cell.getBatteryId() != null || cell.getLockOrderId() != null)) {
+                    throw new RRException("缩减失败：cellNo=" + cell.getCellNo() + " 仍有电池或锁");
+                }
+            }
+            cellDao.delete(new LambdaQueryWrapper<CellEntity>()
+                    .eq(CellEntity::getCabinetId, cabinet.getId())
+                    .gt(CellEntity::getCellNo, newCount));
+        }
+        cabinet.setCellCount(newCount);
+    }
+
+    private CabinetEntity maskSecret(CabinetEntity cabinet) {
+        cabinet.setSecret(null);
+        return cabinet;
+    }
+
+    private int requireCellCount(Integer cellCount) {
+        if (cellCount == null || cellCount < 1 || cellCount > MAX_CELLS) {
+            throw new RRException("仓位数需在 1~" + MAX_CELLS + " 之间");
+        }
+        return cellCount;
+    }
+
+    // ---------- 电池登记（S4.5 批二） ----------
+
+    @Transactional
+    public BatteryEntity createBattery(BatteryAdminForm form) {
+        String batteryNo = requirePattern(form.getBatteryNo(), "电池编号", ASSET_NO_PATTERN);
+        if (batteryDao.selectOne(new LambdaQueryWrapper<BatteryEntity>()
+                .eq(BatteryEntity::getBatteryNo, batteryNo)) != null) {
+            throw new RRException("电池编号已存在: " + batteryNo);
+        }
+        int soc = requireRange(form.getSoc(), "SOC", 0, 100, 100);
+        int soh = requireRange(form.getSoh(), "SOH", 0, 100, 100);
+        int cycles = form.getCycleCount() == null ? 0 : form.getCycleCount();
+        if (cycles < 0) {
+            throw new RRException("循环次数不能为负");
+        }
+        long now = System.currentTimeMillis();
+        BatteryEntity battery = new BatteryEntity();
+        battery.setBatteryNo(batteryNo);
+        battery.setModel(trimTo(form.getModel(), 32) == null ? "48V24Ah" : form.getModel().trim());
+        battery.setSoc(soc);
+        battery.setSoh(soh);
+        battery.setCycleCount(cycles);
+        battery.setHolderUserId(null);
+        battery.setUpdateTime(now);
+        if (form.getCellId() != null) {
+            CellEntity cell = requireEmptyCell(form.getCellId());
+            battery.setCellId(cell.getId());
+            battery.setStatus(soc >= properties.getSocFullThreshold()
+                    ? BatteryStatus.FULL.getCode() : BatteryStatus.CHARGING.getCode());
+            batteryDao.insert(battery);
+            cellDao.update(null, new LambdaUpdateWrapper<CellEntity>()
+                    .eq(CellEntity::getId, cell.getId())
+                    .set(CellEntity::getBatteryId, battery.getId())
+                    .set(CellEntity::getStatus, CellStatus.OCCUPIED.getCode())
+                    .set(CellEntity::getUpdateTime, now));
+        } else {
+            battery.setCellId(null);
+            battery.setStatus(BatteryStatus.CHARGING.getCode());
+            batteryDao.insert(battery);
+        }
+        allocationService.rebuildFromDb();
+        log.info("电池登记 batteryNo={} cellId={} soc={}", batteryNo, form.getCellId(), soc);
+        return battery;
+    }
+
+    @Transactional
+    public BatteryEntity updateBattery(String batteryNo, BatteryAdminForm form) {
+        BatteryEntity battery = batteryDao.selectOne(new LambdaQueryWrapper<BatteryEntity>()
+                .eq(BatteryEntity::getBatteryNo, batteryNo));
+        if (battery == null) {
+            throw new RRException("电池不存在: " + batteryNo);
+        }
+        if (battery.getHolderUserId() != null) {
+            throw new RRException("电池在用户手中，请走归还流程后再编辑: " + batteryNo);
+        }
+        long now = System.currentTimeMillis();
+        if (form.getModel() != null && !form.getModel().isBlank()) {
+            battery.setModel(trimTo(form.getModel(), 32));
+        }
+        if (form.getSoc() != null) {
+            battery.setSoc(requireRange(form.getSoc(), "SOC", 0, 100, battery.getSoc()));
+        }
+        if (form.getSoh() != null) {
+            battery.setSoh(requireRange(form.getSoh(), "SOH", 0, 100, battery.getSoh()));
+        }
+        if (form.getCycleCount() != null) {
+            if (form.getCycleCount() < 0) {
+                throw new RRException("循环次数不能为负");
+            }
+            battery.setCycleCount(form.getCycleCount());
+        }
+        if (form.getCellId() != null) {
+            moveToCell(battery, form.getCellId(), now);
+        } else if (Boolean.TRUE.equals(form.getPark()) && battery.getCellId() != null) {
+            clearCell(battery.getCellId(), now);
+            // 注意：updateById 默认忽略 null 字段——置空 cell_id 必须走显式 set 的 UPDATE
+            battery.setCellId(null);
+            battery.setStatus(BatteryStatus.CHARGING.getCode());
+            battery.setUpdateTime(now);
+            batteryDao.update(null, new LambdaUpdateWrapper<BatteryEntity>()
+                    .eq(BatteryEntity::getId, battery.getId())
+                    .set(BatteryEntity::getCellId, null)
+                    .set(BatteryEntity::getStatus, BatteryStatus.CHARGING.getCode())
+                    .set(BatteryEntity::getUpdateTime, now));
+            allocationService.rebuildFromDb();
+            log.info("电池转在途 batteryNo={}", batteryNo);
+            return batteryDao.selectById(battery.getId());
+        } else if (battery.getCellId() != null) {
+            // 留在原仓：状态随 SOC 修正
+            battery.setStatus(battery.getSoc() != null && battery.getSoc() >= properties.getSocFullThreshold()
+                    ? BatteryStatus.FULL.getCode() : BatteryStatus.CHARGING.getCode());
+        }
+        battery.setUpdateTime(now);
+        batteryDao.updateById(battery);
+        allocationService.rebuildFromDb();
+        log.info("电池更新 batteryNo={} cellId={} soc={}", batteryNo, battery.getCellId(), battery.getSoc());
+        return batteryDao.selectById(battery.getId());
+    }
+
+    @Transactional
+    public void deleteBattery(String batteryNo) {
+        BatteryEntity battery = batteryDao.selectOne(new LambdaQueryWrapper<BatteryEntity>()
+                .eq(BatteryEntity::getBatteryNo, batteryNo));
+        if (battery == null) {
+            throw new RRException("电池不存在: " + batteryNo);
+        }
+        if (battery.getCellId() != null || battery.getHolderUserId() != null) {
+            throw new RRException("仅在途且无持有人的电池可删除: " + batteryNo);
+        }
+        Long refs = orderDao.selectCount(new LambdaQueryWrapper<SwapOrderEntity>()
+                .and(w -> w.eq(SwapOrderEntity::getTakeBatteryId, battery.getId())
+                        .or().eq(SwapOrderEntity::getReturnBatteryId, battery.getId())));
+        if (refs != null && refs > 0) {
+            throw new RRException("电池已被订单引用（" + refs + " 次），建议改为退役");
+        }
+        batteryDao.deleteById(battery.getId());
+        allocationService.rebuildFromDb();
+        log.info("电池删除 batteryNo={}", batteryNo);
+    }
+
+    private void moveToCell(BatteryEntity battery, Long cellId, long now) {
+        if (cellId.equals(battery.getCellId())) {
+            return;
+        }
+        CellEntity target = requireEmptyCell(cellId);
+        if (battery.getCellId() != null) {
+            clearCell(battery.getCellId(), now);
+        }
+        battery.setCellId(target.getId());
+        battery.setStatus(battery.getSoc() != null && battery.getSoc() >= properties.getSocFullThreshold()
+                ? BatteryStatus.FULL.getCode() : BatteryStatus.CHARGING.getCode());
+        cellDao.update(null, new LambdaUpdateWrapper<CellEntity>()
+                .eq(CellEntity::getId, target.getId())
+                .set(CellEntity::getBatteryId, battery.getId())
+                .set(CellEntity::getStatus, CellStatus.OCCUPIED.getCode())
+                .set(CellEntity::getUpdateTime, now));
+    }
+
+    private void clearCell(Long cellId, long now) {
+        cellDao.update(null, new LambdaUpdateWrapper<CellEntity>()
+                .eq(CellEntity::getId, cellId)
+                .set(CellEntity::getBatteryId, null)
+                .set(CellEntity::getStatus, CellStatus.EMPTY.getCode())
+                .set(CellEntity::getUpdateTime, now));
+    }
+
+    private CellEntity requireEmptyCell(Long cellId) {
+        CellEntity cell = cellDao.selectById(cellId);
+        if (cell == null) {
+            throw new RRException("目标仓不存在: " + cellId);
+        }
+        if (cell.getBatteryId() != null || cell.getLockOrderId() != null) {
+            throw new RRException("目标仓非空或已锁定: cellId=" + cellId);
+        }
+        return cell;
+    }
+
+    private int requireRange(Integer value, String label, int min, int max, Integer defaultValue) {
+        int v = value == null ? (defaultValue == null ? min : defaultValue) : value;
+        if (v < min || v > max) {
+            throw new RRException(label + " 需在 " + min + "~" + max + " 之间");
+        }
+        return v;
+    }
+
+    private String requirePattern(String value, String label, String pattern) {
+        String v = value == null ? "" : value.trim();
+        if (!v.matches(pattern)) {
+            throw new RRException(label + " 格式非法: " + value);
+        }
+        return v;
+    }
+
+    private String requireText(String value, String label, int maxLength) {
+        String v = value == null ? "" : value.trim();
+        if (v.isEmpty()) {
+            throw new RRException(label + "必填");
+        }
+        if (v.length() > maxLength) {
+            throw new RRException(label + "过长（<=" + maxLength + "）");
+        }
+        return v;
+    }
+
+    private String trimTo(String value, int maxLength) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String v = value.trim();
+        return v.length() > maxLength ? v.substring(0, maxLength) : v;
     }
 
     // ---------- 站点 ----------
