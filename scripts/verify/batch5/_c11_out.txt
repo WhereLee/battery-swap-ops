@@ -1,0 +1,9 @@
+﻿== S4.5 gate: user admin ==
+14:15:57 PASS admin user list finds target
+14:15:57 target userId=25 status=1
+14:15:57 PASS baseline login ok
+14:15:57 PASS invalid status rejected
+14:15:57 PASS disabled user cannot login
+14:15:57 PASS issued token rejected immediately (401)
+14:15:57 PASS re-enabled login ok
+14:15:57 GATE-USER-ADMIN PASS

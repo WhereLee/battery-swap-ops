@@ -60,6 +60,29 @@ class UserAccountServiceTest {
     }
 
     @Test
+    @DisplayName("管理端停用：已签发 token 立即失效（resolve 实时校验状态）")
+    void 停用即时失效() {
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(anyString())).thenReturn("7");
+        when(userDao.selectById(7L)).thenReturn(user(7L, 2));
+
+        assertThat(service.resolve("token-x")).isNull();
+    }
+
+    @Test
+    @DisplayName("管理端改状态：非法值拒绝；合法值落库")
+    void 管理端改状态() {
+        assertThatThrownBy(() -> service.changeStatus(7L, 3))
+                .isInstanceOf(RRException.class).hasMessageContaining("状态");
+
+        when(userDao.selectById(7L)).thenReturn(user(7L, 1));
+        when(userDao.updateById(any(SwapUserEntity.class))).thenReturn(1);
+        service.changeStatus(7L, 2);
+
+        verify(userDao).updateById(any(SwapUserEntity.class));
+    }
+
+    @Test
     @DisplayName("登录：用户不存在 / 账号冻结均拒绝")
     void 登录拒绝分支() {
         when(userDao.selectOne(any())).thenReturn(null);
