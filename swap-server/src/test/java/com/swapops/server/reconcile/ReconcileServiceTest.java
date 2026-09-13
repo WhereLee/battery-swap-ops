@@ -51,6 +51,10 @@ class ReconcileServiceTest {
     private com.swapops.server.alarm.service.AlarmService alarmService;
     @Mock
     private com.swapops.server.device.service.BatteryCycleService batteryCycleService;
+    @Mock
+    private com.swapops.server.transfer.dao.TransferTaskDao transferTaskDao;
+    @Mock
+    private com.swapops.server.transfer.dao.TransferTaskItemDao transferTaskItemDao;
 
     private ReconcileService service;
 
@@ -67,7 +71,7 @@ class ReconcileServiceTest {
     void setUp() {
         service = new ReconcileService(orderDao, batteryDao, cellDao, paymentRecordDao, commandLogDao,
                 new BillingProperties(), new DeviceChannelProperties(), alarmService, batteryCycleService,
-                3600, 24, 200);
+                transferTaskDao, transferTaskItemDao, 3600, 24, 200);
     }
 
     @Test
@@ -81,7 +85,7 @@ class ReconcileServiceTest {
 
         ReconcileService.ReconcileReport report = service.run();
 
-        assertThat(report.checks()).hasSize(7);
+        assertThat(report.checks()).hasSize(8);
         assertThat(report.totalViolations()).isZero();
     }
 
@@ -162,6 +166,31 @@ class ReconcileServiceTest {
 
         assertThat(result.violations()).isEqualTo(1);
         assertThat(result.samples()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("⑧ 调拨台账不一致（OUT 明细电池仍在仓）：检出")
+    void 调拨台账不一致检出() {
+        com.swapops.server.transfer.entity.TransferTaskEntity task =
+                new com.swapops.server.transfer.entity.TransferTaskEntity();
+        task.setTaskNo("TR1");
+        task.setStatus(com.swapops.server.transfer.enums.TransferStatus.EXECUTING.getCode());
+        when(transferTaskDao.selectList(any())).thenReturn(List.of(task));
+        com.swapops.server.transfer.entity.TransferTaskItemEntity item =
+                new com.swapops.server.transfer.entity.TransferTaskItemEntity();
+        item.setTaskNo("TR1");
+        item.setBatteryNo("BAT-X");
+        item.setStatus(com.swapops.server.transfer.enums.TransferItemStatus.OUT.getCode());
+        when(transferTaskItemDao.selectList(any())).thenReturn(List.of(item));
+        com.swapops.server.device.entity.BatteryEntity battery =
+                new com.swapops.server.device.entity.BatteryEntity();
+        battery.setBatteryNo("BAT-X");
+        battery.setCellId(99L); // 应处于在途却仍在仓
+        when(batteryDao.selectOne(any())).thenReturn(battery);
+
+        ReconcileService.CheckResult result = service.checkTransferLedger();
+
+        assertThat(result.violations()).isEqualTo(1);
     }
 
     @Test

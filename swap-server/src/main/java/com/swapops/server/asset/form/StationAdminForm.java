@@ -14,4 +14,10 @@ public class StationAdminForm {
     private String name;
 
     private String address;
+
+    /** 纬度（可空；调拨距离用） */
+    private Double latitude;
+
+    /** 经度（可空；调拨距离用） */
+    private Double longitude;
 }

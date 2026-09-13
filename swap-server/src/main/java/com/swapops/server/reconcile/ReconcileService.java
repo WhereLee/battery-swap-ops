@@ -15,6 +15,12 @@ import com.swapops.server.device.entity.BatteryEntity;
 import com.swapops.server.device.entity.CellEntity;
 import com.swapops.server.device.entity.CommandLogEntity;
 import com.swapops.server.device.service.BatteryCycleService;
+import com.swapops.server.transfer.dao.TransferTaskDao;
+import com.swapops.server.transfer.dao.TransferTaskItemDao;
+import com.swapops.server.transfer.entity.TransferTaskEntity;
+import com.swapops.server.transfer.entity.TransferTaskItemEntity;
+import com.swapops.server.transfer.enums.TransferItemStatus;
+import com.swapops.server.transfer.enums.TransferStatus;
 import com.swapops.server.order.dao.PaymentRecordDao;
 import com.swapops.server.order.dao.SwapOrderDao;
 import com.swapops.server.order.entity.PaymentRecordEntity;
@@ -57,6 +63,8 @@ public class ReconcileService {
     private final DeviceChannelProperties deviceProperties;
     private final AlarmService alarmService;
     private final BatteryCycleService batteryCycleService;
+    private final TransferTaskDao transferTaskDao;
+    private final TransferTaskItemDao transferTaskItemDao;
     private final long staleMarginSeconds;
     private final int windowHours;
     private final int sampleLimit;
@@ -65,6 +73,7 @@ public class ReconcileService {
                             PaymentRecordDao paymentRecordDao, CommandLogDao commandLogDao,
                             BillingProperties billingProperties, DeviceChannelProperties deviceProperties,
                             AlarmService alarmService, BatteryCycleService batteryCycleService,
+                            TransferTaskDao transferTaskDao, TransferTaskItemDao transferTaskItemDao,
                             @Value("${swap.reconcile.stale-margin-seconds:3600}") long staleMarginSeconds,
                             @Value("${swap.reconcile.window-hours:24}") int windowHours,
                             @Value("${swap.reconcile.sample-limit:200}") int sampleLimit) {
@@ -77,6 +86,8 @@ public class ReconcileService {
         this.deviceProperties = deviceProperties;
         this.alarmService = alarmService;
         this.batteryCycleService = batteryCycleService;
+        this.transferTaskDao = transferTaskDao;
+        this.transferTaskItemDao = transferTaskItemDao;
         this.staleMarginSeconds = staleMarginSeconds;
         this.windowHours = windowHours;
         this.sampleLimit = sampleLimit;
@@ -120,7 +131,8 @@ public class ReconcileService {
                 checkHolderConsistency(),
                 checkAgingCommands(),
                 checkEscapedBatteries(),
-                checkBatteryCounters());
+                checkBatteryCounters(),
+                checkTransferLedger());
         ReconcileReport report = new ReconcileReport(start, System.currentTimeMillis() - start, checks);
         if (report.totalViolations() > 0) {
             alarmService.raise(AlarmService.DEVICE_SYSTEM, "daily-reconcile", AlarmType.RECONCILE_ERROR,
@@ -271,6 +283,55 @@ public class ReconcileService {
                     + " status=LOANED holder=null cell=null updateTime=" + battery.getUpdateTime());
         }
         return new CheckResult("escaped-batteries", escaped.size(), samples);
+    }
+
+    /** ⑧ 调拨台账一致（S4.2）：明细状态与电池实际位置/任务聚合状态三方对照 */
+    protected CheckResult checkTransferLedger() {
+        List<TransferTaskEntity> tasks = transferTaskDao.selectList(new LambdaQueryWrapper<TransferTaskEntity>()
+                .in(TransferTaskEntity::getStatus, TransferStatus.EXECUTING.getCode(),
+                        TransferStatus.DONE.getCode())
+                .last("LIMIT " + sampleLimit));
+        List<String> samples = new ArrayList<>();
+        int violations = 0;
+        for (TransferTaskEntity task : tasks) {
+            List<TransferTaskItemEntity> items = transferTaskItemDao.selectList(
+                    new LambdaQueryWrapper<TransferTaskItemEntity>()
+                            .eq(TransferTaskItemEntity::getTaskNo, task.getTaskNo()));
+            int outCount = 0;
+            int inCount = 0;
+            for (TransferTaskItemEntity item : items) {
+                BatteryEntity battery = batteryDao.selectOne(new LambdaQueryWrapper<BatteryEntity>()
+                        .eq(BatteryEntity::getBatteryNo, item.getBatteryNo()));
+                if (item.getStatus() == TransferItemStatus.OUT.getCode()) {
+                    outCount++;
+                    if (battery == null || battery.getCellId() != null || battery.getHolderUserId() != null) {
+                        violations++;
+                        addSample(samples, "transfer-out-mismatch: " + task.getTaskNo() + "/" + item.getBatteryNo()
+                                + " cellId=" + (battery == null ? "missing" : battery.getCellId()));
+                    }
+                } else if (item.getStatus() == TransferItemStatus.IN.getCode()) {
+                    inCount++;
+                    if (battery == null || !item.getInCellId().equals(battery.getCellId())) {
+                        violations++;
+                        addSample(samples, "transfer-in-mismatch: " + task.getTaskNo() + "/" + item.getBatteryNo()
+                                + " expectCell=" + item.getInCellId()
+                                + " actual=" + (battery == null ? "missing" : battery.getCellId()));
+                    }
+                }
+            }
+            boolean aggregateOk = switch (TransferStatus.fromCode(task.getStatus())) {
+                case EXECUTING -> outCount >= 1 && inCount < items.size();
+                case DONE -> items.size() > 0 && inCount == items.size();
+                default -> true;
+            };
+            if (!aggregateOk) {
+                violations++;
+                addSample(samples, "transfer-status-mismatch: " + task.getTaskNo()
+                        + " status=" + task.getStatus() + " items=" + items.size()
+                        + " out=" + outCount + " in=" + inCount);
+            }
+        }
+        return new CheckResult("transfer-ledger", violations, samples);
     }
 
     /** ⑦ 电池计数与流水一致（S4.1）：计数器是派生值，流水是事实；不一致=计漏/计重或人工改动未留痕 */

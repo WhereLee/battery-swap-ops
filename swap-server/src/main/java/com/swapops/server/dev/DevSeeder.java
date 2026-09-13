@@ -76,6 +76,9 @@ public class DevSeeder implements ApplicationRunner {
             throw new IllegalStateException("swap.dev.secret 必须为 32hex（经环境变量 SWAP_DEV_SECRET 注入）");
         }
         Long stationId = ensureStation();
+        // S4.2：种子站坐标（调拨距离用；缺失才补，不覆盖人工维护值）
+        jdbcTemplate.update("UPDATE station SET latitude = COALESCE(latitude, ?), "
+                + "longitude = COALESCE(longitude, ?) WHERE id = ?", 30.2741, 120.1551, stationId);
         long now = System.currentTimeMillis();
         int cells = devProperties.getCellsPerCabinet();
         for (int i = 1; i <= devProperties.getCabinets(); i++) {

@@ -127,6 +127,7 @@ public class AssetAdminService {
         station.setStationNo(stationNo);
         station.setName(requireText(form.getName(), "站点名称", 32));
         station.setAddress(requireOptionalText(form.getAddress(), "站点地址", 128));
+        applyCoordinates(station, form);
         station.setStatus(1);
         station.setCreateTime(now);
         station.setUpdateTime(now);
@@ -144,6 +145,7 @@ public class AssetAdminService {
         }
         station.setName(requireText(form.getName(), "站点名称", 32));
         station.setAddress(requireOptionalText(form.getAddress(), "站点地址", 128));
+        applyCoordinates(station, form);
         station.setUpdateTime(System.currentTimeMillis());
         stationDao.updateById(station);
         cache.evict(CacheKeys.STATION_ACTIVE_LIST);
@@ -161,6 +163,21 @@ public class AssetAdminService {
         stationDao.deleteById(id);
         cache.evict(CacheKeys.STATION_ACTIVE_LIST);
         log.info("站点删除 id={} stationNo={}", id, station.getStationNo());
+    }
+
+    private void applyCoordinates(StationEntity station, StationAdminForm form) {
+        if (form.getLatitude() != null) {
+            if (form.getLatitude() < -90 || form.getLatitude() > 90) {
+                throw new RRException("纬度需在 -90~90");
+            }
+            station.setLatitude(form.getLatitude());
+        }
+        if (form.getLongitude() != null) {
+            if (form.getLongitude() < -180 || form.getLongitude() > 180) {
+                throw new RRException("经度需在 -180~180");
+            }
+            station.setLongitude(form.getLongitude());
+        }
     }
 
     private StationEntity requireStation(Long id) {

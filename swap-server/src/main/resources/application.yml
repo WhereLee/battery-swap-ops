@@ -144,6 +144,11 @@ swap:
     worker-lease-seconds: 120
     worker-renew-interval-ms: 30000
     rollback-tolerance-millis: 5
+  transfer:
+    # S4.2 站间调拨规则（启发式）
+    surplus-keep-level: 4
+    deficit-target-level: 3
+    max-per-task: 3
   battery:
     # S4.1 电池健康：SOH 告警阈值/扫描间隔（联调可缩短）
     soh-warn-threshold: 80

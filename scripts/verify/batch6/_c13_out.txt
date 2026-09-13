@@ -1,0 +1,19 @@
+﻿== S4.2 gate: transfer ==
+22:46:22 deficit station built id=5 cabinet=14 one full battery
+22:46:22 PASS recommend hits deficit station
+22:46:22 recommend from=ST-001 to=ST-E2E2-224621 qty=2 distanceKm=19.7
+22:46:22 PASS quantity computed (2)
+22:46:22 PASS distance computed (coords present)
+22:46:22 task created no=TR92631970768617472 status=1 items=2
+22:46:22 PASS created as DRAFT (1)
+22:46:22 PASS items generated (2)
+22:46:22 PASS approved (2)
+22:46:23 PASS task EXECUTING after first out (3)
+22:46:23 PASS cancel refused while EXECUTING
+22:46:23 PASS one item IN, task still EXECUTING
+22:46:23 PASS task DONE after all items IN (4)
+22:46:23 PASS all items IN
+22:46:23 reconcile transfer-ledger violations=0
+22:46:23 PASS transfer ledger consistent (0 violations)
+22:46:24 PASS cleanup done
+22:46:24 GATE-TRANSFER PASS

@@ -19,6 +19,12 @@ public class StationEntity {
     private String address;
 
     /** 1 运营 / 2 停用 */
+    /** 纬度（调拨距离用，S4.2；可空） */
+    private Double latitude;
+
+    /** 经度（调拨距离用，S4.2；可空） */
+    private Double longitude;
+
     private Integer status;
 
     private Long createTime;
