@@ -96,4 +96,6 @@ load 模式附加：`-Xms512m -Xmx512m -Xlog:gc:file=gc.log:time,uptime` + `swap
   `ssh -L 8400:127.0.0.1:8400 ubuntu@124.223.36.154` → `http://127.0.0.1:8400/api`。
 - 运维：`sudo systemctl restart swap-server swap-sim`；`journalctl -u swap-server -f`；
   健康 `curl localhost:8400/api/actuator/health`；Redis 故障恢复用 `POST /admin/ops/rebuild-alloc`（§2.1 预案）。
+- 备份：每日 02:30 cron（`/opt/swap/config/backup.sh`，MySQL dump+Redis RDB，14 天保留，恢复演练已做）；
+  模板在 `scripts/cloud/backup.sh`。
 - 详细部署记录（含冒烟证据与待办）见工作区根《服务器连接文档.md》§九。
