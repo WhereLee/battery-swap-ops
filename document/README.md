@@ -31,6 +31,16 @@
 - block-records/批次4-S3.8生产化加固.md（S3.8；含标准 vs 降级自查、同步阻塞反思、遗留项）
 - block-records/批次5-S4运营与调度.md（S4-pre/S4.4工单/S4.5看板+CRUD；含实战发现与边界）
 - block-records/批次6-S4.1-S4.6.md（S4 纵深：电池健康/调拨/充电策略/Agent 接缝；S4 完成）
+- block-records/批次7-S5质量交付与项目审查.md（覆盖率门槛/JMeter/GC/全项目审查 P1×4 修复/S5.4 文档收口）
+
+### knowledge（节选：入口性文档）
+- knowledge/architecture.md（架构全景/组件机制/安全资金边界/部署形态）
+- knowledge/runbook.md（中间件/启动器矩阵/通道矩阵/排障索引/云端占位）
+- knowledge/s5-quality-delivery.md（S5 质量线：压测/GC/覆盖率设计与结论）
+- 其余为专题档（outbox/支付仲裁/熔断/缓存/策略/调拨/Agent 接缝等），见目录。
+
+### 剧本证据
+- `scripts/verify/README.md`（19 剧本总索引 + 前置 + 命名约定；`_out.txt` 为统计证据，原件归档 diag-archive/）
 
 ### pitfalls
 - pitfalls/gbk-source-encoding.md
