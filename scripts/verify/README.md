@@ -32,6 +32,7 @@
 | batch6 | `_c14_charge_policy.ps1` | 充电策略下发-回滚（S4.3） | PASS |
 | batch6 | `_c15_agent_seam.ps1` | Agent 建议单接缝（S4.6） | PASS |
 | batch7 | `jmeter/swap-ops-load.jmx` | 容量压测（读路径 4 接口，S5.2） | PASS |
+| batch8 | `_c16_overdue_paths.ps1` | OVERDUE 出口双路径（超期归还完成 / 超长转人工+告警，S5 审查回归） | PASS |
 
 证据文件：`batch7/_cov_out.txt`（覆盖率门槛）、`batch7/_load_out.txt`（压测+GC 统计）。
 

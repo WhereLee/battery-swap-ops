@@ -102,6 +102,10 @@ public class DevResetService {
                         continue;
                     }
                     seededBatteryIds.add(battery.getId());
+                    // S5 修复：先脱旧占位（换电剧本残留旧电池占种子仓时，直接绑种子会撞 uk_battery_cell 唯一键）
+                    if (cell.getBatteryId() != null && !cell.getBatteryId().equals(battery.getId())) {
+                        detachBattery(cell.getBatteryId(), now);
+                    }
                     batteryDao.update(null, new LambdaUpdateWrapper<BatteryEntity>()
                             .eq(BatteryEntity::getId, battery.getId())
                             .set(BatteryEntity::getCellId, cell.getId())
@@ -117,6 +121,10 @@ public class DevResetService {
                             .set(CellEntity::getUpdateTime, now));
                     occupied++;
                 } else {
+                    // 空仓分支同样先脱旧占位（防仓空而旧电池 cell_id 悬空 → 对账②误报）
+                    if (cell.getBatteryId() != null) {
+                        detachBattery(cell.getBatteryId(), now);
+                    }
                     cellDao.update(null, new LambdaUpdateWrapper<CellEntity>()
                             .eq(CellEntity::getId, cell.getId())
                             .set(CellEntity::getBatteryId, null)
@@ -131,12 +139,7 @@ public class DevResetService {
         List<BatteryEntity> extras = batteryDao.selectList(new LambdaQueryWrapper<BatteryEntity>()
                 .notIn(!seededBatteryIds.isEmpty(), BatteryEntity::getId, seededBatteryIds));
         for (BatteryEntity extra : extras) {
-            batteryDao.update(null, new LambdaUpdateWrapper<BatteryEntity>()
-                    .eq(BatteryEntity::getId, extra.getId())
-                    .set(BatteryEntity::getCellId, null)
-                    .set(BatteryEntity::getHolderUserId, null)
-                    .set(BatteryEntity::getStatus, BatteryStatus.CHARGING.getCode())
-                    .set(BatteryEntity::getUpdateTime, now));
+            detachBattery(extra.getId(), now);
             parked++;
         }
 
@@ -156,6 +159,16 @@ public class DevResetService {
                         + "walletsReset={} plansReset={}",
                 cabinets.size(), cancelled, occupied, parked, walletsReset, plansReset);
         return result;
+    }
+
+    /** 电池脱仓：置充电态、清持有人（重置/清理旧占位共用） */
+    private void detachBattery(Long batteryId, long now) {
+        batteryDao.update(null, new LambdaUpdateWrapper<BatteryEntity>()
+                .eq(BatteryEntity::getId, batteryId)
+                .set(BatteryEntity::getCellId, null)
+                .set(BatteryEntity::getHolderUserId, null)
+                .set(BatteryEntity::getStatus, BatteryStatus.CHARGING.getCode())
+                .set(BatteryEntity::getUpdateTime, now));
     }
 
     private int resetWallets(long now) {

@@ -149,4 +149,36 @@ class DevResetServiceTest {
         verify(batteryDao, org.mockito.Mockito.atLeast(3)).update(isNull(), any());
         verify(allocationService).rebuildFromDb();
     }
+
+    @Test
+    @DisplayName("重置：种子仓被旧电池占位 → 先脱旧占位再绑种子（S5 修复，防 uk_battery_cell 冲突）")
+    void 旧占位先脱后绑() {
+        when(orderDao.selectList(any())).thenReturn(List.of());
+        CabinetEntity cabinet = new CabinetEntity();
+        cabinet.setId(1L);
+        cabinet.setCabinetNo("SWAP-C-001");
+        when(cabinetDao.selectList(any())).thenReturn(List.of(cabinet));
+
+        AtomicLong cellId = new AtomicLong(1000);
+        when(cellDao.selectOne(any())).thenAnswer(inv -> {
+            CellEntity cell = new CellEntity();
+            cell.setId(cellId.incrementAndGet());
+            cell.setCabinetId(1L);
+            cell.setBatteryId(99L); // 旧电池占着种子仓
+            return cell;
+        });
+        BatteryEntity seed = new BatteryEntity();
+        seed.setId(21L);
+        seed.setBatteryNo("BAT-0001");
+        when(batteryDao.selectOne(any())).thenReturn(seed);
+        when(batteryDao.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> result = service.reset();
+
+        assertThat(result.get("cellsOccupied")).isEqualTo(2);
+        // 本桩下 12 仓全部被旧电池占位：2 满仓(脱旧+绑种)×2 + 10 空仓(脱旧)×1 = 14 次电池更新；
+        // 顺序正确性由实机剧本 _c16 兜底（真库 uk_battery_cell 冲突即失败）
+        verify(batteryDao, org.mockito.Mockito.times(14)).update(isNull(), any());
+        verify(allocationService).rebuildFromDb();
+    }
 }

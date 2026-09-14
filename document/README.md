@@ -33,10 +33,12 @@
 - block-records/批次6-S4.1-S4.6.md（S4 纵深：电池健康/调拨/充电策略/Agent 接缝；S4 完成）
 - block-records/批次7-S5质量交付与项目审查.md（覆盖率门槛/JMeter/GC/全项目审查 P1×4 修复/S5.4 文档收口）
 - block-records/批次8-S5业务审查与修复.md（业务逻辑逐域深审：跨用户幂等键/OVERDUE 无出口 2×P1 + 6×P2 + 3×P3，305 测试）
+- block-records/批次9-S5运维审查与预案.md（慢 SQL 审计→db/10 索引、8 类边界极限故障预案、运维缺口修复、_c16 剧本 16/16）
 
 ### knowledge（节选：入口性文档）
 - knowledge/architecture.md（架构全景/组件机制/安全资金边界/部署形态）
 - knowledge/runbook.md（中间件/启动器矩阵/通道矩阵/排障索引/云端占位）
+- knowledge/ops-troubleshooting.md（慢 SQL 治理 + 8 类边界极限故障预案，S5 运维审查）
 - knowledge/s5-quality-delivery.md（S5 质量线：压测/GC/覆盖率设计与结论）
 - 其余为专题档（outbox/支付仲裁/熔断/缓存/策略/调拨/Agent 接缝等），见目录。
 
