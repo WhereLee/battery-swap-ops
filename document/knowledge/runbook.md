@@ -87,7 +87,13 @@ load 模式附加：`-Xms512m -Xmx512m -Xlog:gc:file=gc.log:time,uptime` + `swap
 总索引 `scripts/verify/README.md`（19 个剧本 + 容量证据；`_out.txt` 为统计数据，原件归档 diag-archive/）。
 剧本前置 = 中间件 + fast 模式平台 + dual 模拟器（`_g*` 部分只需 http）。
 
-## 9. 云端部署（占位）
+## 9. 云端部署（2026-09-14 已部署，阶段1）
 
-口径待拍板：部署形态（jar+systemd / Docker）、端口与 HTTPS、密钥注入方式（环境变量/secrets）、
-监控接入（actuator + GC 日志）。落地后本节替换为生产运行手册；未落地前以本地全栈为准。
+- 形态：`jar + systemd`（`swap-server` :8400 / `swap-sim` :8500，堆 768m/256m），
+  目录 `/opt/swap`，配置 `/opt/swap/config/swap.env`（600，服务器本地生成密钥）；部署脚本 `scripts/cloud/`。
+- 通道：**HTTP 事件通道**（`SWAP_DEVICE_MQ_ENABLED=false`）——未装 RocketMQ；上 MQ 通道见 §5 矩阵（需先评估内存）。
+- 网络：ufw 仅 22；8400/8500 仅本机。远程访问走 SSH 隧道：
+  `ssh -L 8400:127.0.0.1:8400 ubuntu@124.223.36.154` → `http://127.0.0.1:8400/api`。
+- 运维：`sudo systemctl restart swap-server swap-sim`；`journalctl -u swap-server -f`；
+  健康 `curl localhost:8400/api/actuator/health`；Redis 故障恢复用 `POST /admin/ops/rebuild-alloc`（§2.1 预案）。
+- 详细部署记录（含冒烟证据与待办）见工作区根《服务器连接文档.md》§九。

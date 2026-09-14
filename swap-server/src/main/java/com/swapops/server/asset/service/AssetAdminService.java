@@ -556,6 +556,8 @@ public class AssetAdminService {
                         .eq(status != null, CabinetEntity::getStatus, status)
                         .like(cabinetNo != null && !cabinetNo.isBlank(), CabinetEntity::getCabinetNo, cabinetNo)
                         .orderByAsc(CabinetEntity::getId));
+        // S5 云部署冒烟暴露：分页此前明文返回柜密钥——列表一律脱敏（密钥仅在设备注册/更新时单向写入）
+        result.getRecords().forEach(cabinet -> cabinet.setSecret(null));
         return PageResult.of(result);
     }
 

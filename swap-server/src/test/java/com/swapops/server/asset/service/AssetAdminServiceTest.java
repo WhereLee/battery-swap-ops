@@ -200,6 +200,24 @@ class AssetAdminServiceTest {
     }
 
     @Test
+    @DisplayName("柜分页：密钥脱敏（S5 云部署冒烟暴露修复）")
+    void 柜分页密钥脱敏() {
+        CabinetEntity withSecret = cabinet(2);
+        withSecret.setSecret("aabbccddeeff00112233445566778899");
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<CabinetEntity> mpPage =
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 10);
+        mpPage.setRecords(List.of(withSecret));
+        mpPage.setTotal(1);
+        when(cabinetDao.selectPage(any(), any())).thenReturn(mpPage);
+
+        com.swapops.server.common.utils.PageResult<CabinetEntity> result =
+                service.pageCabinets(1, 10, null, null, null);
+
+        assertThat(result.getList()).hasSize(1);
+        assertThat(result.getList().get(0).getSecret()).isNull();
+    }
+
+    @Test
     @DisplayName("删柜：有电池拒绝；全空删除仓与柜 + 池重建")
     void 删柜() {
         when(cabinetDao.selectById(1L)).thenReturn(cabinet(2));
