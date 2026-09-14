@@ -15,6 +15,9 @@ import com.swapops.server.device.entity.BatteryEntity;
 import com.swapops.server.device.entity.CellEntity;
 import com.swapops.server.device.entity.CommandLogEntity;
 import com.swapops.server.device.service.BatteryCycleService;
+import com.swapops.server.agent.dao.AgentActionDao;
+import com.swapops.server.agent.entity.AgentActionEntity;
+import com.swapops.server.agent.enums.AgentActionStatus;
 import com.swapops.server.transfer.dao.TransferTaskDao;
 import com.swapops.server.transfer.dao.TransferTaskItemDao;
 import com.swapops.server.transfer.entity.TransferTaskEntity;
@@ -65,6 +68,7 @@ public class ReconcileService {
     private final BatteryCycleService batteryCycleService;
     private final TransferTaskDao transferTaskDao;
     private final TransferTaskItemDao transferTaskItemDao;
+    private final AgentActionDao agentActionDao;
     private final long staleMarginSeconds;
     private final int windowHours;
     private final int sampleLimit;
@@ -74,6 +78,7 @@ public class ReconcileService {
                             BillingProperties billingProperties, DeviceChannelProperties deviceProperties,
                             AlarmService alarmService, BatteryCycleService batteryCycleService,
                             TransferTaskDao transferTaskDao, TransferTaskItemDao transferTaskItemDao,
+                            AgentActionDao agentActionDao,
                             @Value("${swap.reconcile.stale-margin-seconds:3600}") long staleMarginSeconds,
                             @Value("${swap.reconcile.window-hours:24}") int windowHours,
                             @Value("${swap.reconcile.sample-limit:200}") int sampleLimit) {
@@ -88,6 +93,7 @@ public class ReconcileService {
         this.batteryCycleService = batteryCycleService;
         this.transferTaskDao = transferTaskDao;
         this.transferTaskItemDao = transferTaskItemDao;
+        this.agentActionDao = agentActionDao;
         this.staleMarginSeconds = staleMarginSeconds;
         this.windowHours = windowHours;
         this.sampleLimit = sampleLimit;
@@ -132,7 +138,8 @@ public class ReconcileService {
                 checkAgingCommands(),
                 checkEscapedBatteries(),
                 checkBatteryCounters(),
-                checkTransferLedger());
+                checkTransferLedger(),
+                checkStaleAgentActions());
         ReconcileReport report = new ReconcileReport(start, System.currentTimeMillis() - start, checks);
         if (report.totalViolations() > 0) {
             alarmService.raise(AlarmService.DEVICE_SYSTEM, "daily-reconcile", AlarmType.RECONCILE_ERROR,
@@ -332,6 +339,21 @@ public class ReconcileService {
             }
         }
         return new CheckResult("transfer-ledger", violations, samples);
+    }
+
+    /** ⑨ Agent 建议单悬挂（S4.6）：EXECUTING 超过 5 分钟=执行后进程崩溃未落终态 → 需人工复核（重新建议） */
+    protected CheckResult checkStaleAgentActions() {
+        long deadline = System.currentTimeMillis() - 5 * 60_000L;
+        List<AgentActionEntity> stale = agentActionDao.selectList(new LambdaQueryWrapper<AgentActionEntity>()
+                .eq(AgentActionEntity::getStatus, AgentActionStatus.EXECUTING.getCode())
+                .lt(AgentActionEntity::getUpdateTime, deadline)
+                .last("LIMIT " + sampleLimit));
+        List<String> samples = new ArrayList<>();
+        for (AgentActionEntity action : stale) {
+            addSample(samples, "stale-agent-action: " + action.getActionNo()
+                    + " type=" + action.getActionType());
+        }
+        return new CheckResult("stale-agent-actions", stale.size(), samples);
     }
 
     /** ⑦ 电池计数与流水一致（S4.1）：计数器是派生值，流水是事实；不一致=计漏/计重或人工改动未留痕 */

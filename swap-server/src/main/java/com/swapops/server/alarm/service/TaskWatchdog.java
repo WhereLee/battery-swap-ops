@@ -27,6 +27,8 @@ public class TaskWatchdog {
             "refund-compensation", 300_000L,
             "delay-scheduler", 60_000L,
             "offline-scan", 300_000L,
+            "outbox-relay", 300_000L,
+            "battery-health-scan", 2 * 3600_000L,
             "daily-reconcile", 26 * 3600_000L);
 
     private final StringRedisTemplate stringRedisTemplate;

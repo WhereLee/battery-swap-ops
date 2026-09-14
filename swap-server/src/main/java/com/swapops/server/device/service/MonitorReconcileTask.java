@@ -5,6 +5,9 @@ import com.swapops.contract.OrderStatus;
 import com.swapops.server.alarm.AlarmType;
 import com.swapops.server.alarm.service.AlarmService;
 import com.swapops.server.alarm.service.TaskWatchdog;
+import com.swapops.server.charge.dao.ChargePolicyDao;
+import com.swapops.server.charge.entity.ChargePolicyEntity;
+import com.swapops.server.charge.service.ChargePolicyService;
 import com.swapops.server.common.RRException;
 import com.swapops.server.common.lock.JobLockService;
 import com.swapops.server.device.config.DeviceChannelProperties;
@@ -42,12 +45,15 @@ public class MonitorReconcileTask {
     private final JobLockService jobLockService;
     private final AlarmService alarmService;
     private final TaskWatchdog watchdog;
+    private final ChargePolicyService chargePolicyService;
+    private final ChargePolicyDao chargePolicyDao;
 
     public MonitorReconcileTask(DeviceChannelProperties properties, CommandLogService commandLogService,
                                 CommandDispatchService commandDispatchService,
                                 SwapOrderService swapOrderService, CellDao cellDao,
                                 JobLockService jobLockService, AlarmService alarmService,
-                                TaskWatchdog watchdog) {
+                                TaskWatchdog watchdog, ChargePolicyService chargePolicyService,
+                                ChargePolicyDao chargePolicyDao) {
         this.properties = properties;
         this.commandLogService = commandLogService;
         this.commandDispatchService = commandDispatchService;
@@ -56,6 +62,8 @@ public class MonitorReconcileTask {
         this.jobLockService = jobLockService;
         this.alarmService = alarmService;
         this.watchdog = watchdog;
+        this.chargePolicyService = chargePolicyService;
+        this.chargePolicyDao = chargePolicyDao;
     }
 
     @Scheduled(fixedDelayString = "${swap.device.reconcile-interval-ms:15000}")
@@ -88,8 +96,14 @@ public class MonitorReconcileTask {
             return;
         }
         // 设备已执行：指令按证据销账（事件丢失场景），订单按快照推进
-        boolean arrived = commandLogService.markArrivedBySeq(cabinetNo, cmd.getCommandSeq(),
-                CommandAction.OPEN_CELL);
+        // 动作取指令流水实际值：策略/开仓共用对账路径（硬编码 OPEN_CELL 会漏销策略指令）
+        CommandAction action = parseAction(cmd.getCommandAction());
+        boolean arrived = commandLogService.markArrivedBySeq(cabinetNo, cmd.getCommandSeq(), action);
+        if (action == CommandAction.SET_CHARGE_POLICY) {
+            log.info("对账：策略指令按证据销账 cabinetNo={} seq={} arrived={}",
+                    cabinetNo, cmd.getCommandSeq(), arrived);
+            return;
+        }
         SwapOrderEntity order = swapOrderService.findByOpenCommand(cabinetNo, cmd.getCommandSeq());
         if (order != null && order.getStatus() == OrderStatus.PENDING_OPEN.getCode()) {
             CellEntity cell = order.getCellId() == null ? null : cellDao.selectById(order.getCellId());
@@ -118,6 +132,11 @@ public class MonitorReconcileTask {
             }
             return;
         }
+        // 策略指令的重试走 reapply（同版本幂等，柜侧单调）；无需订单/仓绑定
+        if (parseAction(cmd.getCommandAction()) == CommandAction.SET_CHARGE_POLICY) {
+            retryPolicyCommand(cmd, maxRetry);
+            return;
+        }
         SwapOrderEntity order = swapOrderService.findByOpenCommand(cmd.getCabinetNo(), cmd.getCommandSeq());
         CellEntity cell = order == null || order.getCellId() == null ? null : cellDao.selectById(order.getCellId());
         if (cell == null) {
@@ -135,6 +154,39 @@ public class MonitorReconcileTask {
         } finally {
             // 重试计数（无论链路成败：防无限重试）；设备拒绝场景由 S3.2 分层收敛为 SEND_FAILED
             commandLogService.markRetried(cmd.getId());
+        }
+    }
+
+    /** 策略指令重试：找该 seq 对应的 FAILED 策略行 reapply（同版本幂等） */
+    private void retryPolicyCommand(CommandLogEntity cmd, int maxRetry) {
+        ChargePolicyEntity policy = chargePolicyDao.selectOne(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ChargePolicyEntity>()
+                        .eq(ChargePolicyEntity::getCommandSeq, cmd.getCommandSeq())
+                        .eq(ChargePolicyEntity::getStatus, 2)
+                        .last("LIMIT 1"));
+        if (policy == null) {
+            commandLogService.markRetried(cmd.getId());
+            log.debug("对账策略重试跳过（无 FAILED 策略行） cabinetNo={} seq={}",
+                    cmd.getCabinetNo(), cmd.getCommandSeq());
+            return;
+        }
+        log.info("策略指令超时重试 cabinetNo={} seq={} policyId={} retry={}/{}",
+                cmd.getCabinetNo(), cmd.getCommandSeq(), policy.getId(), cmd.getRetryCount(), maxRetry);
+        try {
+            chargePolicyService.reapply(policy.getId());
+        } catch (RRException e) {
+            log.warn("对账策略重投失败 cabinetNo={} seq={} cause={}",
+                    cmd.getCabinetNo(), cmd.getCommandSeq(), e.getMessage());
+        } finally {
+            commandLogService.markRetried(cmd.getId());
+        }
+    }
+
+    private CommandAction parseAction(String raw) {
+        try {
+            return CommandAction.valueOf(raw == null ? "" : raw);
+        } catch (IllegalArgumentException e) {
+            return CommandAction.OPEN_CELL;
         }
     }
 }

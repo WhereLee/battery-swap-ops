@@ -52,6 +52,10 @@ class MonitorReconcileTaskTest {
     private com.swapops.server.alarm.service.AlarmService alarmService;
     @Mock
     private com.swapops.server.alarm.service.TaskWatchdog watchdog;
+    @Mock
+    private com.swapops.server.charge.service.ChargePolicyService chargePolicyService;
+    @Mock
+    private com.swapops.server.charge.dao.ChargePolicyDao chargePolicyDao;
     @InjectMocks
     private MonitorReconcileTask task;
 
@@ -108,6 +112,27 @@ class MonitorReconcileTaskTest {
 
         verify(commandDispatchService).dispatchPrepared(cmd, "SWAP-C-001", 3, false);
         verify(commandLogService).markRetried(100L);
+    }
+
+    @Test
+    @DisplayName("策略指令超时：按 seq 找 FAILED 策略行 reapply（S5 审查修复）")
+    void 策略指令重试() {
+        CommandLogEntity cmd = cmd(0);
+        cmd.setCommandAction("SET_CHARGE_POLICY");
+        stubSweep(cmd);
+        when(properties.getMaxRetry()).thenReturn(3);
+        when(commandDispatchService.queryState("SWAP-C-001")).thenReturn(null);
+        com.swapops.server.charge.entity.ChargePolicyEntity policy =
+                new com.swapops.server.charge.entity.ChargePolicyEntity();
+        policy.setId(3L);
+        when(chargePolicyDao.selectOne(any())).thenReturn(policy);
+
+        task.reconcile();
+
+        verify(chargePolicyService).reapply(3L);
+        verify(commandLogService).markRetried(100L);
+        org.mockito.Mockito.verify(commandDispatchService, org.mockito.Mockito.never())
+                .dispatchPrepared(any(), any(), anyInt(), eq(false));
     }
 
     @Test

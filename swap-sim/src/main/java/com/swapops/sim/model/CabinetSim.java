@@ -91,7 +91,9 @@ public class CabinetSim {
      * 时间是注入参数（调度器传真实增量；单测可传固定值）。
      */
     public void chargeTick(long nowMillis, long deltaMillis) {
-        int hour = java.time.LocalTime.now(java.time.ZoneId.systemDefault()).getHour();
+        // 用注入时钟取小时（与 delta 同源，测试可注入固定时刻）
+        int hour = java.time.Instant.ofEpochMilli(nowMillis)
+                .atZone(java.time.ZoneId.systemDefault()).getHour();
         int budgetW = chargePolicy == null
                 ? properties.getDefaultChargePowerW() : chargePolicy.powerLimitAt(hour);
         java.util.List<CellSim> charging = new java.util.ArrayList<>();

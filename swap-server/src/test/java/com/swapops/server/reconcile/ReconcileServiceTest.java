@@ -55,6 +55,8 @@ class ReconcileServiceTest {
     private com.swapops.server.transfer.dao.TransferTaskDao transferTaskDao;
     @Mock
     private com.swapops.server.transfer.dao.TransferTaskItemDao transferTaskItemDao;
+    @Mock
+    private com.swapops.server.agent.dao.AgentActionDao agentActionDao;
 
     private ReconcileService service;
 
@@ -71,7 +73,7 @@ class ReconcileServiceTest {
     void setUp() {
         service = new ReconcileService(orderDao, batteryDao, cellDao, paymentRecordDao, commandLogDao,
                 new BillingProperties(), new DeviceChannelProperties(), alarmService, batteryCycleService,
-                transferTaskDao, transferTaskItemDao, 3600, 24, 200);
+                transferTaskDao, transferTaskItemDao, agentActionDao, 3600, 24, 200);
     }
 
     @Test
@@ -85,7 +87,7 @@ class ReconcileServiceTest {
 
         ReconcileService.ReconcileReport report = service.run();
 
-        assertThat(report.checks()).hasSize(8);
+        assertThat(report.checks()).hasSize(9);
         assertThat(report.totalViolations()).isZero();
     }
 
@@ -191,6 +193,19 @@ class ReconcileServiceTest {
         ReconcileService.CheckResult result = service.checkTransferLedger();
 
         assertThat(result.violations()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("⑨ Agent 建议单悬挂（EXECUTING 超 5 分钟）：检出")
+    void 悬挂建议单检出() {
+        com.swapops.server.agent.entity.AgentActionEntity action =
+                new com.swapops.server.agent.entity.AgentActionEntity();
+        action.setActionNo("AA1");
+        action.setActionType("RUN_RECONCILE");
+        action.setStatus(5);
+        when(agentActionDao.selectList(any())).thenReturn(List.of(action));
+
+        assertThat(service.checkStaleAgentActions().violations()).isEqualTo(1);
     }
 
     @Test
