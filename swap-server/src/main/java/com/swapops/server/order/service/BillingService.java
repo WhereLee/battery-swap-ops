@@ -1,6 +1,8 @@
 package com.swapops.server.order.service;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.swapops.server.alarm.AlarmType;
+import com.swapops.server.alarm.service.AlarmService;
 import com.swapops.server.common.RRException;
 import com.swapops.server.config.BillingProperties;
 import com.swapops.server.order.dao.SwapOrderDao;
@@ -17,7 +19,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * 计费编排（S0.2 §4.4）：套餐扣次优先；无套餐走余额；TAKE 缴押金 / RETURN 退押金；
- * SWAP 超时按小时加收超时费（余额→押金依次抵扣，不足额记为欠费并告警日志）。
+ * SWAP 超时按小时加收超时费（余额→押金依次抵扣，不足额记为欠费并告警——ORDER_ARREARS）。
  *
  * <p>资金动作全部落在 payment_record（{order_id,payment_type} 唯一键=幂等闸）；
  * 本方法在事件事务内执行：硬失败抛错 → 整个事件回滚（含台账/序守卫）→ 设备/消息重试幂等重入。</p>
@@ -31,15 +33,17 @@ public class BillingService {
     private final PaymentRecordService paymentRecordService;
     private final SwapOrderDao orderDao;
     private final BillingProperties billingProperties;
+    private final AlarmService alarmService;
 
     public BillingService(PlanService planService, WalletService walletService,
                           PaymentRecordService paymentRecordService, SwapOrderDao orderDao,
-                          BillingProperties billingProperties) {
+                          BillingProperties billingProperties, AlarmService alarmService) {
         this.planService = planService;
         this.walletService = walletService;
         this.paymentRecordService = paymentRecordService;
         this.orderDao = orderDao;
         this.billingProperties = billingProperties;
+        this.alarmService = alarmService;
     }
 
     /** 订单完成计费（调用方已完成订单 CAS 到终态） */
@@ -97,7 +101,8 @@ public class BillingService {
             if (elapsed > threshold) {
                 long extraHours = (elapsed - threshold + 3599_999L) / 3_600_000L;
                 long amount = extraHours * billingProperties.getOverdueFeePerHourFen();
-                overdueFee = chargeOverdue(userId, order.getId(), (int) Math.min(Integer.MAX_VALUE, amount));
+                overdueFee = chargeOverdue(userId, order.getId(), order.getOrderNo(),
+                        (int) Math.min(Integer.MAX_VALUE, amount));
             }
         }
 
@@ -125,8 +130,8 @@ public class BillingService {
                 order.getOrderNo(), type, payType, baseFee, overdueFee);
     }
 
-    /** 超时费：余额优先、押金兜底；不足额记欠费（S3 告警） */
-    private int chargeOverdue(Long userId, Long orderId, int amount) {
+    /** 超时费：余额优先、押金兜底；不足额记欠费 + ORDER_ARREARS 告警（S5 审查补：欠费必须显性可见） */
+    private int chargeOverdue(Long userId, Long orderId, String orderNo, int amount) {
         WalletEntity wallet = walletService.getByUserId(userId);
         int balance = wallet == null || wallet.getBalanceFen() == null ? 0 : wallet.getBalanceFen();
         int deposit = wallet == null || wallet.getDepositFen() == null ? 0 : wallet.getDepositFen();
@@ -145,7 +150,10 @@ public class BillingService {
         paymentRecordService.record(userId, orderId, PaymentType.OVERDUE_FEE, charged,
                 charged < amount ? "超时费（欠费 " + (amount - charged) + " 分）" : "超时费");
         if (charged < amount) {
-            log.warn("超时费未足额 userId={} orderId={} 应收={} 实收={}（S3 告警接管）",
+            alarmService.raise(AlarmService.DEVICE_ORDER, orderNo, AlarmType.ORDER_ARREARS,
+                    "超时费未足额 userId=" + userId + " 应收=" + amount + " 实收=" + charged
+                            + " 欠费=" + (amount - charged));
+            log.warn("超时费未足额（ORDER_ARREARS 告警已发）userId={} orderId={} 应收={} 实收={}",
                     userId, orderId, amount, charged);
         }
         return charged;

@@ -2,6 +2,8 @@ package com.swapops.server.order.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.swapops.server.alarm.AlarmType;
+import com.swapops.server.alarm.service.AlarmService;
 import com.swapops.server.common.RRException;
 import com.swapops.server.config.BillingProperties;
 import com.swapops.server.order.dao.SwapOrderDao;
@@ -47,6 +49,8 @@ class BillingServiceTest {
     private PaymentRecordService paymentRecordService;
     @Mock
     private SwapOrderDao orderDao;
+    @Mock
+    private AlarmService alarmService;
 
     private BillingService service;
 
@@ -59,7 +63,7 @@ class BillingServiceTest {
     @BeforeEach
     void setUp() {
         service = new BillingService(planService, walletService, paymentRecordService, orderDao,
-                new BillingProperties());
+                new BillingProperties(), alarmService);
     }
 
     private SwapOrderEntity order(String type, Long takeTime) {
@@ -149,5 +153,21 @@ class BillingServiceTest {
         service.charge(order("SWAP", takeTime), now);
 
         verify(paymentRecordService).record(eq(7L), eq(99L), eq(PaymentType.OVERDUE_FEE), eq(200), anyString());
+    }
+
+    @Test
+    @DisplayName("SWAP 超时费不足额：记欠费 + ORDER_ARREARS 告警（S5 审查补）")
+    void 超时费欠费告警() {
+        long now = System.currentTimeMillis();
+        long takeTime = now - 26L * 3600 * 1000;
+        when(planService.findUsablePlan(eq(7L), anyLong())).thenReturn(null);
+        when(walletService.deductBalance(7L, 300)).thenReturn(true);
+        when(walletService.getByUserId(7L)).thenReturn(wallet(100, 0)); // 余额/押金均不足付超时费
+
+        service.charge(order("SWAP", takeTime), now);
+
+        verify(paymentRecordService).record(eq(7L), eq(99L), eq(PaymentType.OVERDUE_FEE), eq(0), anyString());
+        verify(alarmService).raise(eq(AlarmService.DEVICE_ORDER), eq("SWO-1"),
+                eq(AlarmType.ORDER_ARREARS), anyString());
     }
 }

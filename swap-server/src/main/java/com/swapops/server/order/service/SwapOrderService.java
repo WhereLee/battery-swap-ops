@@ -94,7 +94,7 @@ public class SwapOrderService {
     @Transactional
     public SwapOrderEntity create(Long userId, CreateOrderForm form, String idemKey) {
         OrderType type = parseType(form.getType());
-        SwapOrderEntity existing = byIdemKey(idemKey);
+        SwapOrderEntity existing = byIdemKey(userId, idemKey);
         if (existing != null) {
             return existing;
         }
@@ -145,12 +145,12 @@ public class SwapOrderService {
         try {
             orderDao.insert(order);
         } catch (DuplicateKeyException e) {
-            SwapOrderEntity raced = byIdemKey(idemKey);
+            SwapOrderEntity raced = byIdemKey(userId, idemKey);
             if (raced != null) {
                 return raced;
             }
-            // active_user_key 唯一冲突 = 并发同用户下单
-            throw new RRException("存在进行中的订单，请勿重复下单");
+            // idem_key 全局唯一：撞车且查无本人订单 = 该幂等键已被他人占用（防跨用户幂等键劫持）
+            throw new RRException("幂等键已被使用，请更换 Idempotency-Key");
         }
 
         boolean fullPath = type != OrderType.RETURN;
@@ -388,9 +388,11 @@ public class SwapOrderService {
         throw last == null ? new RRException("暂无可换资源，请稍后重试") : last;
     }
 
-    private SwapOrderEntity byIdemKey(String idemKey) {
+    /** 幂等键按用户隔离（idem_key 是全局唯一键：不同用户撞 key 必须互不可见） */
+    private SwapOrderEntity byIdemKey(Long userId, String idemKey) {
         return orderDao.selectOne(new LambdaQueryWrapper<SwapOrderEntity>()
-                .eq(SwapOrderEntity::getIdemKey, idemKey));
+                .eq(SwapOrderEntity::getIdemKey, idemKey)
+                .eq(SwapOrderEntity::getUserId, userId));
     }
 
     private OrderType parseType(String raw) {

@@ -100,7 +100,7 @@ class ReconcileServiceTest {
         opened.setOrderNo("SWO-2");
         SwapOrderEntity taken = new SwapOrderEntity();
         taken.setOrderNo("SWO-3");
-        when(orderDao.selectList(any())).thenReturn(List.of(pending), List.of(opened), List.of(taken));
+        when(orderDao.selectList(any())).thenReturn(List.of(pending), List.of(opened), List.of(taken), List.of());
 
         ReconcileService.CheckResult result = service.checkStaleActive();
 

@@ -160,6 +160,23 @@ class OrderEventServiceTest {
     }
 
     @Test
+    @DisplayName("SWAP 超期订单归还：OVERDUE 同样完成（S5 审查修复：超期归还不再卡死）")
+    void 超期订单还电完成() {
+        SwapOrderEntity overdue = order(99L, "SWO-2", "SWAP", OrderStatus.OVERDUE, 11L, 21L);
+        overdue.setTakeTime(System.currentTimeMillis() - 26L * 3600 * 1000);
+        when(orderDao.selectOne(any())).thenReturn(overdue);
+        when(batteryDao.selectOne(any())).thenReturn(battery(20L, "BAT-0009"));
+        when(batteryDao.selectById(21L)).thenReturn(battery(21L, "BAT-0001"));
+        when(orderDao.update(isNull(), any())).thenReturn(1);
+        when(batteryDao.update(isNull(), any())).thenReturn(1);
+
+        service.onBatteryIn(cabinet(), cell(11L, 3), battery(20L, "BAT-0009"), 7L);
+
+        verify(billingService).charge(any(SwapOrderEntity.class), anyLong());
+        verify(batteryDao).update(isNull(), any());
+    }
+
+    @Test
     @DisplayName("RETURN 还电：完成订单 + 退押金（计费），无取电前置")
     void return还电完成() {
         SwapOrderEntity returnOrder = order(99L, "SWO-3", "RETURN", OrderStatus.OPENED, 15L, null);

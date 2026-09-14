@@ -58,7 +58,7 @@ public class PlanService {
      */
     @Transactional
     public UserPlanEntity purchase(Long userId, Long planId, String idemKey) {
-        UserPlanEntity existing = byIdemKey(idemKey);
+        UserPlanEntity existing = byIdemKey(userId, idemKey);
         if (existing != null) {
             return existing;
         }
@@ -86,12 +86,12 @@ public class PlanService {
         try {
             userPlanDao.insert(userPlan);
         } catch (DuplicateKeyException e) {
-            // 并发同 key：返回已存在的那笔
-            UserPlanEntity raced = byIdemKey(idemKey);
+            // 并发同 key：返回已存在的那笔（按用户隔离；撞车查无 = 该幂等键已被他人占用）
+            UserPlanEntity raced = byIdemKey(userId, idemKey);
             if (raced != null) {
                 return raced;
             }
-            throw e;
+            throw new RRException("幂等键已被使用，请更换 Idempotency-Key");
         }
         int price = plan.getPriceFen() == null ? 0 : plan.getPriceFen();
         if (price > 0 && !walletService.deductBalance(userId, price)) {
@@ -212,9 +212,10 @@ public class PlanService {
         plan.setDailyLimitTimes(form.getDailyLimitTimes());
     }
 
-    private UserPlanEntity byIdemKey(String idemKey) {
+    private UserPlanEntity byIdemKey(Long userId, String idemKey) {
         return userPlanDao.selectOne(new LambdaQueryWrapper<UserPlanEntity>()
-                .eq(UserPlanEntity::getIdemKey, idemKey));
+                .eq(UserPlanEntity::getIdemKey, idemKey)
+                .eq(UserPlanEntity::getUserId, userId));
     }
 
     /** 生效可用套餐（TIMES 需剩余次数>0；MONTHLY 需在有效期内） */

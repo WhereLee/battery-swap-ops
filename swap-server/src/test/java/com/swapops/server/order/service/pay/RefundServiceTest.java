@@ -27,6 +27,7 @@ import org.springframework.dao.DuplicateKeyException;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -74,6 +75,10 @@ class RefundServiceTest {
         service = new RefundService(refundRecordDao, paymentRecordDao,
                 paymentRecordService, walletService, delayQueueService, idGenerator,
                 new com.swapops.server.common.retry.DeadlockRetryExecutor());
+        // 默认可退口径：该订单已收 300（基础费），无历史退款（S5 审查：refund 入口先做可退上限校验）
+        when(paymentRecordDao.selectList(any())).thenReturn(List.of(
+                payment(7L, 99L, PaymentType.BALANCE_FEE, 300)));
+        when(refundRecordDao.selectList(any())).thenReturn(List.of());
     }
 
     private RefundRecordEntity record(String status, int amountFen) {
@@ -176,6 +181,28 @@ class RefundServiceTest {
                 payment(7L, 99L, PaymentType.PLAN_DEDUCT, 0)));
 
         assertThat(service.refundableAmount(99L)).isEqualTo(10400);
+    }
+
+    @Test
+    @DisplayName("已退款扣减：可退金额 = 已收 - 已退（S5 审查修复：防自动+人工双通道双退）")
+    void 可退金额扣减已退() {
+        when(paymentRecordDao.selectList(any())).thenReturn(List.of(
+                payment(7L, 99L, PaymentType.BALANCE_FEE, 300),
+                payment(7L, 99L, PaymentType.DEPOSIT, 9900)));
+        when(refundRecordDao.selectList(any())).thenReturn(List.of(
+                record(RefundStatus.SUCCESS.name(), 9900)));
+
+        assertThat(service.refundableAmount(99L)).isEqualTo(300);
+    }
+
+    @Test
+    @DisplayName("超额退款拒绝：金额超可退上限直接抛错（S5 审查修复）")
+    void 超额退款拒绝() {
+        assertThatThrownBy(() -> service.refund(99L, 7L, 500, "ADMIN_MANUAL"))
+                .isInstanceOf(com.swapops.server.common.RRException.class)
+                .hasMessageContaining("超过可退金额");
+        verify(refundRecordDao, never()).insert(any(RefundRecordEntity.class));
+        verifyNoInteractions(walletService);
     }
 
     private PaymentRecordEntity payment(Long userId, Long orderId, PaymentType type, int amountFen) {

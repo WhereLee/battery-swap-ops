@@ -16,6 +16,8 @@ public enum AlarmType {
     RETRY_EXCEEDED,
     /** 订单归还超期（S3.3 迁移） */
     ORDER_OVERDUE,
+    /** 超时费未足额收取（用户欠费，S5 审查补） */
+    ORDER_ARREARS,
     /** 日终对账差异（S3.5） */
     RECONCILE_ERROR,
     /** 定时任务停摆（看护） */

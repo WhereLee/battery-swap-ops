@@ -250,6 +250,32 @@ class TransferServiceTest {
     }
 
     @Test
+    @DisplayName("出库守卫：电池所在仓被订单锁定 → 拒绝（S5 审查修复）")
+    void 出库拒绝锁定仓() {
+        TransferTaskEntity task = new TransferTaskEntity();
+        task.setId(9L);
+        task.setTaskNo("TR123");
+        task.setFromStation(1L);
+        task.setStatus(TransferStatus.APPROVED.getCode());
+        when(taskDao.selectById(9L)).thenReturn(task);
+        TransferTaskItemEntity item = new TransferTaskItemEntity();
+        item.setId(55L);
+        item.setStatus(TransferItemStatus.PENDING.getCode());
+        when(itemDao.selectOne(any())).thenReturn(item);
+        when(itemDao.update(isNull(), any())).thenReturn(1);
+        when(batteryDao.selectOne(any())).thenReturn(batteryInCell(201L, "BAT-0001", 101L));
+        CellEntity locked = new CellEntity();
+        locked.setId(101L);
+        locked.setCabinetId(11L);
+        locked.setLockOrderId(77L);
+        when(cellDao.selectById(101L)).thenReturn(locked);
+        when(cabinetDao.selectById(11L)).thenReturn(cabinet(11L, 1L));
+
+        assertThatThrownBy(() -> service.out(9L, "BAT-0001", "admin"))
+                .isInstanceOf(RRException.class).hasMessageContaining("锁定");
+    }
+
+    @Test
     @DisplayName("入库：末项入库触发任务 DONE（聚合推进）")
     void 入库聚合完成() {
         TransferTaskEntity task = new TransferTaskEntity();

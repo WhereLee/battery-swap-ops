@@ -383,6 +383,7 @@ public class AssetAdminService {
             moveToCell(battery, form.getCellId(), now);
         } else if (Boolean.TRUE.equals(form.getPark()) && battery.getCellId() != null) {
             Long oldCellId = battery.getCellId();
+            requireUnlockedSourceCell(oldCellId, batteryNo);
             // 先持久化标量编辑（此时 cellId 仍为原值；updateById 不会误将非空字段置空）
             battery.setUpdateTime(now);
             batteryDao.updateById(battery);
@@ -437,6 +438,7 @@ public class AssetAdminService {
         }
         CellEntity target = requireEmptyCell(cellId);
         if (battery.getCellId() != null) {
+            requireUnlockedSourceCell(battery.getCellId(), battery.getBatteryNo());
             clearCell(battery.getCellId(), now);
         }
         battery.setCellId(target.getId());
@@ -466,6 +468,14 @@ public class AssetAdminService {
             throw new RRException("目标仓非空或已锁定: cellId=" + cellId);
         }
         return cell;
+    }
+
+    /** 源仓解锁校验：电池移出/park 前必须确认仓未被订单锁定（防从进行中订单手里抽电池） */
+    private void requireUnlockedSourceCell(Long cellId, String batteryNo) {
+        CellEntity source = cellDao.selectById(cellId);
+        if (source != null && source.getLockOrderId() != null) {
+            throw new RRException("电池所在仓已被订单锁定，不能移动: " + batteryNo);
+        }
     }
 
     private int requireRange(Integer value, String label, int min, int max, Integer defaultValue) {

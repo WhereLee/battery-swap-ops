@@ -122,7 +122,12 @@ public class ChargePolicyService {
         entity.setRemark(remark);
         entity.setCreateTime(now);
         entity.setUpdateTime(now);
-        policyDao.insert(entity);
+        try {
+            policyDao.insert(entity);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 并发提交同版本（latestVersion+1 非原子）撞唯一键：提示重试而非裸 500
+            throw new RRException("策略版本冲突（他人已提交 " + version + "），请重新提交");
+        }
         return entity;
     }
 

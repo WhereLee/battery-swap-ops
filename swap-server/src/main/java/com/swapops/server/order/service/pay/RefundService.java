@@ -59,9 +59,15 @@ public class RefundService {
 
     /**
      * 发起退款（幂等）：同 (orderId, reason) 重复调用直接返回既有记录，不二次入账。
+     * 金额上限=可退金额（已收未退）；超额直接拒绝（防人工超额/双通道双退）。
      * 执行异常不抛出：记日志 + 延迟重投（补偿任务/人工可反复触达）。
      */
     public RefundRecordEntity refund(Long orderId, Long userId, int amountFen, String reason) {
+        int refundable = refundableAmount(orderId);
+        if (amountFen > refundable) {
+            throw new com.swapops.server.common.RRException(
+                    "退款金额超过可退金额（可退 " + refundable + " 分）: " + amountFen);
+        }
         // 死锁重试（插入/流水更新可能与其他补偿并发触发 1213；动作本身幂等，重试安全）
         return deadlockRetryExecutor.execute(() -> doRefund(orderId, userId, amountFen, reason));
     }
@@ -124,7 +130,7 @@ public class RefundService {
                 .eq(RefundRecordEntity::getRefundNo, refundNo));
     }
 
-    /** 可退金额 = 该订单已收且尚未退的（基础费/押金/超时费）之和 */
+    /** 可退金额 = 该订单已收且尚未退的（基础费/押金/超时费）之和（已存在的退款单 WAIT/SUCCESS 均计入已退） */
     public int refundableAmount(Long orderId) {
         List<PaymentRecordEntity> records = paymentRecordDao.selectList(
                 new LambdaQueryWrapper<PaymentRecordEntity>().eq(PaymentRecordEntity::getOrderId, orderId));
@@ -135,7 +141,14 @@ public class RefundService {
                 sum += record.getAmountFen();
             }
         }
-        return sum;
+        List<RefundRecordEntity> refunds = refundRecordDao.selectList(
+                new LambdaQueryWrapper<RefundRecordEntity>().eq(RefundRecordEntity::getOrderId, orderId));
+        for (RefundRecordEntity refund : refunds) {
+            if (refund.getAmountFen() != null && refund.getAmountFen() > 0) {
+                sum -= refund.getAmountFen();
+            }
+        }
+        return Math.max(sum, 0);
     }
 
     private RefundRecordEntity findByOrderReason(Long orderId, String reason) {

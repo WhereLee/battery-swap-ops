@@ -129,6 +129,17 @@ class ChargePolicyServiceTest {
     }
 
     @Test
+    @DisplayName("并发版本竞争：撞 (cabinet_no,version) 唯一键转业务异常（S5 审查修复）")
+    void 并发版本冲突() {
+        when(policyDao.insert(any(ChargePolicyEntity.class)))
+                .thenThrow(new org.springframework.dao.DuplicateKeyException("uk_policy_cabinet_version"));
+
+        assertThatThrownBy(() -> service.apply(form(List.of(
+                window(0, 8, 2000, 30), window(8, 22, 400, 150), window(22, 24, 2000, 30)))))
+                .isInstanceOf(RRException.class).hasMessageContaining("版本冲突");
+    }
+
+    @Test
     @DisplayName("重投：已生效拒绝；失败记录可重投")
     void 重投规则() {
         ChargePolicyEntity active = new ChargePolicyEntity();

@@ -37,9 +37,11 @@ import org.mockito.quality.Strictness;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -162,6 +164,21 @@ class SwapOrderServiceTest {
 
         assertThat(order.getId()).isEqualTo(88L);
         verifyNoInteractions(allocationService, walletService, planService);
+    }
+
+    @Test
+    @DisplayName("跨用户幂等键碰撞：idem_key 全局唯一且按用户隔离 → 拒绝（S5 审查修复）")
+    void 跨用户幂等键拒绝() {
+        when(orderDao.selectOne(any())).thenReturn(null);
+        when(batteryDao.selectOne(any())).thenReturn(null);
+        stubCreateCommon();
+        when(orderDao.insert(any(SwapOrderEntity.class)))
+                .thenThrow(new org.springframework.dao.DuplicateKeyException("uk_idem_key"));
+
+        assertThatThrownBy(() -> service.create(7L, form("TAKE", "SWAP-C-001"), "idem-1"))
+                .isInstanceOf(RRException.class)
+                .hasMessageContaining("幂等键已被使用");
+        verify(allocationService, never()).allocate(any(), any(), any(), anyBoolean());
     }
 
     @Test

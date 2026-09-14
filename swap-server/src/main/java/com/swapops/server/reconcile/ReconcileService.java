@@ -38,14 +38,17 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 日终对账（S3.5 + S3.8 增补）：六组不变量核查，输出计数报告（不自动修数——差异升级告警交人工/S3.6）。
+ * 日终对账（S3.5 + S3.8 增补）：九组不变量核查，输出计数报告（不自动修数——差异升级告警交人工/S3.6）。
  * <ol>
- *   <li>无隔日卡滞活跃单：PENDING_OPEN/OPENED/TAKEN 超过阈值仍活跃；</li>
+ *   <li>无隔日卡滞活跃单：PENDING_OPEN/OPENED/TAKEN/OVERDUE 超过阈值仍活跃；</li>
  *   <li>电池-仓双向一致：battery.cell_id ↔ cell.battery_id；</li>
  *   <li>完成单必有支付流水（SWAP/TAKE 完成窗口内）；</li>
  *   <li>持有人一致：有持有人的电池必为 LOANED 且一人一电；</li>
  *   <li>指令无超龄 PENDING；</li>
- *   <li>无逃逸电池（LOANED 且无仓无持有人，关单后取电产物）。</li>
+ *   <li>无逃逸电池（LOANED 且无仓无持有人，关单后取电产物）；</li>
+ *   <li>电池计数与流水一致（S4.1）；</li>
+ *   <li>调拨台账三方一致（S4.2）；</li>
+ *   <li>Agent 建议单无悬挂 EXECUTING（S4.6）。</li>
  * </ol>
  * 核查均为"抽样+计数"口径（样本上限 sampleLimit，报告给差异样例）。
  */
@@ -147,7 +150,7 @@ public class ReconcileService {
             log.error("[日终对账] 发现差异 total={} report={}", report.totalViolations(), report.toMap());
         } else {
             alarmService.markRecovered(AlarmService.DEVICE_SYSTEM, "daily-reconcile", AlarmType.RECONCILE_ERROR);
-            log.info("[日终对账] 五组不变量零差异 durationMs={}", report.durationMs());
+            log.info("[日终对账] 九组不变量零差异 durationMs={}", report.durationMs());
         }
         return report;
     }
@@ -189,6 +192,17 @@ public class ReconcileService {
         violations += taken.size();
         for (SwapOrderEntity order : taken) {
             addSample(samples, "TAKEN: " + order.getOrderNo() + " takeTime=" + order.getTakeTime());
+        }
+
+        // OVERDUE 超长未处置（超过 overdueMaxHours 仍未归还）：扫描任务应已转人工，仍滞留即差异
+        long overdueMaxDeadline = now - billingProperties.getOverdueMaxHours() * 3600_000L;
+        List<SwapOrderEntity> overdueStales = orderDao.selectList(new LambdaQueryWrapper<SwapOrderEntity>()
+                .eq(SwapOrderEntity::getStatus, OrderStatus.OVERDUE.getCode())
+                .lt(SwapOrderEntity::getTakeTime, overdueMaxDeadline)
+                .last("LIMIT " + sampleLimit));
+        violations += overdueStales.size();
+        for (SwapOrderEntity order : overdueStales) {
+            addSample(samples, "OVERDUE: " + order.getOrderNo() + " takeTime=" + order.getTakeTime());
         }
         return new CheckResult("stale-active-orders", violations, samples);
     }

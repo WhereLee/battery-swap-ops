@@ -24,6 +24,9 @@ public class BillingProperties {
     /** 超时费单价（分/小时，超过阈值后的部分计费） */
     private int overdueFeePerHourFen = 100;
 
+    /** 归还超期订单最大滞留小时数：OVERDUE 超过该时长仍未归还 → 扫描转人工（EXCEPTION）+ 告警 */
+    private int overdueMaxHours = 168;
+
     /** 预占超时秒数（下单后等待开仓/取电） */
     private int preemptTtlSeconds = 120;
 

@@ -258,6 +258,9 @@ public class TransferService {
         if (cell == null || !cellBelongsToStation(cell.getCabinetId(), task.getFromStation())) {
             throw new RRException("电池不在调出站仓内: " + batteryNo);
         }
+        if (cell.getLockOrderId() != null) {
+            throw new RRException("电池所在仓已被订单锁定（有进行中的换电单），不能出库: " + batteryNo);
+        }
         long now = System.currentTimeMillis();
         cellDao.update(null, new LambdaUpdateWrapper<CellEntity>()
                 .eq(CellEntity::getId, cell.getId())

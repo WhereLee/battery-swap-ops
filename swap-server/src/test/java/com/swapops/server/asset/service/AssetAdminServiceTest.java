@@ -266,6 +266,26 @@ class AssetAdminServiceTest {
     }
 
     @Test
+    @DisplayName("转在途拒绝：电池所在仓被订单锁定（S5 审查修复）")
+    void 转在途拒绝锁定源仓() {
+        BatteryEntity inCell = new BatteryEntity();
+        inCell.setId(30L);
+        inCell.setBatteryNo("BAT-9003");
+        inCell.setCellId(10L);
+        when(batteryDao.selectOne(any())).thenReturn(inCell);
+        CellEntity locked = cell(10L, 1);
+        locked.setLockOrderId(77L);
+        when(cellDao.selectById(10L)).thenReturn(locked);
+
+        BatteryAdminForm form = new BatteryAdminForm();
+        form.setPark(true);
+        assertThatThrownBy(() -> service.updateBattery("BAT-9003", form))
+                .isInstanceOf(RRException.class).hasMessageContaining("锁定");
+
+        verify(cellDao, never()).update(isNull(), any());
+    }
+
+    @Test
     @DisplayName("电池编辑：在持拒绝；在途且无订单引用可删除")
     void 电池编辑与删除() {
         BatteryEntity held = new BatteryEntity();

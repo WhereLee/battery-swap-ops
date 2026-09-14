@@ -18,7 +18,10 @@ public class RRExceptionHandler {
 
     @ExceptionHandler(RRException.class)
     public ResponseEntity<Result<Void>> handleRR(RRException e) {
-        return ResponseEntity.badRequest().body(Result.error(e.getCode(), e.getMessage()));
+        // code 为合法 HTTP 状态码（如 401）时透传，否则按业务异常 400
+        int code = e.getCode();
+        HttpStatus status = (code >= 400 && code <= 599) ? HttpStatus.valueOf(code) : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(Result.error(code, e.getMessage()));
     }
 
     @ExceptionHandler(RateLimitExceededException.class)

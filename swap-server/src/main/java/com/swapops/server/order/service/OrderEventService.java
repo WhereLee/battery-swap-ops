@@ -120,13 +120,18 @@ public class OrderEventService {
         }
     }
 
-    /** 还电事件：SWAP（TAKEN→COMPLETED，持有人转移+计费）；RETURN（OPENED→COMPLETED，退押金） */
+    /** 还电事件：SWAP（TAKEN/OVERDUE→COMPLETED，持有人转移+计费，超期时段计入超时费）；RETURN（OPENED→COMPLETED，退押金） */
     public void onBatteryIn(CabinetEntity cabinet, CellEntity cell, BatteryEntity battery, Long commandSeq) {
         if (commandSeq == null) {
             return;
         }
         long now = System.currentTimeMillis();
-        SwapOrderEntity swapOrder = findBySeq(cabinet, commandSeq, OrderStatus.TAKEN);
+        // 超期订单（OVERDUE）归还同样完成：从实态 CAS 出发，避免超期后归还永远无法销单
+        SwapOrderEntity swapOrder = orderDao.selectOne(new LambdaQueryWrapper<SwapOrderEntity>()
+                .eq(SwapOrderEntity::getCabinetId, cabinet.getId())
+                .eq(SwapOrderEntity::getOpenCommandSeq, commandSeq)
+                .in(SwapOrderEntity::getStatus, OrderStatus.TAKEN.getCode(), OrderStatus.OVERDUE.getCode())
+                .last("LIMIT 1"));
         if (swapOrder != null && OrderType.SWAP.name().equals(swapOrder.getOrderType())) {
             BatteryEntity held = batteryDao.selectOne(new LambdaQueryWrapper<BatteryEntity>()
                     .eq(BatteryEntity::getHolderUserId, swapOrder.getUserId()));
@@ -134,7 +139,8 @@ public class OrderEventService {
                 log.warn("归还电池与在持电池不一致（按设备事实入账，S3 对账） orderNo={} 在持={} 归还={}",
                         swapOrder.getOrderNo(), held.getBatteryNo(), battery.getBatteryNo());
             }
-            if (cas(swapOrder.getId(), OrderStatus.TAKEN, OrderStatus.COMPLETED, w -> w
+            OrderStatus from = OrderStatus.fromCode(swapOrder.getStatus());
+            if (cas(swapOrder.getId(), from, OrderStatus.COMPLETED, w -> w
                     .set(SwapOrderEntity::getReturnTime, now)
                     .set(SwapOrderEntity::getCompleteTime, now)
                     .set(SwapOrderEntity::getReturnBatteryId, battery.getId()))) {
@@ -148,7 +154,7 @@ public class OrderEventService {
                 swapOrder.setCompleteTime(now);
                 orderDelayService.cancelAll(swapOrder);
                 billingService.charge(swapOrder, now);
-                log.info("换电订单完成 orderNo={} 归还={} 借出={}", swapOrder.getOrderNo(),
+                log.info("换电订单完成 orderNo={} from={} 归还={} 借出={}", swapOrder.getOrderNo(), from,
                         battery.getBatteryNo(), swapOrder.getTakeBatteryId());
             }
             return;
