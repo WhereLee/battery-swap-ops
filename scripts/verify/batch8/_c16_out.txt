@@ -1,30 +1,30 @@
 ﻿== S5 gate: OVERDUE exit paths ==
-20:27:45 sim up
-20:27:57 server up (tag=A)
-20:27:58 dev reset done (phase A)
-20:27:58 login-A ok
-20:27:58 u1 initial balance=20000 deposit=0 planRemain=5
-20:27:59 PASS A1 TAKE opened
-20:27:59 PASS A2 TAKE completed
-20:28:00 PASS A3 SWAP opened
-20:28:00 PASS A4 SWAP taken
-20:28:01 PASS A5 SWAP overdue (overdue-hours=0)
-20:28:01 PASS A6 OVERDUE SWAP completed on return
-20:28:01 PASS A7 returned held battery
-20:28:01 PASS A8 overdue fee charged (>=100 fen)
-20:28:01 u1 after balance=10000 deposit=9900 planRemain=3
-20:28:23 server stopped (port 8400 free)
-20:28:36 server up (tag=B)
-20:28:37 dev reset done (phase B)
-20:28:43 sim up
-20:28:43 login-B ok
-20:28:44 PASS B1 TAKE opened
-20:28:44 PASS B2 TAKE completed
-20:28:45 PASS B3 SWAP opened
-20:28:45 PASS B4 SWAP taken
-20:28:46 PASS B5 SWAP overdue
-20:28:51 PASS B6 OVERDUE swept to EXCEPTION
-20:28:51 PASS B7 closeReason=OVERDUE_UNRESOLVED
-20:28:51 PASS B8 ORDER_OVERDUE alarm raised for swap order
-20:29:14 server stopped (port 8400 free)
-20:29:14 GATE-C16 PASS (checks=16/16)
+10:43:13 sim up
+10:43:25 server up (tag=A)
+10:43:26 dev reset done (phase A)
+10:43:26 login-A ok
+10:43:26 u1 initial balance=20000 deposit=0 planRemain=5
+10:43:27 PASS A1 TAKE opened
+10:43:27 PASS A2 TAKE completed
+10:43:28 PASS A3 SWAP opened
+10:43:28 PASS A4 SWAP taken
+10:43:29 PASS A5 SWAP overdue (overdue-hours=0)
+10:43:29 PASS A6 OVERDUE SWAP completed on return
+10:43:29 PASS A7 returned held battery
+10:43:29 PASS A8 overdue fee charged (>=100 fen)
+10:43:29 u1 after balance=10000 deposit=9900 planRemain=3
+10:43:51 server stopped (port 8400 free)
+10:44:04 server up (tag=B)
+10:44:05 dev reset done (phase B)
+10:44:11 sim up
+10:44:11 login-B ok
+10:44:11 PASS B1 TAKE opened
+10:44:12 PASS B2 TAKE completed
+10:44:12 PASS B3 SWAP opened
+10:44:13 PASS B4 SWAP taken
+10:44:14 PASS B5 SWAP overdue
+10:44:20 PASS B6 OVERDUE swept to EXCEPTION
+10:44:20 PASS B7 closeReason=OVERDUE_UNRESOLVED
+10:44:20 PASS B8 ORDER_OVERDUE alarm raised for swap order
+10:44:42 server stopped (port 8400 free)
+10:44:42 GATE-C16 PASS (checks=16/16)

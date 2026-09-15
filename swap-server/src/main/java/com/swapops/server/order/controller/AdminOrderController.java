@@ -1,5 +1,10 @@
 package com.swapops.server.order.controller;
 
+import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.enums.AdminRole;
+import com.swapops.server.admin.security.AdminContext;
+import org.springframework.security.access.prepost.PreAuthorize;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.swapops.server.common.Result;
 import com.swapops.server.common.utils.PageResult;
@@ -36,6 +41,7 @@ public class AdminOrderController {
     }
 
     @GetMapping
+        @PreAuthorize("hasAuthority('admin:order:read')")
     public Result<PageResult<SwapOrderEntity>> page(@RequestParam(required = false) Integer page,
                                                     @RequestParam(required = false) Integer limit,
                                                     @RequestParam(required = false) Long userId,
@@ -45,6 +51,7 @@ public class AdminOrderController {
     }
 
     @GetMapping("/{orderNo}")
+        @PreAuthorize("hasAuthority('admin:order:read')")
     public Result<Map<String, Object>> detail(@PathVariable String orderNo) {
         SwapOrderEntity order = orderDao.selectOne(new LambdaQueryWrapper<SwapOrderEntity>()
                 .eq(SwapOrderEntity::getOrderNo, orderNo));

@@ -72,8 +72,8 @@ public class AgentActionService {
         action.setParamsJson(writeJson(form.getParams() == null ? Map.of() : form.getParams()));
         action.setReason(form.getReason());
         action.setStatus(AgentActionStatus.PROPOSED.getCode());
-        action.setProposer(form.getProposer() == null || form.getProposer().isBlank()
-                ? "agent" : form.getProposer().trim());
+        // S7 WP-A：提出者取管理端身份（此前为客户端可传表单值，可伪造）
+        action.setProposer(com.swapops.server.admin.security.AdminContext.currentUsernameOr("agent"));
         action.setCreateTime(now);
         action.setUpdateTime(now);
         try {

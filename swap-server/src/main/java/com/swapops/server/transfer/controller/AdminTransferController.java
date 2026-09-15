@@ -1,5 +1,10 @@
 package com.swapops.server.transfer.controller;
 
+import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.enums.AdminRole;
+import com.swapops.server.admin.security.AdminContext;
+import org.springframework.security.access.prepost.PreAuthorize;
+
 import com.swapops.server.common.Result;
 import com.swapops.server.common.utils.PageResult;
 import com.swapops.server.transfer.entity.TransferTaskEntity;
@@ -29,11 +34,13 @@ public class AdminTransferController {
     }
 
     @GetMapping("/recommend")
+        @PreAuthorize("hasAuthority('admin:transfer:read')")
     public Result<List<Map<String, Object>>> recommend() {
         return Result.ok(transferService.recommend());
     }
 
     @GetMapping
+        @PreAuthorize("hasAuthority('admin:transfer:read')")
     public Result<PageResult<TransferTaskEntity>> page(@RequestParam(required = false) Integer page,
                                                        @RequestParam(required = false) Integer limit,
                                                        @RequestParam(required = false) Integer status) {
@@ -41,40 +48,47 @@ public class AdminTransferController {
     }
 
     @GetMapping("/{id}")
+        @PreAuthorize("hasAuthority('admin:transfer:read')")
     public Result<Map<String, Object>> detail(@PathVariable Long id) {
         return Result.ok(transferService.detail(id));
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('admin:transfer:manage')")
+    @AdminLog("TRANSFER_CREATE")
     public Result<Map<String, Object>> create(@RequestParam Long fromStationId,
                                               @RequestParam Long toStationId,
-                                              @RequestParam Integer count,
-                                              @RequestParam(required = false, defaultValue = "admin") String operator) {
-        return Result.ok(transferService.create(fromStationId, toStationId, count, operator));
+                                              @RequestParam Integer count) {
+        return Result.ok(transferService.create(fromStationId, toStationId, count,
+                AdminContext.currentUsernameOr("admin")));
     }
 
     @PostMapping("/{id}/approve")
-    public Result<TransferTaskEntity> approve(@PathVariable Long id,
-                                              @RequestParam(required = false, defaultValue = "admin") String operator) {
-        return Result.ok(transferService.approve(id, operator));
+    @PreAuthorize("hasAuthority('admin:transfer:manage')")
+    @AdminLog("TRANSFER_APPROVE")
+    public Result<TransferTaskEntity> approve(@PathVariable Long id) {
+        return Result.ok(transferService.approve(id, AdminContext.currentUsernameOr("admin")));
     }
 
     @PostMapping("/{id}/cancel")
-    public Result<TransferTaskEntity> cancel(@PathVariable Long id,
-                                             @RequestParam(required = false, defaultValue = "admin") String operator) {
-        return Result.ok(transferService.cancel(id, operator));
+    @PreAuthorize("hasAuthority('admin:transfer:manage')")
+    @AdminLog("TRANSFER_CANCEL")
+    public Result<TransferTaskEntity> cancel(@PathVariable Long id) {
+        return Result.ok(transferService.cancel(id, AdminContext.currentUsernameOr("admin")));
     }
 
     @PostMapping("/{id}/items/{batteryNo}/out")
-    public Result<Map<String, Object>> out(@PathVariable Long id, @PathVariable String batteryNo,
-                                           @RequestParam(required = false, defaultValue = "admin") String operator) {
-        return Result.ok(transferService.out(id, batteryNo, operator));
+    @PreAuthorize("hasAuthority('admin:transfer:manage')")
+    @AdminLog("TRANSFER_OUT")
+    public Result<Map<String, Object>> out(@PathVariable Long id, @PathVariable String batteryNo) {
+        return Result.ok(transferService.out(id, batteryNo, AdminContext.currentUsernameOr("admin")));
     }
 
     @PostMapping("/{id}/items/{batteryNo}/in")
+    @PreAuthorize("hasAuthority('admin:transfer:manage')")
+    @AdminLog("TRANSFER_IN")
     public Result<Map<String, Object>> in(@PathVariable Long id, @PathVariable String batteryNo,
-                                          @RequestParam Long cellId,
-                                          @RequestParam(required = false, defaultValue = "admin") String operator) {
-        return Result.ok(transferService.in(id, batteryNo, cellId, operator));
+                                          @RequestParam Long cellId) {
+        return Result.ok(transferService.in(id, batteryNo, cellId, AdminContext.currentUsernameOr("admin")));
     }
 }

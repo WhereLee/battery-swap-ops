@@ -1,5 +1,10 @@
 package com.swapops.server.charge.controller;
 
+import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.enums.AdminRole;
+import com.swapops.server.admin.security.AdminContext;
+import org.springframework.security.access.prepost.PreAuthorize;
+
 import com.swapops.server.charge.entity.ChargePolicyEntity;
 import com.swapops.server.charge.form.ChargePolicyForm;
 import com.swapops.server.charge.service.ChargePolicyService;
@@ -28,16 +33,21 @@ public class AdminChargePolicyController {
     }
 
     @PostMapping
+        @PreAuthorize("hasAuthority('admin:charge-policy:manage')")
+    @AdminLog("CHARGE_POLICY_APPLY")
     public Result<ChargePolicyEntity> apply(@RequestBody ChargePolicyForm form) {
         return Result.ok(chargePolicyService.apply(form));
     }
 
     @GetMapping
+        @PreAuthorize("hasAuthority('admin:charge-policy:read')")
     public Result<List<ChargePolicyEntity>> list(@RequestParam(required = false) String cabinetNo) {
         return Result.ok(chargePolicyService.list(cabinetNo));
     }
 
     @PostMapping("/{id}/reapply")
+        @PreAuthorize("hasAuthority('admin:charge-policy:manage')")
+    @AdminLog("CHARGE_POLICY_REAPPLY")
     public Result<ChargePolicyEntity> reapply(@PathVariable Long id) {
         return Result.ok(chargePolicyService.reapply(id));
     }

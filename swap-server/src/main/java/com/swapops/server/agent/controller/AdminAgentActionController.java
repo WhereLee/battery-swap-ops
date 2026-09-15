@@ -1,5 +1,10 @@
 package com.swapops.server.agent.controller;
 
+import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.enums.AdminRole;
+import com.swapops.server.admin.security.AdminContext;
+import org.springframework.security.access.prepost.PreAuthorize;
+
 import com.swapops.server.agent.entity.AgentActionEntity;
 import com.swapops.server.agent.form.AgentActionForm;
 import com.swapops.server.agent.service.AgentActionService;
@@ -31,12 +36,15 @@ public class AdminAgentActionController {
     }
 
     @PostMapping
+        @PreAuthorize("hasAuthority('admin:suggestion:manage')")
+    @AdminLog("SUGGESTION_PROPOSE")
     public Result<AgentActionEntity> propose(@RequestBody AgentActionForm form,
                                              @RequestHeader(value = IDEM_HEADER, required = false) String idemKey) {
         return Result.ok(agentActionService.propose(form, idemKey));
     }
 
     @GetMapping
+        @PreAuthorize("hasAuthority('admin:suggestion:read')")
     public Result<PageResult<AgentActionEntity>> page(@RequestParam(required = false) Integer page,
                                                       @RequestParam(required = false) Integer limit,
                                                       @RequestParam(required = false) Integer status) {
@@ -44,20 +52,23 @@ public class AdminAgentActionController {
     }
 
     @GetMapping("/{id}")
+        @PreAuthorize("hasAuthority('admin:suggestion:read')")
     public Result<AgentActionEntity> detail(@PathVariable Long id) {
         return Result.ok(agentActionService.require(id));
     }
 
     @PostMapping("/{id}/confirm")
-    public Result<AgentActionEntity> confirm(@PathVariable Long id,
-                                             @RequestParam(required = false, defaultValue = "admin") String confirmer) {
-        return Result.ok(agentActionService.confirm(id, confirmer));
+        @PreAuthorize("hasAuthority('admin:suggestion:manage')")
+    @AdminLog("SUGGESTION_CONFIRM")
+    public Result<AgentActionEntity> confirm(@PathVariable Long id) {
+        return Result.ok(agentActionService.confirm(id, AdminContext.currentUsernameOr("admin")));
     }
 
     @PostMapping("/{id}/reject")
+        @PreAuthorize("hasAuthority('admin:suggestion:manage')")
+    @AdminLog("SUGGESTION_REJECT")
     public Result<AgentActionEntity> reject(@PathVariable Long id,
-                                            @RequestParam(required = false, defaultValue = "admin") String confirmer,
                                             @RequestParam(required = false) String remark) {
-        return Result.ok(agentActionService.reject(id, confirmer, remark));
+        return Result.ok(agentActionService.reject(id, AdminContext.currentUsernameOr("admin"), remark));
     }
 }

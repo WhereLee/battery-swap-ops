@@ -34,7 +34,7 @@ class ContextLoadsTest {
     private ApplicationContext context;
 
     @Test
-    @DisplayName("上下文加载且关键 Bean 可注入（S3.8 各组件装配正确）")
+    @DisplayName("上下文加载且关键 Bean 可注入（S3.8 各组件装配正确 + S7 WP-A 安全链）")
     void contextLoads() {
         assertThat(context).isNotNull();
         assertThat(context.getBean(DeviceDownlinkGuard.class)).isNotNull();
@@ -42,5 +42,7 @@ class ContextLoadsTest {
         assertThat(context.getBean(RateLimitAspect.class)).isNotNull();
         assertThat(context.getBean("applicationTaskExecutor")).isNotNull();
         assertThat(context.getBean(SwapServerApplication.class)).isNotNull();
+        assertThat(context.getBean(com.swapops.server.admin.security.AdminAuthFilter.class)).isNotNull();
+        assertThat(context.getBean("adminSecurityFilterChain")).isNotNull();
     }
 }

@@ -226,7 +226,9 @@ public class WorkOrderService {
             throw new RRException("工单状态不允许该操作: 当前 "
                     + WorkOrderStatus.fromCode(order.getStatus()) + " 期望前置 " + action);
         }
-        writeLog(order.getWoNo(), action, WorkOrderStatus.fromCode(order.getStatus()), to, "admin", remark);
+        // S7 WP-A：人工流转操作人取管理端身份（此前固定 "admin"）
+        writeLog(order.getWoNo(), action, WorkOrderStatus.fromCode(order.getStatus()), to,
+                com.swapops.server.admin.security.AdminContext.currentUsernameOr("admin"), remark);
         return workOrderDao.selectById(order.getId());
     }
 

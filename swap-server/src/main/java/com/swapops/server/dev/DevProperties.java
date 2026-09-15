@@ -26,4 +26,7 @@ public class DevProperties {
 
     /** 前 N 个仓放满电电池（其余空仓） */
     private int fullCells = 6;
+
+    /** S7 WP-A: admin bootstrap password (env SWAP_DEV_ADMIN_BOOTSTRAP_PASSWORD; blank = skip seeding admin) */
+    private String adminBootstrapPassword;
 }

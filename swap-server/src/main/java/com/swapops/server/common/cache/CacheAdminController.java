@@ -1,5 +1,10 @@
 package com.swapops.server.common.cache;
 
+import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.enums.AdminRole;
+import com.swapops.server.admin.security.AdminContext;
+import org.springframework.security.access.prepost.PreAuthorize;
+
 import com.swapops.server.common.Result;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,6 +27,7 @@ public class CacheAdminController {
     }
 
     @GetMapping("/stats")
+        @PreAuthorize("hasAuthority('admin:cache:read')")
     public Result<Map<String, Long>> stats() {
         return Result.ok(cacheService.stats());
     }

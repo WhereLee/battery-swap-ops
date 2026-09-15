@@ -1,5 +1,10 @@
 package com.swapops.server.asset.controller;
 
+import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.enums.AdminRole;
+import com.swapops.server.admin.security.AdminContext;
+import org.springframework.security.access.prepost.PreAuthorize;
+
 import com.swapops.server.asset.form.CabinetAdminForm;
 import com.swapops.server.asset.service.AssetAdminService;
 import com.swapops.server.common.Result;
@@ -30,6 +35,7 @@ public class AdminCabinetController {
     }
 
     @GetMapping
+        @PreAuthorize("hasAuthority('admin:asset:read')")
     public Result<PageResult<CabinetEntity>> page(@RequestParam(required = false) Integer page,
                                                   @RequestParam(required = false) Integer limit,
                                                   @RequestParam(required = false) Long stationId,
@@ -39,27 +45,36 @@ public class AdminCabinetController {
     }
 
     @GetMapping("/{cabinetNo}/state")
+        @PreAuthorize("hasAuthority('admin:asset:read')")
     public Result<Map<String, Object>> state(@PathVariable String cabinetNo) {
         return Result.ok(assetAdminService.cabinetState(cabinetNo));
     }
 
     @PostMapping
+        @PreAuthorize("hasAuthority('admin:asset:manage')")
+    @AdminLog("CABINET_CREATE")
     public Result<CabinetEntity> create(@RequestBody CabinetAdminForm form) {
         return Result.ok(assetAdminService.createCabinet(form));
     }
 
     @PostMapping("/{id}")
+        @PreAuthorize("hasAuthority('admin:asset:manage')")
+    @AdminLog("CABINET_UPDATE")
     public Result<CabinetEntity> update(@PathVariable Long id, @RequestBody CabinetAdminForm form) {
         return Result.ok(assetAdminService.updateCabinet(id, form));
     }
 
     @PostMapping("/{cabinetNo}/status")
+        @PreAuthorize("hasAuthority('admin:asset:manage')")
+    @AdminLog("CABINET_STATUS")
     public Result<Void> updateStatus(@PathVariable String cabinetNo, @RequestParam Integer status) {
         assetAdminService.updateCabinetStatus(cabinetNo, status);
         return Result.ok();
     }
 
     @DeleteMapping("/{id}")
+        @PreAuthorize("hasAuthority('admin:asset:manage')")
+    @AdminLog("CABINET_DELETE")
     public Result<Void> delete(@PathVariable Long id) {
         assetAdminService.deleteCabinet(id);
         return Result.ok();

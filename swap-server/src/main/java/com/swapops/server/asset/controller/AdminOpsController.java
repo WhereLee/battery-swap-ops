@@ -1,5 +1,10 @@
 package com.swapops.server.asset.controller;
 
+import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.enums.AdminRole;
+import com.swapops.server.admin.security.AdminContext;
+import org.springframework.security.access.prepost.PreAuthorize;
+
 import com.swapops.server.common.Result;
 import com.swapops.server.order.service.AllocationService;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,6 +30,8 @@ public class AdminOpsController {
 
     /** 按 DB 真值全量重建可分配集合（幂等；锁定中/不可用柜不进池） */
     @PostMapping("/rebuild-alloc")
+        @PreAuthorize("hasAuthority('admin:ops:run')")
+    @AdminLog("OPS_REBUILD_ALLOC")
     public Result<Map<String, Object>> rebuildAlloc() {
         allocationService.rebuildFromDb();
         return Result.ok(Map.of("rebuilt", true));

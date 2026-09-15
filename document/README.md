@@ -22,6 +22,7 @@
 - plans/S0.6-演示剧本.md
 - plans/S0-自查优化记录.md
 - plans/S3-可靠性深水-方案.md（基于 S2 后代码盘点的 S3 实施定稿）
+- plans/S7-运营纵深-方案.md（S7 A/B/C/D + WP-0 实施方案 v2；含子 agent 审查修订与拍板口径）
 
 ### block-records
 - block-records/批次1-骨架与指令闭环.md
@@ -34,11 +35,13 @@
 - block-records/批次7-S5质量交付与项目审查.md（覆盖率门槛/JMeter/GC/全项目审查 P1×4 修复/S5.4 文档收口）
 - block-records/批次8-S5业务审查与修复.md（业务逻辑逐域深审：跨用户幂等键/OVERDUE 无出口 2×P1 + 6×P2 + 3×P3，305 测试）
 - block-records/批次9-S5运维审查与预案.md（慢 SQL 审计→db/10 索引、8 类边界极限故障预案、运维缺口修复、_c16 剧本 16/16）
+- block-records/批次10-S7-WP0-WPA.md（押金二次退款修复 + 管理端 RBAC/审计移植：4 角色 38 权限码、_c17 18/18、327 单测）
 
 ### knowledge（节选：入口性文档）
 - knowledge/architecture.md（架构全景/组件机制/安全资金边界/部署形态）
 - knowledge/runbook.md（中间件/启动器矩阵/通道矩阵/排障索引/云端占位）
 - knowledge/ops-troubleshooting.md（慢 SQL 治理 + 8 类边界极限故障预案，S5 运维审查）
+- knowledge/rbac-and-audit.md（管理端身份/权限/审计：角色矩阵、break-glass、覆盖性守卫，S7 WP-A）
 - knowledge/s5-quality-delivery.md（S5 质量线：压测/GC/覆盖率设计与结论）
 - 其余为专题档（outbox/支付仲裁/熔断/缓存/策略/调拨/Agent 接缝等），见目录。
 

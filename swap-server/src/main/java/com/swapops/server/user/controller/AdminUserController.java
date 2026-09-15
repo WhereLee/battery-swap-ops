@@ -1,5 +1,10 @@
 package com.swapops.server.user.controller;
 
+import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.enums.AdminRole;
+import com.swapops.server.admin.security.AdminContext;
+import org.springframework.security.access.prepost.PreAuthorize;
+
 import com.swapops.server.common.Result;
 import com.swapops.server.common.utils.PageResult;
 import com.swapops.server.user.entity.SwapUserEntity;
@@ -25,6 +30,7 @@ public class AdminUserController {
     }
 
     @GetMapping
+        @PreAuthorize("hasAuthority('admin:user:read')")
     public Result<PageResult<SwapUserEntity>> page(@RequestParam(required = false) Integer page,
                                                    @RequestParam(required = false) Integer limit,
                                                    @RequestParam(required = false) String phone) {
@@ -32,6 +38,8 @@ public class AdminUserController {
     }
 
     @PostMapping("/{id}/status")
+        @PreAuthorize("hasAuthority('admin:user:manage')")
+    @AdminLog("USER_STATUS")
     public Result<SwapUserEntity> changeStatus(@PathVariable Long id, @RequestParam Integer status) {
         return Result.ok(userAccountService.changeStatus(id, status));
     }

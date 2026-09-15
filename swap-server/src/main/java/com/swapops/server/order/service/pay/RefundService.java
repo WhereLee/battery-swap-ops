@@ -89,6 +89,9 @@ public class RefundService {
         record.setAmountFen(amountFen);
         record.setReason(reason);
         record.setStatus(RefundStatus.WAIT.name());
+        // S7 WP-A：人工退款操作人（补偿通道线程无管理上下文 → null）
+        record.setOperatorId(com.swapops.server.admin.security.AdminContext.currentAdminId());
+        record.setOperatorName(com.swapops.server.admin.security.AdminContext.currentUsername());
         record.setCreateTime(now);
         record.setUpdateTime(now);
         try {

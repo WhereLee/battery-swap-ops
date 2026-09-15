@@ -1,5 +1,10 @@
 package com.swapops.server.reconcile;
 
+import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.enums.AdminRole;
+import com.swapops.server.admin.security.AdminContext;
+import org.springframework.security.access.prepost.PreAuthorize;
+
 import com.swapops.server.common.Result;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,11 +27,14 @@ public class AdminReconcileController {
     }
 
     @PostMapping("/run")
+        @PreAuthorize("hasAuthority('admin:reconcile:run')")
+    @AdminLog("RECONCILE_RUN")
     public Result<Map<String, Object>> run() {
         return Result.ok(dailyReconcileTask.runAndStore());
     }
 
     @GetMapping("/last")
+        @PreAuthorize("hasAuthority('admin:reconcile:read')")
     public Result<Map<String, Object>> last() {
         return Result.ok(dailyReconcileTask.lastReport());
     }

@@ -42,6 +42,14 @@ mvn -B -ntp package                                 # 出双端 jar（启动器�
 - 模拟器：`http://localhost:8500/actuator/health`；联调端点（dev 模式）：`/api/dev/...`
 - 停止：fast 模式 `POST /api/actuator/shutdown`（优雅停机验证用）；常规 `taskkill /F /IM javaw.exe`（按窗口名或 pid，`.local/*.pid`）
 
+## 4.5 管理端登录（S7 WP-A）
+
+- 登录：`POST /api/admin/auth/login` `{username,password}` → `data.token`；请求头 `X-Admin-Token` 携带会话 token；
+- 角色：SUPER/OPS/FINANCE/SUPPORT（矩阵见 `rbac-and-audit.md`）；引导管理员由 dev 种子
+  （`SWAP_DEV_ADMIN_BOOTSTRAP_PASSWORD` env，本地 `.local/admin-pass.txt`）；
+- **脚本/运维沿用静态 token**（`SWAP_ADMIN_TOKEN`，break-glass=SUPER，审计 username=bootstrap，不随登出吊销）；
+- 审计查询：`GET /api/admin/account/op-log`（需 `admin:admin:manage`，即 SUPER 或 bootstrap）。
+
 ## 5. 通道矩阵（http / mq / dual）
 
 | 通道 | 事件路径 | 适用 | 取舍 |

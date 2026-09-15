@@ -33,6 +33,12 @@ public class RefundRecordEntity {
 
     private String failReason;
 
+    /** 人工退款操作人（admin_user.id；补偿通道为 null）——S7 WP-A */
+    private Long operatorId;
+
+    /** 操作人用户名快照（S7 WP-A） */
+    private String operatorName;
+
     private Long createTime;
 
     private Long updateTime;

@@ -1,5 +1,10 @@
 package com.swapops.server.asset.controller;
 
+import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.enums.AdminRole;
+import com.swapops.server.admin.security.AdminContext;
+import org.springframework.security.access.prepost.PreAuthorize;
+
 import com.swapops.server.asset.service.AssetAdminService;
 import com.swapops.server.common.Result;
 import com.swapops.server.common.utils.PageResult;
@@ -25,6 +30,7 @@ public class AdminCellController {
     }
 
     @GetMapping
+        @PreAuthorize("hasAuthority('admin:asset:read')")
     public Result<PageResult<CellEntity>> page(@RequestParam(required = false) Integer page,
                                                @RequestParam(required = false) Integer limit,
                                                @RequestParam(required = false) String cabinetNo,
@@ -33,6 +39,8 @@ public class AdminCellController {
     }
 
     @PostMapping("/{id}/status")
+        @PreAuthorize("hasAuthority('admin:asset:manage')")
+    @AdminLog("CELL_STATUS")
     public Result<Void> updateStatus(@PathVariable Long id, @RequestParam Integer status) {
         assetAdminService.updateCellStatus(id, status);
         return Result.ok();

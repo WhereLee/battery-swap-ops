@@ -1,5 +1,10 @@
 package com.swapops.server.dashboard.controller;
 
+import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.enums.AdminRole;
+import com.swapops.server.admin.security.AdminContext;
+import org.springframework.security.access.prepost.PreAuthorize;
+
 import com.swapops.server.common.Result;
 import com.swapops.server.dashboard.service.DashboardService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,6 +27,7 @@ public class AdminDashboardController {
     }
 
     @GetMapping("/overview")
+        @PreAuthorize("hasAuthority('admin:dashboard:read')")
     public Result<Map<String, Object>> overview() {
         return Result.ok(dashboardService.overview());
     }

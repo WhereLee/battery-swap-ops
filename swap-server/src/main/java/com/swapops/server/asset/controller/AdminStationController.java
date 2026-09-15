@@ -1,5 +1,10 @@
 package com.swapops.server.asset.controller;
 
+import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.enums.AdminRole;
+import com.swapops.server.admin.security.AdminContext;
+import org.springframework.security.access.prepost.PreAuthorize;
+
 import com.swapops.server.asset.entity.StationEntity;
 import com.swapops.server.asset.form.StationAdminForm;
 import com.swapops.server.asset.service.AssetAdminService;
@@ -28,6 +33,7 @@ public class AdminStationController {
     }
 
     @GetMapping
+        @PreAuthorize("hasAuthority('admin:asset:read')")
     public Result<PageResult<StationEntity>> page(@RequestParam(required = false) Integer page,
                                                   @RequestParam(required = false) Integer limit,
                                                   @RequestParam(required = false) Integer status) {
@@ -35,22 +41,30 @@ public class AdminStationController {
     }
 
     @PostMapping
+        @PreAuthorize("hasAuthority('admin:asset:manage')")
+    @AdminLog("STATION_CREATE")
     public Result<StationEntity> create(@RequestBody StationAdminForm form) {
         return Result.ok(assetAdminService.createStation(form));
     }
 
     @PostMapping("/{id}")
+        @PreAuthorize("hasAuthority('admin:asset:manage')")
+    @AdminLog("STATION_UPDATE")
     public Result<StationEntity> update(@PathVariable Long id, @RequestBody StationAdminForm form) {
         return Result.ok(assetAdminService.updateStation(id, form));
     }
 
     @PostMapping("/{id}/status")
+        @PreAuthorize("hasAuthority('admin:asset:manage')")
+    @AdminLog("STATION_STATUS")
     public Result<Void> updateStatus(@PathVariable Long id, @RequestParam Integer status) {
         assetAdminService.updateStationStatus(id, status);
         return Result.ok();
     }
 
     @DeleteMapping("/{id}")
+        @PreAuthorize("hasAuthority('admin:asset:manage')")
+    @AdminLog("STATION_DELETE")
     public Result<Void> delete(@PathVariable Long id) {
         assetAdminService.deleteStation(id);
         return Result.ok();

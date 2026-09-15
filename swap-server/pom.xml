@@ -69,6 +69,11 @@
             <groupId>org.apache.rocketmq</groupId>
             <artifactId>rocketmq-client-java</artifactId>
         </dependency>
+        <!-- S7 WP-A：管理端身份与权限（Spring Security 方法级鉴权 + BCrypt；securityMatcher 仅 /admin/**） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

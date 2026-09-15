@@ -1,0 +1,22 @@
+﻿== S7 gate: admin RBAC ==
+10:24:48 server up
+10:24:48 PASS 1 unauth-401
+10:24:48 PASS 2 bootstrap-login
+10:24:49 PASS 3 session-dashboard-200
+10:24:49 PASS 4 session-account-200
+10:24:49 PASS 5 create-role-accounts
+10:24:49 PASS 6 role-logins
+10:24:49 PASS 7 ops-workorder-200
+10:24:49 PASS 8 ops-refund-403
+10:24:49 PASS 9 ops-rebuild-200
+10:24:49 PASS 10 fin-plan-create-200
+10:24:49 PASS 11 fin-workorder-403
+10:24:49 PASS 12 sup-workorder-200
+10:24:49 PASS 13 sup-plan-403
+10:24:49 PASS 14 sup-asset-200
+10:24:49 PASS 15 audit-admin-create>=3
+10:24:49 PASS 16 audit-real-identity-fin1
+10:24:50 PASS 17 logout-revokes-401
+10:24:50 PASS 18 breakglass-survives-200
+10:25:12 server stopped
+10:25:12 GATE-C17 PASS (checks=18/18)

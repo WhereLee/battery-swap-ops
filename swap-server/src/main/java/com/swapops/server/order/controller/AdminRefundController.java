@@ -1,5 +1,10 @@
 package com.swapops.server.order.controller;
 
+import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.enums.AdminRole;
+import com.swapops.server.admin.security.AdminContext;
+import org.springframework.security.access.prepost.PreAuthorize;
+
 import com.swapops.server.common.RRException;
 import com.swapops.server.common.Result;
 import com.swapops.server.order.entity.RefundRecordEntity;
@@ -34,6 +39,8 @@ public class AdminRefundController {
     }
 
     @PostMapping("/{orderNo}")
+        @PreAuthorize("hasAuthority('admin:refund:create')")
+    @AdminLog("REFUND_CREATE")
     public Result<Map<String, Object>> refund(@PathVariable String orderNo,
                                               @RequestParam(required = false) Integer amountFen) {
         SwapOrderEntity order = swapOrderService.findByOrderNo(orderNo);

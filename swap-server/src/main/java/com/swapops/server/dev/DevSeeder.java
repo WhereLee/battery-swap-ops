@@ -4,6 +4,10 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.swapops.contract.BatteryStatus;
 import com.swapops.contract.CabinetStatus;
 import com.swapops.contract.CellStatus;
+import com.swapops.server.admin.dao.AdminUserDao;
+import com.swapops.server.admin.entity.AdminUserEntity;
+import com.swapops.server.admin.enums.AdminRole;
+import com.swapops.server.admin.security.AdminSecrets;
 import com.swapops.server.device.dao.BatteryDao;
 import com.swapops.server.device.dao.CabinetDao;
 import com.swapops.server.device.dao.CellDao;
@@ -52,11 +56,12 @@ public class DevSeeder implements ApplicationRunner {
     private final UserPlanDao userPlanDao;
     private final AllocationService allocationService;
     private final JdbcTemplate jdbcTemplate;
+    private final AdminUserDao adminUserDao;
 
     public DevSeeder(DevProperties devProperties, CabinetDao cabinetDao, CellDao cellDao,
                      BatteryDao batteryDao, SwapUserDao swapUserDao, WalletDao walletDao,
                      PlanDao planDao, UserPlanDao userPlanDao, AllocationService allocationService,
-                     JdbcTemplate jdbcTemplate) {
+                     JdbcTemplate jdbcTemplate, AdminUserDao adminUserDao) {
         this.devProperties = devProperties;
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
@@ -67,6 +72,7 @@ public class DevSeeder implements ApplicationRunner {
         this.userPlanDao = userPlanDao;
         this.allocationService = allocationService;
         this.jdbcTemplate = jdbcTemplate;
+        this.adminUserDao = adminUserDao;
     }
 
     @Override
@@ -136,6 +142,7 @@ public class DevSeeder implements ApplicationRunner {
                     devProperties.getFullCells());
         }
         seedUsersAndPlans();
+        seedAdminUser();
         // 事件/种子可能先于启动重建发生：全量重建可分配集合（与 DB 真值对齐）
         allocationService.rebuildFromDb();
     }
@@ -187,6 +194,36 @@ public class DevSeeder implements ApplicationRunner {
             }
         }
         log.info("联调用户种子就绪 users={}（用户1 押金0，其余押金9900；每人次卡剩5次）", DEV_USER_COUNT);
+    }
+
+    /** S7 WP-A：管理员引导账号（密码 env 注入；已存在跳过；未配置密码则跳过） */
+    private void seedAdminUser() {
+        String password = devProperties.getAdminBootstrapPassword();
+        if (password == null || password.isBlank()) {
+            log.info("未配置 SWAP_DEV_ADMIN_BOOTSTRAP_PASSWORD，跳过管理员种子（静态 token 仍可用）");
+            return;
+        }
+        if (password.length() < 8) {
+            log.warn("管理员引导密码过短（<8），跳过种子");
+            return;
+        }
+        AdminUserEntity existing = adminUserDao.selectOne(new LambdaQueryWrapper<AdminUserEntity>()
+                .eq(AdminUserEntity::getUsername, "admin"));
+        if (existing != null) {
+            log.info("管理员账号已存在，跳过种子 username=admin");
+            return;
+        }
+        long now = System.currentTimeMillis();
+        AdminUserEntity admin = new AdminUserEntity();
+        admin.setUsername("admin");
+        admin.setPasswordHash(AdminSecrets.hashPassword(password));
+        admin.setRealName("引导管理员");
+        admin.setRole(AdminRole.SUPER.name());
+        admin.setStatus(1);
+        admin.setCreateTime(now);
+        admin.setUpdateTime(now);
+        adminUserDao.insert(admin);
+        log.info("管理员种子就绪 username=admin role=SUPER（密码 env 注入，不落日志）");
     }
 
     private PlanEntity ensurePlan(String name, String type, int priceFen, Integer totalTimes,

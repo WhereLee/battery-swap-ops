@@ -1,5 +1,10 @@
 package com.swapops.server.alarm.controller;
 
+import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.enums.AdminRole;
+import com.swapops.server.admin.security.AdminContext;
+import org.springframework.security.access.prepost.PreAuthorize;
+
 import com.swapops.server.alarm.entity.AlarmEntity;
 import com.swapops.server.alarm.service.AlarmService;
 import com.swapops.server.common.RRException;
@@ -31,6 +36,7 @@ public class AdminAlarmController {
     }
 
     @GetMapping
+        @PreAuthorize("hasAuthority('admin:alarm:read')")
     public Result<List<Map<String, Object>>> list(@RequestParam(required = false) Integer handled,
                                                   @RequestParam(required = false, defaultValue = "100") Integer limit) {
         List<AlarmEntity> alarms = alarmService.list(handled == null ? 0 : handled, limit);
@@ -38,8 +44,10 @@ public class AdminAlarmController {
     }
 
     @PostMapping("/{id}/handle")
+    @PreAuthorize("hasAuthority('admin:alarm:handle')")
+    @AdminLog("ALARM_HANDLE")
     public Result<Map<String, Object>> handle(@PathVariable Long id) {
-        Long userId = UserContext.get();
+        Long userId = AdminContext.currentAdminId();
         if (!alarmService.handle(id, userId)) {
             throw new RRException("告警不存在或已处理: " + id);
         }

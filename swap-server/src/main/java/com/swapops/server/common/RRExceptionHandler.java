@@ -5,12 +5,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * 全局异常：业务异常 400 / 限流 429 + Retry-After / 显式状态透传（401 等）/ 其余 500（不吞成 200）。
+ * 全局异常：业务异常 400 / 限流 429 + Retry-After / 方法级鉴权拒绝 403 / 显式状态透传（401 等）/ 其余 500。
  */
 @Slf4j
 @RestControllerAdvice
@@ -22,6 +23,12 @@ public class RRExceptionHandler {
         int code = e.getCode();
         HttpStatus status = (code >= 400 && code <= 599) ? HttpStatus.valueOf(code) : HttpStatus.BAD_REQUEST;
         return ResponseEntity.status(status).body(Result.error(code, e.getMessage()));
+    }
+
+    /** 方法级鉴权拒绝（@PreAuthorize）：403 而非 500（S7 WP-A） */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Result<Void>> handleAccessDenied(AccessDeniedException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Result.error(403, "无权限执行该操作"));
     }
 
     @ExceptionHandler(RateLimitExceededException.class)
