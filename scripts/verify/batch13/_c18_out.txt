@@ -1,0 +1,18 @@
+﻿== S7 gate: agent settlement ==
+15:53:47 server up
+15:53:47 dev reset done
+15:53:53 sim up
+15:53:54 PASS 1 plan-times-basis-300
+15:53:54 PASS 2 plan-times-split-180-120
+15:53:55 PASS 3 cash-basis-300
+15:53:55 PASS 4 reversal-refund-ok
+15:53:55 PASS 5 reversal-negative-line
+15:53:58 PASS 6 arrears-settle-line-400
+15:53:58 PASS 7 statement-generate-200
+15:53:58 PASS 8 statement-sums-consistent
+15:53:58 PASS 9 statement-duplicate-rejected
+15:53:58 PASS 10 statement-confirm-paid
+15:53:58 PASS 11 statement-paid-immutable
+15:53:58 PASS 12 report-agent-bucket
+15:54:20 server stopped
+15:54:20 GATE-C18 PASS (checks=12/12)

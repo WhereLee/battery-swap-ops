@@ -37,11 +37,13 @@ public class BillingService {
     private final AlarmService alarmService;
     private final ArrearsService arrearsService;
     private final CouponService couponService;
+    private final com.swapops.server.settlement.service.SettlementService settlementService;
 
     public BillingService(PlanService planService, WalletService walletService,
                           PaymentRecordService paymentRecordService, SwapOrderDao orderDao,
                           BillingProperties billingProperties, AlarmService alarmService,
-                          ArrearsService arrearsService, CouponService couponService) {
+                          ArrearsService arrearsService, CouponService couponService,
+                          com.swapops.server.settlement.service.SettlementService settlementService) {
         this.planService = planService;
         this.walletService = walletService;
         this.paymentRecordService = paymentRecordService;
@@ -50,6 +52,7 @@ public class BillingService {
         this.alarmService = alarmService;
         this.arrearsService = arrearsService;
         this.couponService = couponService;
+        this.settlementService = settlementService;
     }
 
     /** 订单完成计费（调用方已完成订单 CAS 到终态） */
@@ -161,6 +164,8 @@ public class BillingService {
         order.setDiscountFen(discount);
         order.setPayType(payType.name());
         order.setUserPlanId(usedPlanId);
+        // S7 WP-B：完成单分账（同事务；event_key 幂等，事件重放安全）
+        settlementService.settleOrder(order);
         log.info("订单计费完成 orderNo={} type={} payType={} baseFee={} discount={} chargedBase={} overdueFee={}",
                 order.getOrderNo(), type, payType, baseFee, discount, chargedBase, overdueFee);
     }

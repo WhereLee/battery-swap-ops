@@ -86,4 +86,32 @@ class AdminRefundControllerTest {
         assertThat(result.getData().get("refundNo")).isEqualTo("RF1");
         verify(refundService).refund(99L, 7L, 300, "ADMIN_MANUAL");
     }
+
+    @Test
+    @DisplayName("冲正退款（S7 WP-B）：COMPLETED 单可走 reversal（reason=ADMIN_REVERSAL）")
+    void 冲正退款() {
+        when(swapOrderService.findByOrderNo("SWO-1")).thenReturn(order(OrderStatus.COMPLETED.getCode()));
+        when(refundService.refundableAmount(99L)).thenReturn(300);
+        RefundRecordEntity record = new RefundRecordEntity();
+        record.setRefundNo("RF9");
+        record.setAmountFen(300);
+        record.setReason("ADMIN_REVERSAL");
+        record.setStatus("SUCCESS");
+        when(refundService.refund(99L, 7L, 300, "ADMIN_REVERSAL")).thenReturn(record);
+
+        var result = controller().reversal("SWO-1", null);
+
+        assertThat(result.getData().get("refundNo")).isEqualTo("RF9");
+        verify(refundService).refund(99L, 7L, 300, "ADMIN_REVERSAL");
+    }
+
+    @Test
+    @DisplayName("冲正退款：非完成单拒绝")
+    void 冲正仅完成单() {
+        when(swapOrderService.findByOrderNo("SWO-1")).thenReturn(order(OrderStatus.EXCEPTION.getCode()));
+
+        assertThatThrownBy(() -> controller().reversal("SWO-1", 100))
+                .isInstanceOf(RRException.class).hasMessageContaining("仅适用于已完成订单");
+        verifyNoInteractions(refundService);
+    }
 }

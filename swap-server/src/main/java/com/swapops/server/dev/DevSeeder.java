@@ -58,12 +58,14 @@ public class DevSeeder implements ApplicationRunner {
     private final JdbcTemplate jdbcTemplate;
     private final AdminUserDao adminUserDao;
     private final com.swapops.server.user.service.CouponService couponService;
+    private final com.swapops.server.settlement.service.AgentService agentService;
 
     public DevSeeder(DevProperties devProperties, CabinetDao cabinetDao, CellDao cellDao,
                      BatteryDao batteryDao, SwapUserDao swapUserDao, WalletDao walletDao,
                      PlanDao planDao, UserPlanDao userPlanDao, AllocationService allocationService,
                      JdbcTemplate jdbcTemplate, AdminUserDao adminUserDao,
-                     com.swapops.server.user.service.CouponService couponService) {
+                     com.swapops.server.user.service.CouponService couponService,
+                     com.swapops.server.settlement.service.AgentService agentService) {
         this.devProperties = devProperties;
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
@@ -76,6 +78,7 @@ public class DevSeeder implements ApplicationRunner {
         this.jdbcTemplate = jdbcTemplate;
         this.adminUserDao = adminUserDao;
         this.couponService = couponService;
+        this.agentService = agentService;
     }
 
     @Override
@@ -147,6 +150,7 @@ public class DevSeeder implements ApplicationRunner {
         seedUsersAndPlans();
         seedAdminUser();
         seedCoupons();
+        seedSettlement();
         // 事件/种子可能先于启动重建发生：全量重建可分配集合（与 DB 真值对齐）
         allocationService.rebuildFromDb();
     }
@@ -225,6 +229,48 @@ public class DevSeeder implements ApplicationRunner {
         } catch (Exception e) {
             log.warn("券种子失败（不阻断启动）: {}", e.getMessage());
         }
+    }
+
+    /**
+     * S7 WP-B：2 个代理商 + 2 个归属站点（ST-002/ST-003），并把 SWAP-C-009/C-010 划入；
+     * ST-001 保持直营。幂等：代理/站点存在即跳过、柜归属按名更新。
+     */
+    private void seedSettlement() {
+        try {
+            com.swapops.server.settlement.entity.AgentEntity agent1 =
+                    ensureAgent("AG001", "示例代理商一", 6000);
+            com.swapops.server.settlement.entity.AgentEntity agent2 =
+                    ensureAgent("AG002", "示例代理商二", 8000);
+            Long station2 = ensureStation("ST-002", "代理站点二", agent1.getId());
+            Long station3 = ensureStation("ST-003", "代理站点三", agent2.getId());
+            bindCabinet("SWAP-C-009", station2);
+            bindCabinet("SWAP-C-010", station3);
+            log.info("分账种子就绪 agents=2 stations=ST-002/ST-003 cabinets=C-009/C-010");
+        } catch (Exception e) {
+            log.warn("分账种子失败（不阻断启动）: {}", e.getMessage());
+        }
+    }
+
+    private com.swapops.server.settlement.entity.AgentEntity ensureAgent(String no, String name, int shareBp) {
+        var existing = agentService.list().stream().filter(a -> no.equals(a.getAgentNo())).findFirst().orElse(null);
+        return existing != null ? existing : agentService.create(no, name, null, shareBp, "MONTHLY");
+    }
+
+    private Long ensureStation(String stationNo, String name, Long agentId) {
+        java.util.List<Long> ids = jdbcTemplate.queryForList(
+                "SELECT id FROM station WHERE station_no = ?", Long.class, stationNo);
+        if (!ids.isEmpty()) {
+            jdbcTemplate.update("UPDATE station SET agent_id = ? WHERE id = ?", agentId, ids.get(0));
+            return ids.get(0);
+        }
+        long now = System.currentTimeMillis();
+        jdbcTemplate.update("INSERT INTO station(station_no, name, address, status, agent_id, create_time, update_time) "
+                + "VALUES (?, ?, '联调', 1, ?, ?, ?)", stationNo, name, agentId, now, now);
+        return jdbcTemplate.queryForList("SELECT id FROM station WHERE station_no = ?", Long.class, stationNo).get(0);
+    }
+
+    private void bindCabinet(String cabinetNo, Long stationId) {
+        jdbcTemplate.update("UPDATE cabinet SET station_id = ? WHERE cabinet_no = ?", stationId, cabinetNo);
     }
 
     /** S7 WP-A：管理员引导账号（密码 env 注入；已存在跳过；未配置密码则跳过） */

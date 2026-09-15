@@ -48,6 +48,9 @@ class ArrearsServiceTest {
     @Mock
     private UserMessageService messageService;
 
+    @Mock
+    private com.swapops.server.settlement.service.SettlementService settlementService;
+
     private ArrearsService service;
 
     @BeforeAll
@@ -58,7 +61,7 @@ class ArrearsServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ArrearsService(arrearsRecordDao, walletService, alarmService, messageService);
+        service = new ArrearsService(arrearsRecordDao, walletService, alarmService, messageService, settlementService);
     }
 
     private ArrearsRecordEntity record(int amount, int settled, int status) {
@@ -121,6 +124,8 @@ class ArrearsServiceTest {
         verify(walletService).deductBalance(7L, 100);
         verify(alarmService).markRecovered(AlarmService.DEVICE_ORDER, "SWO-1", AlarmType.ORDER_ARREARS);
         verify(messageService).send(eq(7L), eq("ARREARS"), any(), any());
+        // S7 WP-B：补缴补分账行（实缴确认收入）
+        verify(settlementService).recordArrearsSettlement(eq("SWO-1"), eq(9L), eq(99L), eq(100));
     }
 
     @Test

@@ -68,13 +68,15 @@ public class AssetAdminService {
     private final DeviceChannelProperties properties;
     private final BatteryCycleService batteryCycleService;
     private final BatteryHealthProperties batteryHealthProperties;
+    private final com.swapops.server.settlement.dao.AgentDao agentDao;
 
     public AssetAdminService(StationDao stationDao, CabinetDao cabinetDao, CellDao cellDao,
                              BatteryDao batteryDao, MonitorService monitorService,
                              AllocationService allocationService, TwoLevelCacheService cache,
                              SwapOrderDao orderDao, DeviceChannelProperties properties,
                              BatteryCycleService batteryCycleService,
-                             BatteryHealthProperties batteryHealthProperties) {
+                             BatteryHealthProperties batteryHealthProperties,
+                             com.swapops.server.settlement.dao.AgentDao agentDao) {
         this.stationDao = stationDao;
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
@@ -86,6 +88,7 @@ public class AssetAdminService {
         this.properties = properties;
         this.batteryCycleService = batteryCycleService;
         this.batteryHealthProperties = batteryHealthProperties;
+        this.agentDao = agentDao;
     }
 
     /** 电池健康档案（S4.1）：计数/分级/最近循环流水（可审计） */
@@ -128,6 +131,7 @@ public class AssetAdminService {
         station.setName(requireText(form.getName(), "站点名称", 32));
         station.setAddress(requireOptionalText(form.getAddress(), "站点地址", 128));
         applyCoordinates(station, form);
+        station.setAgentId(requireAgent(form.getAgentId()));
         station.setStatus(1);
         station.setCreateTime(now);
         station.setUpdateTime(now);
@@ -146,11 +150,30 @@ public class AssetAdminService {
         station.setName(requireText(form.getName(), "站点名称", 32));
         station.setAddress(requireOptionalText(form.getAddress(), "站点地址", 128));
         applyCoordinates(station, form);
+        // S7 WP-B：归属仅在显式传值时变更（局部更新不误清代理；解绑走运维）
+        if (form.getAgentId() != null) {
+            station.setAgentId(requireAgent(form.getAgentId()));
+        }
         station.setUpdateTime(System.currentTimeMillis());
         stationDao.updateById(station);
         cache.evict(CacheKeys.STATION_ACTIVE_LIST);
         log.info("站点更新 id={} name={}", id, station.getName());
         return stationDao.selectById(id);
+    }
+
+    /** 代理归属校验（null=直营允许） */
+    private Long requireAgent(Long agentId) {
+        if (agentId == null) {
+            return null;
+        }
+        var agent = agentDao.selectById(agentId);
+        if (agent == null) {
+            throw new RRException("代理不存在: " + agentId);
+        }
+        if (agent.getStatus() == null || agent.getStatus() != 1) {
+            throw new RRException("代理已停用，不能归属: " + agentId);
+        }
+        return agentId;
     }
 
     public void deleteStation(Long id) {
@@ -527,6 +550,33 @@ public class AssetAdminService {
                         .eq(status != null, StationEntity::getStatus, status)
                         .orderByAsc(StationEntity::getId));
         return PageResult.of(result);
+    }
+
+    /** 站点归属视图（含代理名；管理端列表用） */
+    public java.util.List<java.util.Map<String, Object>> listStationsWithAgent() {
+        java.util.List<StationEntity> stations = stationDao.selectList(
+                new LambdaQueryWrapper<StationEntity>().orderByAsc(StationEntity::getId).last("LIMIT 200"));
+        java.util.List<java.util.Map<String, Object>> views = new java.util.ArrayList<>();
+        for (StationEntity station : stations) {
+            java.util.Map<String, Object> view = new java.util.LinkedHashMap<>();
+            view.put("id", station.getId());
+            view.put("stationNo", station.getStationNo());
+            view.put("name", station.getName());
+            view.put("status", station.getStatus());
+            view.put("agentId", station.getAgentId());
+            if (station.getAgentId() != null) {
+                var agent = agentDao.selectById(station.getAgentId());
+                view.put("agentNo", agent == null ? null : agent.getAgentNo());
+                view.put("agentName", agent == null ? null : agent.getName());
+                view.put("shareBp", agent == null ? null : agent.getShareBp());
+            } else {
+                view.put("agentNo", "DIRECT");
+                view.put("agentName", "直营");
+                view.put("shareBp", 0);
+            }
+            views.add(view);
+        }
+        return views;
     }
 
     public void updateStationStatus(Long id, Integer status) {

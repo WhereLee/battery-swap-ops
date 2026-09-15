@@ -32,13 +32,16 @@ public class ArrearsService {
     private final WalletService walletService;
     private final AlarmService alarmService;
     private final UserMessageService messageService;
+    private final com.swapops.server.settlement.service.SettlementService settlementService;
 
     public ArrearsService(ArrearsRecordDao arrearsRecordDao, WalletService walletService,
-                          AlarmService alarmService, UserMessageService messageService) {
+                          AlarmService alarmService, UserMessageService messageService,
+                          com.swapops.server.settlement.service.SettlementService settlementService) {
         this.arrearsRecordDao = arrearsRecordDao;
         this.walletService = walletService;
         this.alarmService = alarmService;
         this.messageService = messageService;
+        this.settlementService = settlementService;
     }
 
     /**
@@ -124,6 +127,9 @@ public class ArrearsService {
             throw new RRException("余额不足（需 " + remaining + " 分），请先充值");
         }
         settle(record, remaining, "补缴");
+        // S7 WP-B：实缴确认收入 → 分账补行（未分账订单自动跳过）
+        settlementService.recordArrearsSettlement(record.getOrderNo(), record.getId(),
+                record.getOrderId(), remaining);
         messageService.send(userId, "ARREARS", "欠费已结清",
                 "订单 " + record.getOrderNo() + " 欠费 " + remaining + " 分已结清");
         return arrearsRecordDao.selectById(record.getId());

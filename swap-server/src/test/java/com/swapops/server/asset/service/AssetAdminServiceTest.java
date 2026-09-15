@@ -72,6 +72,9 @@ class AssetAdminServiceTest {
     @Mock
     private com.swapops.server.device.service.BatteryCycleService batteryCycleService;
 
+    @Mock
+    private com.swapops.server.settlement.dao.AgentDao agentDao;
+
     private AssetAdminService service;
 
     @BeforeAll
@@ -88,7 +91,7 @@ class AssetAdminServiceTest {
     void setUp() {
         service = new AssetAdminService(stationDao, cabinetDao, cellDao, batteryDao, monitorService,
                 allocationService, cache, orderDao, new DeviceChannelProperties(),
-                batteryCycleService, new com.swapops.server.config.BatteryHealthProperties());
+                batteryCycleService, new com.swapops.server.config.BatteryHealthProperties(), agentDao);
     }
 
     private StationEntity station() {
@@ -218,7 +221,30 @@ class AssetAdminServiceTest {
     }
 
     @Test
-    @DisplayName("删柜：有电池拒绝；全空删除仓与柜 + 池重建")
+    @DisplayName("建站挂代理：有效代理归属；无效/停用代理拒绝（S7 WP-B）")
+    void 建站挂代理() {
+        com.swapops.server.settlement.entity.AgentEntity agent =
+                new com.swapops.server.settlement.entity.AgentEntity();
+        agent.setId(5L);
+        agent.setStatus(1);
+        when(agentDao.selectById(5L)).thenReturn(agent);
+        when(stationDao.selectOne(any())).thenReturn(null);
+        when(stationDao.insert(any(StationEntity.class))).thenReturn(1);
+
+        StationAdminForm form = new StationAdminForm();
+        form.setStationNo("ST-AGENT");
+        form.setName("代理站");
+        form.setAgentId(5L);
+        StationEntity created = service.createStation(form);
+        assertThat(created.getAgentId()).isEqualTo(5L);
+
+        agent.setStatus(2);
+        assertThatThrownBy(() -> service.createStation(form))
+                .isInstanceOf(RRException.class).hasMessageContaining("停用");
+    }
+
+    @Test
+    @DisplayName("删站：有电池拒绝；全空删除仓与柜 + 池重建")
     void 删柜() {
         when(cabinetDao.selectById(1L)).thenReturn(cabinet(2));
         CellEntity occupied = cell(11L, 1);

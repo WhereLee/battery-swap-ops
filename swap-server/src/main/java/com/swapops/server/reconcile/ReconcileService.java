@@ -38,7 +38,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 日终对账（S3.5 + S3.8 增补）：九组不变量核查，输出计数报告（不自动修数——差异升级告警交人工/S3.6）。
+ * 日终对账（S3.5 + S3.8 增补；S7 扩至十四组）：十四组不变量核查，输出计数报告（不自动修数——差异升级告警交人工/S3.6）。
  * <ol>
  *   <li>无隔日卡滞活跃单：PENDING_OPEN/OPENED/TAKEN/OVERDUE 超过阈值仍活跃；</li>
  *   <li>电池-仓双向一致：battery.cell_id ↔ cell.battery_id；</li>
@@ -48,7 +48,12 @@ import java.util.Map;
  *   <li>无逃逸电池（LOANED 且无仓无持有人，关单后取电产物）；</li>
  *   <li>电池计数与流水一致（S4.1）；</li>
  *   <li>调拨台账三方一致（S4.2）；</li>
- *   <li>Agent 建议单无悬挂 EXECUTING（S4.6）。</li>
+ *   <li>Agent 建议单无悬挂 EXECUTING（S4.6）；</li>
+ *   <li>欠费单金额自洽（S7 WP-D）；</li>
+ *   <li>券状态守恒（S7 WP-D）；</li>
+ *   <li>分账守恒（S7 WP-B）；</li>
+ *   <li>结算单与挂单流水一致（S7 WP-B）；</li>
+ *   <li>完成单必分账（S7 WP-B）。</li>
  * </ol>
  * 核查均为"抽样+计数"口径（样本上限 sampleLimit，报告给差异样例）。
  */
@@ -74,6 +79,8 @@ public class ReconcileService {
     private final AgentActionDao agentActionDao;
     private final com.swapops.server.order.dao.ArrearsRecordDao arrearsRecordDao;
     private final com.swapops.server.user.dao.UserCouponDao userCouponDao;
+    private final com.swapops.server.settlement.dao.OrderSettlementDao orderSettlementDao;
+    private final com.swapops.server.settlement.dao.SettlementStatementDao settlementStatementDao;
     private final long staleMarginSeconds;
     private final int windowHours;
     private final int sampleLimit;
@@ -91,6 +98,8 @@ public class ReconcileService {
                             AgentActionDao agentActionDao,
                             com.swapops.server.order.dao.ArrearsRecordDao arrearsRecordDao,
                             com.swapops.server.user.dao.UserCouponDao userCouponDao,
+                            com.swapops.server.settlement.dao.OrderSettlementDao orderSettlementDao,
+                            com.swapops.server.settlement.dao.SettlementStatementDao settlementStatementDao,
                             @Value("${swap.reconcile.stale-margin-seconds:3600}") long staleMarginSeconds,
                             @Value("${swap.reconcile.window-hours:24}") int windowHours,
                             @Value("${swap.reconcile.sample-limit:200}") int sampleLimit) {
@@ -108,6 +117,8 @@ public class ReconcileService {
         this.agentActionDao = agentActionDao;
         this.arrearsRecordDao = arrearsRecordDao;
         this.userCouponDao = userCouponDao;
+        this.orderSettlementDao = orderSettlementDao;
+        this.settlementStatementDao = settlementStatementDao;
         this.staleMarginSeconds = staleMarginSeconds;
         this.windowHours = windowHours;
         this.sampleLimit = sampleLimit;
@@ -155,7 +166,10 @@ public class ReconcileService {
                 checkTransferLedger(),
                 checkStaleAgentActions(),
                 checkArrearsIntegrity(),
-                checkCouponConsistency());
+                checkCouponConsistency(),
+                checkSettlementConservation(),
+                checkStatementConsistency(),
+                checkSettlementCoverage());
         ReconcileReport report = new ReconcileReport(start, System.currentTimeMillis() - start, checks);
         if (report.totalViolations() > 0) {
             alarmService.raise(AlarmService.DEVICE_SYSTEM, "daily-reconcile", AlarmType.RECONCILE_ERROR,
@@ -163,7 +177,7 @@ public class ReconcileService {
             log.error("[日终对账] 发现差异 total={} report={}", report.totalViolations(), report.toMap());
         } else {
             alarmService.markRecovered(AlarmService.DEVICE_SYSTEM, "daily-reconcile", AlarmType.RECONCILE_ERROR);
-            log.info("[日终对账] 九组不变量零差异 durationMs={}", report.durationMs());
+            log.info("[日终对账] 十四组不变量零差异 durationMs={}", report.durationMs());
         }
         return report;
     }
@@ -381,6 +395,98 @@ public class ReconcileService {
                     + " type=" + action.getActionType());
         }
         return new CheckResult("stale-agent-actions", stale.size(), samples);
+    }
+
+    /** ⑫ 分账守恒（S7 WP-B）：每行 agent_share+platform_share=base（不丢分）；ORDER 行基数非负 */
+    protected CheckResult checkSettlementConservation() {
+        List<com.swapops.server.settlement.entity.OrderSettlementEntity> lines =
+                orderSettlementDao.selectList(new LambdaQueryWrapper<com.swapops.server.settlement.entity.OrderSettlementEntity>()
+                        .last("LIMIT " + sampleLimit));
+        List<String> samples = new ArrayList<>();
+        int violations = 0;
+        for (com.swapops.server.settlement.entity.OrderSettlementEntity line : lines) {
+            int base = line.getBaseAmountFen() == null ? 0 : line.getBaseAmountFen();
+            int agent = line.getAgentShareFen() == null ? 0 : line.getAgentShareFen();
+            int platform = line.getPlatformShareFen() == null ? 0 : line.getPlatformShareFen();
+            boolean orderNonNegative = !"ORDER".equals(line.getEventType()) || base >= 0;
+            if (agent + platform != base || !orderNonNegative) {
+                violations++;
+                addSample(samples, "settlement-mismatch: key=" + line.getEventKey()
+                        + " base=" + base + " agent=" + agent + " platform=" + platform);
+            }
+        }
+        return new CheckResult("settlement-conservation", violations, samples);
+    }
+
+    /** ⑬ 结算单一致（S7 WP-B）：挂单流水合计=结算单金额；无孤儿挂单（指向不存在结算单） */
+    protected CheckResult checkStatementConsistency() {
+        List<String> samples = new ArrayList<>();
+        int violations = 0;
+        List<com.swapops.server.settlement.entity.SettlementStatementEntity> statements =
+                settlementStatementDao.selectList(new LambdaQueryWrapper<com.swapops.server.settlement.entity.SettlementStatementEntity>()
+                        .last("LIMIT " + sampleLimit));
+        Map<Long, com.swapops.server.settlement.entity.SettlementStatementEntity> byId = new LinkedHashMap<>();
+        for (var statement : statements) {
+            byId.put(statement.getId(), statement);
+        }
+        List<com.swapops.server.settlement.entity.OrderSettlementEntity> linked =
+                orderSettlementDao.selectList(new LambdaQueryWrapper<com.swapops.server.settlement.entity.OrderSettlementEntity>()
+                        .isNotNull(com.swapops.server.settlement.entity.OrderSettlementEntity::getStatementId)
+                        .last("LIMIT " + sampleLimit));
+        Map<Long, int[]> sums = new LinkedHashMap<>();
+        for (var line : linked) {
+            Long sid = line.getStatementId();
+            if (!byId.containsKey(sid)) {
+                violations++;
+                addSample(samples, "orphan-settlement-line: key=" + line.getEventKey() + " statementId=" + sid);
+                continue;
+            }
+            int[] acc = sums.computeIfAbsent(sid, k -> new int[4]);
+            acc[0] += line.getBaseAmountFen() == null ? 0 : line.getBaseAmountFen();
+            acc[1] += line.getAgentShareFen() == null ? 0 : line.getAgentShareFen();
+            acc[2] += line.getPlatformShareFen() == null ? 0 : line.getPlatformShareFen();
+            acc[3] += line.getSubsidyFen() == null ? 0 : line.getSubsidyFen();
+        }
+        for (var statement : statements) {
+            int[] acc = sums.get(statement.getId());
+            if (acc == null) {
+                continue; // 空单（生成后流水被并发领取的残留）由生成事务保证不出现
+            }
+            if (statement.getBaseAmountFen() == null || statement.getBaseAmountFen() != acc[0]
+                    || statement.getAgentAmountFen() == null || statement.getAgentAmountFen() != acc[1]
+                    || statement.getPlatformAmountFen() == null || statement.getPlatformAmountFen() != acc[2]
+                    || statement.getSubsidyFen() == null || statement.getSubsidyFen() != acc[3]) {
+                violations++;
+                addSample(samples, "statement-mismatch: " + statement.getStatementNo()
+                        + " stmt=" + statement.getBaseAmountFen() + "/" + statement.getAgentAmountFen()
+                        + " lines=" + acc[0] + "/" + acc[1]);
+            }
+        }
+        return new CheckResult("statement-consistency", violations, samples);
+    }
+
+    /** ⑭ 完成单必分账（S7 WP-B）：窗口内已完成 TAKE/SWAP（已计费）必有 ORDER 分账流水（对冲正/补缴不重复要求） */
+    protected CheckResult checkSettlementCoverage() {
+        long since = System.currentTimeMillis() - windowHours * 3600_000L;
+        List<SwapOrderEntity> completed = orderDao.selectList(new LambdaQueryWrapper<SwapOrderEntity>()
+                .eq(SwapOrderEntity::getStatus, OrderStatus.COMPLETED.getCode())
+                .in(SwapOrderEntity::getOrderType, List.of("SWAP", "TAKE"))
+                .isNotNull(SwapOrderEntity::getPayType)
+                .ge(SwapOrderEntity::getCompleteTime, since)
+                .last("LIMIT " + sampleLimit));
+        List<String> samples = new ArrayList<>();
+        int violations = 0;
+        for (SwapOrderEntity order : completed) {
+            Long count = orderSettlementDao.selectCount(
+                    new LambdaQueryWrapper<com.swapops.server.settlement.entity.OrderSettlementEntity>()
+                            .eq(com.swapops.server.settlement.entity.OrderSettlementEntity::getEventKey,
+                                    order.getOrderNo() + ":ORDER"));
+            if (count == null || count == 0) {
+                violations++;
+                addSample(samples, "completed-unsettled: " + order.getOrderNo() + " payType=" + order.getPayType());
+            }
+        }
+        return new CheckResult("settlement-coverage", violations, samples);
     }
 
     /** ⑩ 欠费单一致（S7 WP-D）：OPEN 欠费金额自洽（amount>settled>=0），异常值暴露交人工 */

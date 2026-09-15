@@ -63,6 +63,11 @@ class RefundServiceTest {
     @Mock
     private com.swapops.server.user.service.UserMessageService messageService;
 
+    @Mock
+    private com.swapops.server.settlement.service.SettlementService settlementService;
+    @Mock
+    private com.swapops.server.order.dao.SwapOrderDao swapOrderDao;
+
     private RefundService service;
 
     @BeforeAll
@@ -77,7 +82,8 @@ class RefundServiceTest {
         when(idGenerator.nextIdString()).thenReturn("123456");
         service = new RefundService(refundRecordDao, paymentRecordDao,
                 paymentRecordService, walletService, delayQueueService, idGenerator,
-                new com.swapops.server.common.retry.DeadlockRetryExecutor(), messageService);
+                new com.swapops.server.common.retry.DeadlockRetryExecutor(), messageService,
+                settlementService, swapOrderDao);
         // 默认可退口径：该订单已收 300（基础费），无历史退款（S5 审查：refund 入口先做可退上限校验）
         when(paymentRecordDao.selectList(any())).thenReturn(List.of(
                 payment(7L, 99L, PaymentType.BALANCE_FEE, 300)));
@@ -113,6 +119,8 @@ class RefundServiceTest {
         verify(walletService).addBalance(7L, 300);
         verify(paymentRecordService).record(7L, 99L, PaymentType.REFUND, 300, "退款:ADMIN_MANUAL");
         verify(delayQueueService, never()).enqueue(anyString(), anyString(), anyString(), anyLong());
+        // S7 WP-B：退款成功同事务写冲正流水（订单未分账时由服务内跳过）
+        verify(settlementService).recordRefundReversal(isNull(), any(RefundRecordEntity.class));
     }
 
     @Test

@@ -57,6 +57,9 @@ class BillingServiceTest {
     @Mock
     private com.swapops.server.user.service.CouponService couponService;
 
+    @Mock
+    private com.swapops.server.settlement.service.SettlementService settlementService;
+
     private BillingService service;
 
     @BeforeAll
@@ -68,7 +71,7 @@ class BillingServiceTest {
     @BeforeEach
     void setUp() {
         service = new BillingService(planService, walletService, paymentRecordService, orderDao,
-                new BillingProperties(), alarmService, arrearsService, couponService);
+                new BillingProperties(), alarmService, arrearsService, couponService, settlementService);
     }
 
     private SwapOrderEntity order(String type, Long takeTime) {
@@ -201,6 +204,8 @@ class BillingServiceTest {
         verify(paymentRecordService).record(eq(7L), eq(99L), eq(PaymentType.COUPON_DEDUCT), eq(100), anyString());
         assertThat(order.getFeeFen()).isEqualTo(200);
         assertThat(order.getDiscountFen()).isEqualTo(100);
+        // S7 WP-B：计费末分账（同事务）
+        verify(settlementService).settleOrder(order);
     }
 
     @Test

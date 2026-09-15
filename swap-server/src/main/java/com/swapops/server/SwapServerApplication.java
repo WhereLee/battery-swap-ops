@@ -13,7 +13,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         "com.swapops.server.outbox.dao", "com.swapops.server.workorder.dao",
         "com.swapops.server.transfer.dao", "com.swapops.server.charge.dao",
         "com.swapops.server.agent.dao", "com.swapops.server.admin.dao",
-        "com.swapops.server.payrecon.dao"})
+        "com.swapops.server.payrecon.dao", "com.swapops.server.settlement.dao"})
 public class SwapServerApplication {
 
     public static void main(String[] args) {

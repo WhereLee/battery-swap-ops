@@ -60,6 +60,8 @@ public class DevResetService {
     private final com.swapops.server.user.dao.UserCouponDao userCouponDao;
     private final com.swapops.server.user.dao.CouponTemplateDao couponTemplateDao;
     private final com.swapops.server.user.dao.UserMessageDao userMessageDao;
+    private final com.swapops.server.settlement.dao.SettlementStatementDao settlementStatementDao;
+    private final com.swapops.server.settlement.dao.OrderSettlementDao orderSettlementDao;
 
     public DevResetService(SwapOrderDao orderDao, CabinetDao cabinetDao, CellDao cellDao,
                            BatteryDao batteryDao, StringRedisTemplate stringRedisTemplate,
@@ -68,7 +70,9 @@ public class DevResetService {
                            com.swapops.server.order.dao.ArrearsRecordDao arrearsRecordDao,
                            com.swapops.server.user.dao.UserCouponDao userCouponDao,
                            com.swapops.server.user.dao.CouponTemplateDao couponTemplateDao,
-                           com.swapops.server.user.dao.UserMessageDao userMessageDao) {
+                           com.swapops.server.user.dao.UserMessageDao userMessageDao,
+                           com.swapops.server.settlement.dao.SettlementStatementDao settlementStatementDao,
+                           com.swapops.server.settlement.dao.OrderSettlementDao orderSettlementDao) {
         this.orderDao = orderDao;
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
@@ -83,6 +87,8 @@ public class DevResetService {
         this.userCouponDao = userCouponDao;
         this.couponTemplateDao = couponTemplateDao;
         this.userMessageDao = userMessageDao;
+        this.settlementStatementDao = settlementStatementDao;
+        this.orderSettlementDao = orderSettlementDao;
     }
 
     @Transactional
@@ -169,6 +175,13 @@ public class DevResetService {
                 .set(com.swapops.server.user.entity.CouponTemplateEntity::getIssuedCount, 0));
         int messagesCleared = userMessageDao.delete(new LambdaQueryWrapper<com.swapops.server.user.entity.UserMessageEntity>()
                 .gt(com.swapops.server.user.entity.UserMessageEntity::getId, 0));
+        // S7 WP-B：清结算单并释放挂单（分账流水保留——完成单的历史分账是事实，避免对账⑭误报）
+        int statementsCleared = settlementStatementDao.delete(
+                new LambdaQueryWrapper<com.swapops.server.settlement.entity.SettlementStatementEntity>()
+                        .gt(com.swapops.server.settlement.entity.SettlementStatementEntity::getId, 0));
+        int unlinked = orderSettlementDao.update(null, new LambdaUpdateWrapper<com.swapops.server.settlement.entity.OrderSettlementEntity>()
+                .isNotNull(com.swapops.server.settlement.entity.OrderSettlementEntity::getStatementId)
+                .set(com.swapops.server.settlement.entity.OrderSettlementEntity::getStatementId, null));
         // 报障去重键（S7 WP-D）：联调复跑需清窗（否则近重返回上轮工单）
         try {
             java.util.Set<String> dedupKeys =
@@ -191,6 +204,8 @@ public class DevResetService {
         result.put("arrearsCleared", arrearsCleared);
         result.put("couponsCleared", couponsCleared);
         result.put("messagesCleared", messagesCleared);
+        result.put("statementsCleared", statementsCleared);
+        result.put("statementsUnlinked", unlinked);
         log.warn("[dev-reset] 联调数据已重置 cabinets={} ordersCancelled={} cellsOccupied={} extrasParked={} "
                         + "walletsReset={} plansReset={}",
                 cabinets.size(), cancelled, occupied, parked, walletsReset, plansReset);

@@ -20,4 +20,7 @@ public class StationAdminForm {
 
     /** 经度（可空；调拨距离用） */
     private Double longitude;
+
+    /** 归属代理（S7 WP-B；可空=NULL 直营） */
+    private Long agentId;
 }

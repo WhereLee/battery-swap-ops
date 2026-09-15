@@ -68,4 +68,37 @@ public class AdminRefundController {
         view.put("status", record.getStatus());
         return Result.ok(view);
     }
+
+    /**
+     * 冲正退款（S7 WP-B）：仅已完成订单——退款成功同时写 REFUND_REVERSAL 负向分账行
+     * （资金账与分账账一致）；金额缺省=可退金额（已收未退）。
+     */
+    @PostMapping("/{orderNo}/reversal")
+    @org.springframework.security.access.prepost.PreAuthorize(
+            "hasAuthority('" + com.swapops.server.admin.enums.AdminRole.REFUND_CREATE + "')")
+    @com.swapops.server.admin.annotation.AdminLog("REFUND_REVERSAL")
+    public Result<Map<String, Object>> reversal(@PathVariable String orderNo,
+                                                @RequestParam(required = false) Integer amountFen) {
+        SwapOrderEntity order = swapOrderService.findByOrderNo(orderNo);
+        if (order == null) {
+            throw new RRException("订单不存在: " + orderNo);
+        }
+        if (order.getStatus() == null
+                || order.getStatus() != com.swapops.contract.OrderStatus.COMPLETED.getCode()) {
+            throw new RRException("冲正退款仅适用于已完成订单（进行中/异常单走普通退款）: " + orderNo);
+        }
+        int amount = amountFen == null ? refundService.refundableAmount(order.getId()) : amountFen;
+        if (amount <= 0) {
+            throw new RRException("该订单无可退金额: " + orderNo);
+        }
+        RefundRecordEntity record = refundService.refund(order.getId(), order.getUserId(), amount,
+                "ADMIN_REVERSAL");
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("refundNo", record.getRefundNo());
+        view.put("orderNo", orderNo);
+        view.put("amountFen", record.getAmountFen());
+        view.put("reason", record.getReason());
+        view.put("status", record.getStatus());
+        return Result.ok(view);
+    }
 }

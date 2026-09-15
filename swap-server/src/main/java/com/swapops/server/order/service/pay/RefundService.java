@@ -47,13 +47,17 @@ public class RefundService {
     private final SnowflakeIdGenerator idGenerator;
     private final DeadlockRetryExecutor deadlockRetryExecutor;
     private final com.swapops.server.user.service.UserMessageService messageService;
+    private final com.swapops.server.settlement.service.SettlementService settlementService;
+    private final com.swapops.server.order.dao.SwapOrderDao swapOrderDao;
 
     public RefundService(RefundRecordDao refundRecordDao,
                          com.swapops.server.order.dao.PaymentRecordDao paymentRecordDao,
                          PaymentRecordService paymentRecordService, WalletService walletService,
                          DelayQueueService delayQueueService, SnowflakeIdGenerator idGenerator,
                          DeadlockRetryExecutor deadlockRetryExecutor,
-                         com.swapops.server.user.service.UserMessageService messageService) {
+                         com.swapops.server.user.service.UserMessageService messageService,
+                         com.swapops.server.settlement.service.SettlementService settlementService,
+                         com.swapops.server.order.dao.SwapOrderDao swapOrderDao) {
         this.refundRecordDao = refundRecordDao;
         this.paymentRecordDao = paymentRecordDao;
         this.paymentRecordService = paymentRecordService;
@@ -62,6 +66,8 @@ public class RefundService {
         this.idGenerator = idGenerator;
         this.deadlockRetryExecutor = deadlockRetryExecutor;
         this.messageService = messageService;
+        this.settlementService = settlementService;
+        this.swapOrderDao = swapOrderDao;
     }
 
     /**
@@ -135,6 +141,15 @@ public class RefundService {
             // S7 WP-D：退款到账站内信（写失败不影响退款）
             messageService.send(record.getUserId(), "REFUND", "退款到账",
                     "退款 " + record.getAmountFen() + " 分已入余额（" + record.getReason() + "）");
+        }
+        // S7 WP-B：退款冲正（仅对已分账的完成单；event_key 幂等，失败不阻断退款）
+        try {
+            if (record.getOrderId() != null) {
+                settlementService.recordRefundReversal(swapOrderDao.selectById(record.getOrderId()), record);
+            }
+        } catch (RuntimeException e) {
+            log.warn("[退款] 冲正流水写入异常（不阻断退款） refundNo={} cause={}",
+                    record.getRefundNo(), e.getMessage());
         }
         log.info("退款成功 refundNo={} orderId={} amountFen={} reason={}",
                 record.getRefundNo(), record.getOrderId(), record.getAmountFen(), record.getReason());

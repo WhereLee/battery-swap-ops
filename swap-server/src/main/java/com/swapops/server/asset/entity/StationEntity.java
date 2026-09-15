@@ -27,6 +27,9 @@ public class StationEntity {
 
     private Integer status;
 
+    /** 归属代理（S7 WP-B；NULL=直营） */
+    private Long agentId;
+
     private Long createTime;
 
     private Long updateTime;

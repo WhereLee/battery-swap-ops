@@ -73,6 +73,11 @@ class DevResetServiceTest {
     @Mock
     private com.swapops.server.user.dao.UserMessageDao userMessageDao;
 
+    @Mock
+    private com.swapops.server.settlement.dao.SettlementStatementDao settlementStatementDao;
+    @Mock
+    private com.swapops.server.settlement.dao.OrderSettlementDao orderSettlementDao;
+
     private DevResetService service;
 
     @BeforeAll
@@ -89,6 +94,8 @@ class DevResetServiceTest {
         TableInfoHelper.initTableInfo(assistant, com.swapops.server.user.entity.UserCouponEntity.class);
         TableInfoHelper.initTableInfo(assistant, com.swapops.server.user.entity.CouponTemplateEntity.class);
         TableInfoHelper.initTableInfo(assistant, com.swapops.server.user.entity.UserMessageEntity.class);
+        TableInfoHelper.initTableInfo(assistant, com.swapops.server.settlement.entity.OrderSettlementEntity.class);
+        TableInfoHelper.initTableInfo(assistant, com.swapops.server.settlement.entity.SettlementStatementEntity.class);
     }
 
     @BeforeEach
@@ -99,7 +106,8 @@ class DevResetServiceTest {
         service = new DevResetService(orderDao, cabinetDao, cellDao, batteryDao,
                 stringRedisTemplate, allocationService, devProperties,
                 walletDao, userPlanDao, swapUserDao,
-                arrearsRecordDao, userCouponDao, couponTemplateDao, userMessageDao);
+                arrearsRecordDao, userCouponDao, couponTemplateDao, userMessageDao,
+                settlementStatementDao, orderSettlementDao);
         when(walletDao.update(isNull(), any())).thenReturn(5);
         when(userPlanDao.update(isNull(), any())).thenReturn(5);
         when(swapUserDao.selectOne(any())).thenReturn(null);
