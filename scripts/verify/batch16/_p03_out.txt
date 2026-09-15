@@ -1,0 +1,32 @@
+﻿== P0-3 read-path capacity (methodology run) ==
+01:43:14 server health=UP
+01:43:14 sim health=UP
+01:43:15 server cmd: java.exe -Xms512m -Xmx512m -Xlog:gc:file=C:\Users\lrs\Desktop\py\interview\battery-swap-ops\.local\gc.log:time,uptime -jar C:\Users\lrs\Desktop\py\interview\battery-swap-ops\swap-server\target\swap-server-1.0.0.jar --swap.dev.enabled=true --swap.ratelimit.enabled=false --swap.device.heartbeat-timeout-seconds=5 --swap.alarm.offline-scan-interval-ms=2000 --swap.device.mq.enabled=false
+01:43:15 methodology: JDK17 / jmeter 5.6.3 / same-host (load+server+mysql+redis) / ratelimit OFF / warmup 60s then steady tiers
+01:44:54 warmup-20 threads=20 duration=75s wall=78s samples=240570 err=0 rate=3208.8/s avg=6ms p95=14 p99=16 max=36
+01:44:54 warmup-20 labels: POST /user/login: n=20 err=0 avg=6ms p99=12ms | GET /user/plans: n=80191 err=0 avg=1ms p99=3ms | GET /user/stations: n=80186 err=0 avg=13ms p99=17ms | GET /user/wallet: n=80173 err=0 avg=3ms p99=4ms
+01:44:54 warmup-20 resources: cache[enabled=1,l1Hits=174380,l2Hits=36,l1Size=0,rebuild:plan:active:list=3,rebuild:station:active:list=3,rebuilds=6] -> [enabled=1,l1Hits=414916,l2Hits=50,l1Size=2,rebuild:plan:active:list=3,rebuild:station:active:list=3,rebuilds=6]
+01:44:54 warmup-20 mysql: [Innodb_row_lock_time_avg	3;Innodb_row_lock_waits	5105;Queries	2519104;Threads_connected	21] -> [Innodb_row_lock_time_avg	3;Innodb_row_lock_waits	5105;Queries	3242053;Threads_connected	21]
+01:44:54 warmup-20 redis: [total_commands=1596099;inst_ops_per_sec=36] -> [total_commands=3602525;inst_ops_per_sec=2815]
+01:44:54 warmup-20 gc: pauses 141->280 sumMs 267.9->415.2 maxMs 9.6
+01:44:54 warmup done (discarded)
+01:49:27 steady-20 threads=20 duration=195s wall=198s samples=629795 err=0 rate=3230.3/s avg=6ms p95=15 p99=16 max=28
+01:49:27 steady-20 labels: POST /user/login: n=20 err=0 avg=7ms p99=13ms | GET /user/plans: n=209930 err=0 avg=1ms p99=3ms | GET /user/stations: n=209929 err=0 avg=14ms p99=18ms | GET /user/wallet: n=209916 err=0 avg=3ms p99=4ms
+01:49:27 steady-20 resources: cache[enabled=1,l1Hits=414916,l2Hits=50,l1Size=0,rebuild:plan:active:list=3,rebuild:station:active:list=3,rebuilds=6] -> [enabled=1,l1Hits=1044656,l2Hits=83,l1Size=2,rebuild:plan:active:list=4,rebuild:station:active:list=4,rebuilds=8]
+01:49:27 steady-20 mysql: [Innodb_row_lock_time_avg	3;Innodb_row_lock_waits	5105;Queries	3242416;Threads_connected	21] -> [Innodb_row_lock_time_avg	3;Innodb_row_lock_waits	5105;Queries	5135107;Threads_connected	21]
+01:49:27 steady-20 redis: [total_commands=3602967;inst_ops_per_sec=18] -> [total_commands=8855741;inst_ops_per_sec=2927]
+01:49:27 steady-20 gc: pauses 280->643 sumMs 415.2->808.2 maxMs 9.6
+01:53:57 steady-50 threads=50 duration=195s wall=198s samples=644881 err=0 rate=3305.7/s avg=14ms p95=41 p99=48 max=147
+01:53:57 steady-50 labels: POST /user/login: n=50 err=0 avg=6ms p99=15ms | GET /user/plans: n=214960 err=0 avg=3ms p99=5ms | GET /user/stations: n=214957 err=0 avg=37ms p99=61ms | GET /user/wallet: n=214914 err=0 avg=4ms p99=8ms
+01:53:57 steady-50 resources: cache[enabled=1,l1Hits=1044656,l2Hits=83,l1Size=0,rebuild:plan:active:list=4,rebuild:station:active:list=4,rebuilds=8] -> [enabled=1,l1Hits=1689421,l2Hits=147,l1Size=2,rebuild:plan:active:list=5,rebuild:station:active:list=5,rebuilds=10]
+01:53:57 steady-50 mysql: [Innodb_row_lock_time_avg	3;Innodb_row_lock_waits	5105;Queries	5136395;Threads_connected	20] -> [Innodb_row_lock_time_avg	3;Innodb_row_lock_waits	5105;Queries	7074202;Threads_connected	21]
+01:53:57 steady-50 redis: [total_commands=8857373;inst_ops_per_sec=6] -> [total_commands=14235816;inst_ops_per_sec=1948]
+01:53:57 steady-50 gc: pauses 644->1017 sumMs 809.2->1,306.9 maxMs 9.6
+01:58:40 steady-100 threads=100 duration=195s wall=198s samples=687602 err=0 rate=3525.4/s avg=27ms p95=78 p99=84 max=117
+01:58:40 steady-100 labels: POST /user/login: n=100 err=0 avg=6ms p99=10ms | GET /user/plans: n=229202 err=0 avg=5ms p99=11ms | GET /user/stations: n=229192 err=0 avg=70ms p99=89ms | GET /user/wallet: n=229108 err=0 avg=7ms p99=15ms
+01:58:40 steady-100 resources: cache[enabled=1,l1Hits=1689421,l2Hits=147,l1Size=0,rebuild:plan:active:list=5,rebuild:station:active:list=5,rebuilds=10] -> [enabled=1,l1Hits=2376815,l2Hits=253,l1Size=2,rebuild:plan:active:list=6,rebuild:station:active:list=6,rebuilds=12]
+01:58:40 steady-100 mysql: [Innodb_row_lock_time_avg	3;Innodb_row_lock_waits	5105;Queries	7075590;Threads_connected	16] -> [Innodb_row_lock_time_avg	3;Innodb_row_lock_waits	5105;Queries	9141400;Threads_connected	21]
+01:58:40 steady-100 redis: [total_commands=14237455;inst_ops_per_sec=27] -> [total_commands=19971766;inst_ops_per_sec=3147]
+01:58:40 steady-100 gc: pauses 1017->1419 sumMs 1,306.9->1,937.3 maxMs 9.6
+01:58:40 raw evidence: C:\Users\lrs\Desktop\py\interview\battery-swap-ops\..\diag-archive\p03-capacity-20260916-014314
+01:58:40 P0-3 READ PASS

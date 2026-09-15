@@ -38,6 +38,7 @@
 | batch12 | `_c20_user_service.ps1` | 报障→工单 / 欠费闭环 / 优惠券 / 站内信（S7 WP-D） | PASS |
 | batch13 | `_c18_settlement.ps1` | 代理分润结算（分账/冲正/补行/结算单，S7 WP-B） | PASS |
 | batch15 | `_py_contract_client.py` | 第三方（Python 标准库）契约客户端：心跳/事件验签正+负例（P1-12） | PASS |
+| batch16 | `_p03_read_capacity.ps1` | 读路径容量方法论复测（预热+稳态 20/50/100，P0-3） | PASS |
 
 合计 29 个剧本（`_g1`-`_g8` + `_c0`-`_c20`）+ 1 个容量压测脚本 + 1 个第三方契约验证脚本；batch9（S5 运维收口）与 batch14（S7 收口）为文档/运维层面，无独立剧本。
 P0-4 演示入口：`scripts/demo/_p0_demo.ps1`（不在本索引的剧本口径内，证据 `_p0_demo_out.txt`）。
