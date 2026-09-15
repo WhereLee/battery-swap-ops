@@ -171,7 +171,7 @@ class RefundServiceTest {
     }
 
     @Test
-    @DisplayName("可退金额：仅基础费/押金/超时费，排除已退/0 元/其他")
+    @DisplayName("可退金额：仅基础费/超时费；押金（走退租流程）/已退/0 元/其他排除（S7 WP-0 修正）")
     void 可退金额口径() {
         when(paymentRecordDao.selectList(any())).thenReturn(List.of(
                 payment(7L, 99L, PaymentType.BALANCE_FEE, 300),
@@ -180,7 +180,16 @@ class RefundServiceTest {
                 payment(7L, 99L, PaymentType.REFUND, 9900),
                 payment(7L, 99L, PaymentType.PLAN_DEDUCT, 0)));
 
-        assertThat(service.refundableAmount(99L)).isEqualTo(10400);
+        assertThat(service.refundableAmount(99L)).isEqualTo(500);
+    }
+
+    @Test
+    @DisplayName("押金二次退款防护：仅有押金流水的订单可退金额为 0（S7 WP-0）")
+    void 押金不计入可退() {
+        when(paymentRecordDao.selectList(any())).thenReturn(List.of(
+                payment(7L, 99L, PaymentType.DEPOSIT, 9900)));
+
+        assertThat(service.refundableAmount(99L)).isZero();
     }
 
     @Test
@@ -188,9 +197,9 @@ class RefundServiceTest {
     void 可退金额扣减已退() {
         when(paymentRecordDao.selectList(any())).thenReturn(List.of(
                 payment(7L, 99L, PaymentType.BALANCE_FEE, 300),
-                payment(7L, 99L, PaymentType.DEPOSIT, 9900)));
+                payment(7L, 99L, PaymentType.OVERDUE_FEE, 200)));
         when(refundRecordDao.selectList(any())).thenReturn(List.of(
-                record(RefundStatus.SUCCESS.name(), 9900)));
+                record(RefundStatus.SUCCESS.name(), 200)));
 
         assertThat(service.refundableAmount(99L)).isEqualTo(300);
     }

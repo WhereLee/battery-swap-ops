@@ -40,9 +40,17 @@ public class AdminRefundController {
         if (order == null) {
             throw new RRException("订单不存在: " + orderNo);
         }
+        // S7 WP-0：已完成订单资金已结算入账（含分账），不允许走人工退款通道二次退现；如需退还走冲正流程
+        if (order.getStatus() != null
+                && order.getStatus() == com.swapops.contract.OrderStatus.COMPLETED.getCode()) {
+            throw new RRException("已完成订单不支持人工退款（资金已结算，退款请走冲正流程）: " + orderNo);
+        }
         int amount = amountFen == null ? refundService.refundableAmount(order.getId()) : amountFen;
         if (amount < 0) {
             throw new RRException("退款金额非法: " + amount);
+        }
+        if (amount == 0) {
+            throw new RRException("该订单无可退金额: " + orderNo);
         }
         RefundRecordEntity record = refundService.refund(order.getId(), order.getUserId(), amount, REASON);
         Map<String, Object> view = new LinkedHashMap<>();

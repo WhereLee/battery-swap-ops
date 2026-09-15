@@ -28,9 +28,13 @@ import java.util.Set;
 @Service
 public class RefundService {
 
-    /** 计入"可退"的收费类型（订单维度） */
+    /**
+     * 计入"可退"的收费类型（订单维度）。
+     * 注意：押金（DEPOSIT）**不在**可退范围——押金退还只走退租（RETURN）流程的 refundDeposit，
+     * 若计入将被管理端人工退款二次退还（S7 WP-0 审查发现的资金缺陷）。
+     */
     private static final Set<String> REFUNDABLE_TYPES = Set.of(
-            PaymentType.BALANCE_FEE.name(), PaymentType.DEPOSIT.name(), PaymentType.OVERDUE_FEE.name());
+            PaymentType.BALANCE_FEE.name(), PaymentType.OVERDUE_FEE.name());
 
     /** 延迟重试主题 */
     public static final String REFUND_TOPIC = "refund-apply";
