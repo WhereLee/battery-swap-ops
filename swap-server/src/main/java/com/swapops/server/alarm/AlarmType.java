@@ -29,5 +29,7 @@ public enum AlarmType {
     /** 工单 SLA 超时（S4.4） */
     WORK_ORDER_SLA_BREACH,
     /** 电池健康度低于阈值（S4.1） */
-    BATTERY_HEALTH_LOW
+    BATTERY_HEALTH_LOW,
+    /** 渠道对账差异（S7 WP-C：T+1 账单与平台流水不一致） */
+    CHANNEL_RECON_DIFF
 }

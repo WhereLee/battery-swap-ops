@@ -1,0 +1,17 @@
+﻿== S7 gate: channel recon ==
+12:10:49 server up
+12:10:49 pay user 13800000002
+12:10:49 notify1=266bytes notify2=264bytes
+12:10:49 PASS 1 clean-import-200
+12:10:49 PASS 2 clean-zero-open
+12:10:50 PASS 3 missing->platform-only
+12:10:50 PASS 4 extra->channel-only
+12:10:50 open diffs after extra=
+12:10:50 PASS 5 handle-200
+12:10:50 PASS 6 amount->amount-mismatch
+12:10:50 PASS 7 status->status-mismatch
+12:10:50 PASS 8 recon-diff-alarm
+12:10:50 PASS 9 reimport-open-cleared
+12:10:50 PASS 10 handled-retained
+12:11:12 server stopped
+12:11:12 GATE-C19 PASS (checks=10/10)

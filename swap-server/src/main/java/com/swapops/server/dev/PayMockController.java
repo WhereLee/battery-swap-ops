@@ -25,10 +25,20 @@ public class PayMockController {
 
     private final PayOrderService payOrderService;
     private final PaySignatureService paySignatureService;
+    private final com.swapops.server.payrecon.service.ChannelReconService channelReconService;
 
-    public PayMockController(PayOrderService payOrderService, PaySignatureService paySignatureService) {
+    public PayMockController(PayOrderService payOrderService, PaySignatureService paySignatureService,
+                             com.swapops.server.payrecon.service.ChannelReconService channelReconService) {
         this.payOrderService = payOrderService;
         this.paySignatureService = paySignatureService;
+        this.channelReconService = channelReconService;
+    }
+
+    /** S7 WP-C：渠道账单导出（mock T+1 账单；anomaly 注入差异供剧本/演示） */
+    @GetMapping(value = "/bill/export", produces = "text/csv;charset=UTF-8")
+    public String exportBill(@RequestParam String date,
+                             @RequestParam(required = false) String anomaly) {
+        return channelReconService.exportBillCsv(date, anomaly);
     }
 
     @GetMapping(value = "/page/{tradeNo}", produces = "text/html;charset=UTF-8")
