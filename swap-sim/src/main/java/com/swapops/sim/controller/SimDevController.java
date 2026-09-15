@@ -34,6 +34,19 @@ public class SimDevController {
         return ok("取电已模拟（事件已上报）");
     }
 
+    /**
+     * 联调重置（P0-4）：重建柜到种子态 + 轮换 bootId；与平台 `POST /dev/device/reset` 成对使用，
+     * 使演示/剧本可重复（此前只能重启 sim 进程）。
+     */
+    @PostMapping("/reset")
+    public Map<String, Object> reset() {
+        registry.reset();
+        Map<String, Object> result = ok("模拟器已重置（bootId 已轮换）");
+        result.put("cabinets", registry.size());
+        result.put("bootId", registry.getBootId());
+        return result;
+    }
+
     @PostMapping("/battery/in")
     public Map<String, Object> batteryIn(@RequestParam String cabinetNo, @RequestParam int cellNo,
                                          @RequestParam String batteryNo, @RequestParam(defaultValue = "20") int soc) {

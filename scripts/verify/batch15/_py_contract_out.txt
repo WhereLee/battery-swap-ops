@@ -1,0 +1,10 @@
+== P1-12 third-party contract client (python, stdlib) ==
+01:21:21 cabinet=SWAP-C-010 battery=BAT-0109 base=http://127.0.0.1:8400/api
+01:21:21 PASS heartbeat accepted (200, code=0)
+01:21:21 heartbeat resp status=200 body={"code":0,"msg":"success","data":null}
+01:21:21 PASS heartbeat tampered signature rejected (401)
+01:21:21 PASS event accepted (200, code=0)
+01:21:21 event resp status=200 body={"code":0,"msg":"success","data":null} bootId=py-contract-c7c512ba eventSeq=492881930
+01:21:21 PASS event tampered signature rejected (401)
+01:21:21 PY-CONTRACT PASS
+01:21:21 NOTE restart swap-sim to release the test generation on SWAP-C-010

@@ -75,6 +75,15 @@ mybatis-plus:
     db-config:
       id-type: auto
 
+springdoc:
+  # P0-4：OpenAPI 文档（/api/swagger-ui.html、/api/v3/api-docs）；演示/复现用，只读展示
+  api-docs:
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+    tags-sorter: alpha
+
 swap:
   device:
     sim-base-url: http://127.0.0.1:8500

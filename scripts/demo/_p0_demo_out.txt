@@ -1,0 +1,32 @@
+﻿== P0-4 demo: swap E2E + reconcile + OpenAPI ==
+01:20:27 PASS server health UP
+01:20:27 PASS sim health UP
+01:20:27 sim-reset cabinets=10 bootId=2ad26bf2855d475c8ffaade32b1cb0ec
+01:20:27 PASS sim reset ok (>=10 cabinets)
+01:20:27 dev-reset cabinets=11 cancelled=0 occupied=60
+01:20:27 PASS dev-reset full cells seeded (multiple of 6, >=60)
+01:20:27 reconcile baseline total=25 dirty=[cell-battery-consistency=3,transfer-ledger=2,settlement-coverage=20]
+01:20:27 login ok phone=13800000001 stations=4
+01:20:27 PASS stations listed
+01:20:27 wallet-before balance=20000 deposit=0 planRemain=5
+01:20:28 PASS TAKE order opened
+01:20:28 PASS TAKE completed
+01:20:28 PASS TAKE payType=PLAN
+01:20:28 PASS TAKE deposit charged 9900
+01:20:28 TAKE done orderNo=SW93395522869661696 cabinet=SWAP-C-001 battery=BAT-0002
+01:20:29 PASS SWAP order opened
+01:20:29 PASS SWAP completed
+01:20:29 PASS holder transferred
+01:20:29 SWAP done orderNo=SW93395526820696064 newHolder=BAT-0006
+01:20:30 PASS RETURN order opened
+01:20:30 PASS RETURN completed fee=0
+01:20:30 PASS deposit refunded
+01:20:30 RETURN done orderNo=SW93395530650095616 returnedCell=11 battery=BAT-0006 soc=10
+01:20:30 reconcile after total=25 baseline=25 delta=0 checks=14
+01:20:30 PASS reconcile no new violations (delta<=0)
+01:20:30 PASS demo orders reconciled clean
+01:20:30 PASS reconcile report persisted
+01:20:30 PASS swagger-ui reachable (HTTP 200)
+01:20:30 openapi.json exported paths=101
+01:20:30 PASS openapi has >50 paths
+01:20:30 P0-DEMO PASS

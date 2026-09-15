@@ -48,4 +48,22 @@ class SimRegistryTest {
         SimRegistry bad = new SimRegistry(properties("short"), message -> { });
         assertThatThrownBy(bad::init).isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    @DisplayName("dev 重置：bootId 轮换 + 柜重建到种子态")
+    void 重置换代际() {
+        SimRegistry registry = new SimRegistry(properties("aabbccddeeff00112233445566778899"), message -> { });
+        registry.init();
+        String bootIdBefore = registry.getBootId();
+        com.swapops.sim.model.CabinetSim before = registry.get("SWAP-C-001");
+        before.devTake(1, "trace-1");
+
+        registry.reset();
+
+        assertThat(registry.getBootId()).isNotEqualTo(bootIdBefore);
+        com.swapops.sim.model.CabinetSim after = registry.get("SWAP-C-001");
+        assertThat(after).isNotNull().isNotSameAs(before);
+        assertThat(after.getBootId()).isEqualTo(registry.getBootId());
+        assertThat(after.snapshot().get("cells").toString()).contains("BAT-0001");
+    }
 }

@@ -1,0 +1,42 @@
+# battery-swap-ops local middleware (P0-4 reproduction shortcut)
+# Usage: docker compose -f docker-compose.middleware.yml up -d
+#   MySQL 8 on :3306 (root/root, database swap_ops auto-created and migrated from ./db)
+#   Redis 7 on :6379 (no password, matches application.yml local defaults)
+# RocketMQ is intentionally NOT included (HTTP event channel is enough for the demo;
+# add namesrv/broker/proxy separately if you need the MQ channel).
+# Then: mvn -B -ntp package && run swap-server / swap-sim with the SWAP_* env vars set
+# (see README "Quick start" and .local/*.bat examples).
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: swap-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: swap_ops
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./db:/docker-entrypoint-initdb.d:ro
+      - swap-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+
+  redis:
+    image: redis:7
+    container_name: swap-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  swap-mysql-data:

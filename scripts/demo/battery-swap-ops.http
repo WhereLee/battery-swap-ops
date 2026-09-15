@@ -1,0 +1,58 @@
+# battery-swap-ops API collection (P0-4) — for VS Code REST Client / IntelliJ HTTP Client
+# Prereq: server up at :8400 with dev profile; secrets in .local/ (gitignored).
+# Note: device channel requires HMAC request signing; use scripts/verify/batch15/_py_contract_client.py
+#       for a language-independent, signed example (heartbeat / event).
+
+@base = http://127.0.0.1:8400/api
+@token = {{login.response.body.$.data.token}}
+@adminToken = 00000000000000000000000000000000
+
+### health
+GET {{base}}/actuator/health
+
+### rider login (dev phone)
+# @name login
+POST {{base}}/user/login
+Content-Type: application/json
+
+{"phone": "13800000001"}
+
+### rider: stations (inventory view)
+GET {{base}}/user/stations
+X-User-Token: {{token}}
+
+### rider: wallet (balance / deposit / active plan)
+GET {{base}}/user/wallet
+X-User-Token: {{token}}
+
+### rider: create SWAP order (Idempotency-Key mandatory)
+# @name createOrder
+POST {{base}}/user/order
+X-User-Token: {{token}}
+Idempotency-Key: {{$guid}}
+Content-Type: application/json
+
+{"type": "SWAP"}
+
+### rider: order status
+GET {{base}}/user/order/{{createOrder.response.body.$.data.orderNo}}
+X-User-Token: {{token}}
+
+### sim: battery out (simulate device event; replace cabinetNo/cellNo from order status)
+POST http://127.0.0.1:8500/sim/battery/out?cabinetNo=SWAP-C-001&cellNo=1
+
+### sim: battery in (return battery with soc)
+POST http://127.0.0.1:8500/sim/battery/in?cabinetNo=SWAP-C-001&cellNo=1&batteryNo=BAT-0000&soc=10
+
+### admin (break-glass static token from .local/admin-token.txt)
+POST {{base}}/admin/reconcile/run
+X-Admin-Token: {{adminToken}}
+
+### admin: last reconciliation report
+GET {{base}}/admin/reconcile/last
+X-Admin-Token: {{adminToken}}
+
+### OpenAPI spec / Swagger UI
+GET {{base}}/v3/api-docs
+###
+GET {{base}}/swagger-ui.html
