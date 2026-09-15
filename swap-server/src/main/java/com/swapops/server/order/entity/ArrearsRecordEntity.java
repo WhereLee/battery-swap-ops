@@ -21,6 +21,9 @@ public class ArrearsRecordEntity {
 
     private String orderNo;
 
+    /** 欠费来源（S7 韧性补丁）：BALANCE_FEE / DEPOSIT / OVERDUE_FEE（多个以 + 连接） */
+    private String reason;
+
     /** 欠费应收（分） */
     private Integer amountFen;
 

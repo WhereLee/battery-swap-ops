@@ -106,17 +106,28 @@ class BillingServiceTest {
     }
 
     @Test
-    @DisplayName("无套餐：余额扣单次费；余额不足则抛错回滚")
-    void 余额扣费与不足() {
+    @DisplayName("无套餐：余额扣单次费")
+    void 余额扣费() {
         when(planService.findUsablePlan(eq(7L), anyLong())).thenReturn(null);
         when(walletService.deductBalance(7L, 300)).thenReturn(true);
         service.charge(order("SWAP", null), System.currentTimeMillis());
         verify(paymentRecordService).record(eq(7L), eq(99L), eq(PaymentType.BALANCE_FEE), eq(300), anyString());
+    }
 
+    @Test
+    @DisplayName("余额不足：不回滚事件（G1 韧性补丁）——实收 0 + 欠费单 + 告警")
+    void 余额不足欠费化() {
+        when(planService.findUsablePlan(eq(7L), anyLong())).thenReturn(null);
         when(walletService.deductBalance(7L, 300)).thenReturn(false);
-        assertThatThrownBy(() -> service.charge(order("SWAP", null), System.currentTimeMillis()))
-                .isInstanceOf(RRException.class)
-                .hasMessageContaining("余额不足");
+        SwapOrderEntity order = order("SWAP", null);
+
+        service.charge(order, System.currentTimeMillis());
+
+        verify(paymentRecordService).record(eq(7L), eq(99L), eq(PaymentType.BALANCE_FEE), eq(0), anyString());
+        verify(arrearsService).recordShortfall(eq(7L), eq(99L), eq("SWO-1"), eq(300), eq("BALANCE_FEE"));
+        verify(alarmService).raise(eq(AlarmService.DEVICE_ORDER), eq("SWO-1"),
+                eq(AlarmType.ORDER_ARREARS), anyString());
+        assertThat(order.getFeeFen()).isZero();
     }
 
     @Test
@@ -130,6 +141,21 @@ class BillingServiceTest {
         service.charge(order("TAKE", null), System.currentTimeMillis());
 
         verify(paymentRecordService).record(eq(7L), eq(99L), eq(PaymentType.DEPOSIT), eq(9900), anyString());
+    }
+
+    @Test
+    @DisplayName("押金不足：不回滚事件（G1）——欠费单（DEPOSIT）+ 告警")
+    void 押金不足欠费化() {
+        when(planService.findUsablePlan(eq(7L), anyLong())).thenReturn(null);
+        when(walletService.deductBalance(7L, 300)).thenReturn(true);
+        when(walletService.getByUserId(7L)).thenReturn(wallet(200, 0));
+        when(walletService.moveBalanceToDeposit(7L, 9900)).thenReturn(false);
+
+        service.charge(order("TAKE", null), System.currentTimeMillis());
+
+        verify(arrearsService).recordShortfall(eq(7L), eq(99L), eq("SWO-1"), eq(9900), eq("DEPOSIT"));
+        verify(paymentRecordService, never()).record(eq(7L), eq(99L), eq(PaymentType.DEPOSIT),
+                org.mockito.ArgumentMatchers.anyInt(), anyString());
     }
 
     @Test

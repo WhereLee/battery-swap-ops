@@ -48,10 +48,16 @@ public class ChannelReconTask {
             if (bills == null || bills == 0) {
                 log.warn("[渠道对账] 昨日账单未导入，跳过对账（人工导入后可用 /admin/recon/run 补跑）date={}", yesterday);
             } else {
-                ChannelReconService.ReconResult result =
-                        channelReconService.reconcile(yesterday, ChannelReconService.DEFAULT_CHANNEL);
-                log.info("[渠道对账] 每日对账完成 date={} bills={} platform={} diffs={}",
-                        result.billDate(), result.billRows(), result.platformRows(), result.diffs());
+                // S7 韧性补丁 G3：与人工导入/重建互斥（同锁名）
+                boolean ran = jobLockService.runWithLock("channel-recon-io", () -> {
+                    ChannelReconService.ReconResult result =
+                            channelReconService.reconcile(yesterday, ChannelReconService.DEFAULT_CHANNEL);
+                    log.info("[渠道对账] 每日对账完成 date={} bills={} platform={} diffs={}",
+                            result.billDate(), result.billRows(), result.platformRows(), result.diffs());
+                });
+                if (!ran) {
+                    log.warn("[渠道对账] IO 锁被占用（人工导入中），本轮跳过 date={}", yesterday);
+                }
             }
         } catch (Exception e) {
             log.error("[渠道对账] 每日对账异常（下轮重试） date={} cause={}", yesterday, e.getMessage());

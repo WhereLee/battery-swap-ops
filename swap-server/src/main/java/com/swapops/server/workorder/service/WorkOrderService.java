@@ -247,6 +247,20 @@ public class WorkOrderService {
                 .eq(WorkOrderEntity::getWoNo, woNo));
     }
 
+    /** 查未关闭的用户报障单（同用户同柜；S7 韧性补丁 G2：去重窗失效后的复核） */
+    public WorkOrderEntity findOpenUserReport(Long userId, String cabinetNo) {
+        if (userId == null || cabinetNo == null) {
+            return null;
+        }
+        return workOrderDao.selectOne(new LambdaQueryWrapper<WorkOrderEntity>()
+                .eq(WorkOrderEntity::getSource, "USER_REPORT")
+                .eq(WorkOrderEntity::getReporterUserId, userId)
+                .eq(WorkOrderEntity::getDeviceNo, cabinetNo)
+                .lt(WorkOrderEntity::getStatus, WorkOrderStatus.VERIFIED.getCode())
+                .orderByDesc(WorkOrderEntity::getId)
+                .last("LIMIT 1"));
+    }
+
     public List<WorkOrderLogEntity> logs(String woNo) {
         return workOrderLogDao.selectList(new LambdaQueryWrapper<WorkOrderLogEntity>()
                 .eq(WorkOrderLogEntity::getWoNo, woNo)

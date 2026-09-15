@@ -74,6 +74,7 @@ public class BillingService {
 
         int baseFee = 0;
         int discount = 0;
+        int chargedBase = 0;
         PayType payType;
         Long usedPlanId = null;
         UserPlanEntity plan = planService.findUsablePlan(userId, completeTime);
@@ -102,14 +103,20 @@ public class BillingService {
             // S7 WP-D：券核销（LOCKED→USED），抵扣不超过基础费
             discount = couponService.consumeForCharge(order.getId(), order.getCouponId(), baseFee);
             int payable = baseFee - discount;
-            if (!walletService.deductBalance(userId, payable)) {
-                throw new RRException("余额不足，换电扣费失败（请充值后重试）");
-            }
-            paymentRecordService.record(userId, order.getId(), PaymentType.BALANCE_FEE, payable,
-                    discount > 0 ? "余额扣费（券抵扣 " + discount + " 分）" : "余额扣费");
+            // S7 韧性补丁 G1：服务已交付（事件是事实源）——扣费失败不再回滚事件，落欠费由门槛拦截后续下单
+            chargedBase = walletService.deductBalance(userId, payable) ? payable : 0;
+            paymentRecordService.record(userId, order.getId(), PaymentType.BALANCE_FEE, chargedBase,
+                    (discount > 0 ? "余额扣费（券抵扣 " + discount + " 分）" : "余额扣费")
+                            + (chargedBase < payable ? "（欠费 " + (payable - chargedBase) + " 分）" : ""));
             if (discount > 0) {
                 paymentRecordService.record(userId, order.getId(), PaymentType.COUPON_DEDUCT, discount,
                         "优惠券抵扣");
+            }
+            if (chargedBase < payable) {
+                arrearsService.recordShortfall(userId, order.getId(), order.getOrderNo(),
+                        payable - chargedBase, "BALANCE_FEE");
+                alarmService.raise(AlarmService.DEVICE_ORDER, order.getOrderNo(), AlarmType.ORDER_ARREARS,
+                        "基础费扣缴不足 userId=" + userId + " 应收=" + payable + " 实收=" + chargedBase);
             }
         }
 
@@ -129,26 +136,33 @@ public class BillingService {
             WalletEntity wallet = walletService.getByUserId(userId);
             if (wallet == null || wallet.getDepositFen() == null || wallet.getDepositFen() == 0) {
                 int deposit = billingProperties.getDepositFen();
-                if (!walletService.moveBalanceToDeposit(userId, deposit)) {
-                    throw new RRException("押金扣缴失败（余额不足 " + deposit + " 分）");
+                // S7 韧性补丁 G1：押金不足同样不回滚——落欠费（DEPOSIT），由欠费门槛拦截后续下单
+                if (walletService.moveBalanceToDeposit(userId, deposit)) {
+                    paymentRecordService.record(userId, order.getId(), PaymentType.DEPOSIT, deposit, "押金缴纳");
+                } else {
+                    arrearsService.recordShortfall(userId, order.getId(), order.getOrderNo(),
+                            deposit, "DEPOSIT");
+                    alarmService.raise(AlarmService.DEVICE_ORDER, order.getOrderNo(), AlarmType.ORDER_ARREARS,
+                            "押金扣缴不足 userId=" + userId + " 应收=" + deposit);
                 }
-                paymentRecordService.record(userId, order.getId(), PaymentType.DEPOSIT, deposit, "押金缴纳");
             }
         }
 
+        // 实收口径（S7 韧性补丁 G1）：feeFen=实际扣缴（基础费实收+超时费实收）；欠费部分在 arrears 单
+        int actualFee = chargedBase + overdueFee;
         orderDao.update(null, new LambdaUpdateWrapper<SwapOrderEntity>()
                 .eq(SwapOrderEntity::getId, order.getId())
-                .set(SwapOrderEntity::getFeeFen, baseFee - discount + overdueFee)
+                .set(SwapOrderEntity::getFeeFen, actualFee)
                 .set(SwapOrderEntity::getDiscountFen, discount)
                 .set(SwapOrderEntity::getPayType, payType.name())
                 .set(SwapOrderEntity::getUserPlanId, usedPlanId)
                 .set(SwapOrderEntity::getUpdateTime, completeTime));
-        order.setFeeFen(baseFee - discount + overdueFee);
+        order.setFeeFen(actualFee);
         order.setDiscountFen(discount);
         order.setPayType(payType.name());
         order.setUserPlanId(usedPlanId);
-        log.info("订单计费完成 orderNo={} type={} payType={} baseFee={} discount={} overdueFee={}",
-                order.getOrderNo(), type, payType, baseFee, discount, overdueFee);
+        log.info("订单计费完成 orderNo={} type={} payType={} baseFee={} discount={} chargedBase={} overdueFee={}",
+                order.getOrderNo(), type, payType, baseFee, discount, chargedBase, overdueFee);
     }
 
     /** 超时费：余额优先、押金兜底；不足额记欠费 + ORDER_ARREARS 告警（S5 审查补：欠费必须显性可见） */
@@ -172,7 +186,7 @@ public class BillingService {
                 charged < amount ? "超时费（欠费 " + (amount - charged) + " 分）" : "超时费");
         if (charged < amount) {
             // S7 WP-D：欠费单闭环（同计费事务）；告警保留（结清自动关）
-            arrearsService.recordShortfall(userId, orderId, orderNo, amount - charged);
+            arrearsService.recordShortfall(userId, orderId, orderNo, amount - charged, "OVERDUE_FEE");
             alarmService.raise(AlarmService.DEVICE_ORDER, orderNo, AlarmType.ORDER_ARREARS,
                     "超时费未足额 userId=" + userId + " 应收=" + amount + " 实收=" + charged
                             + " 欠费=" + (amount - charged));

@@ -42,12 +42,23 @@ public class UserReportService {
         } catch (RuntimeException e) {
             log.warn("[报障] 去重检查异常（fail-open） userId={} cause={}", userId, e.getMessage());
         }
-        WorkOrderEntity created = workOrderService.createFromUserReport(userId, cabinetNo, cellNo, type, description);
-        try {
-            stringRedisTemplate.opsForValue().set(key, created.getWoNo(), DEDUP_TTL);
-        } catch (RuntimeException e) {
-            log.warn("[报障] 去重键写入异常（忽略） woNo={} cause={}", created.getWoNo(), e.getMessage());
+        // S7 韧性补丁 G2：去重窗失效后再复核"同用户同柜未关闭工单"（报障不重复开单）
+        WorkOrderEntity open = workOrderService.findOpenUserReport(userId, cabinetNo);
+        if (open != null) {
+            log.info("[报障] 存在未关闭工单，复用 userId={} cabinetNo={} woNo={}", userId, cabinetNo, open.getWoNo());
+            refreshDedupKey(key, open.getWoNo());
+            return open;
         }
+        WorkOrderEntity created = workOrderService.createFromUserReport(userId, cabinetNo, cellNo, type, description);
+        refreshDedupKey(key, created.getWoNo());
         return created;
+    }
+
+    private void refreshDedupKey(String key, String woNo) {
+        try {
+            stringRedisTemplate.opsForValue().set(key, woNo, DEDUP_TTL);
+        } catch (RuntimeException e) {
+            log.warn("[报障] 去重键写入异常（忽略） woNo={} cause={}", woNo, e.getMessage());
+        }
     }
 }

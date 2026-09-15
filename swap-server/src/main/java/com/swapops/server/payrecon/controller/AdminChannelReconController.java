@@ -26,9 +26,22 @@ import java.util.Map;
 public class AdminChannelReconController {
 
     private final ChannelReconService channelReconService;
+    private final com.swapops.server.common.lock.JobLockService jobLockService;
 
-    public AdminChannelReconController(ChannelReconService channelReconService) {
+    public AdminChannelReconController(ChannelReconService channelReconService,
+                                       com.swapops.server.common.lock.JobLockService jobLockService) {
         this.channelReconService = channelReconService;
+        this.jobLockService = jobLockService;
+    }
+
+    /** 导入+对账走 IO 互斥锁（S7 韧性补丁 G3：防人工导入与日终任务并发重建互删） */
+    private <T> T withIoLock(java.util.function.Supplier<T> action) {
+        java.util.concurrent.atomic.AtomicReference<T> ref = new java.util.concurrent.atomic.AtomicReference<>();
+        boolean ran = jobLockService.runWithLock("channel-recon-io", () -> ref.set(action.get()));
+        if (!ran) {
+            throw new com.swapops.server.common.RRException("对账正在执行（导入/重建），请稍后重试");
+        }
+        return ref.get();
     }
 
     @GetMapping("/report")
@@ -52,7 +65,7 @@ public class AdminChannelReconController {
     public Result<ChannelReconService.ReconResult> importBill(@RequestParam String date,
                                                               @RequestParam(required = false) String channel,
                                                               @RequestBody CsvImportForm form) {
-        return Result.ok(channelReconService.importBill(date, channel, form.getCsv()));
+        return Result.ok(withIoLock(() -> channelReconService.importBill(date, channel, form.getCsv())));
     }
 
     @PostMapping("/run")
@@ -60,7 +73,7 @@ public class AdminChannelReconController {
     @AdminLog("RECON_RUN")
     public Result<ChannelReconService.ReconResult> run(@RequestParam String date,
                                                        @RequestParam(required = false) String channel) {
-        return Result.ok(channelReconService.reconcile(date, channel));
+        return Result.ok(withIoLock(() -> channelReconService.reconcile(date, channel)));
     }
 
     @PostMapping("/diff/{id}/handle")

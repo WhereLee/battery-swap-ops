@@ -88,10 +88,12 @@ class ArrearsServiceTest {
     }
 
     @Test
-    @DisplayName("落单：已存在 → 累加（同订单不重复计欠）")
+    @DisplayName("落单：已存在 → 累加（同订单不重复计欠）+ reason 合并")
     void 累加() {
-        when(arrearsRecordDao.selectOne(any())).thenReturn(record(100, 0, 1));
-        service.recordShortfall(7L, 99L, "SWO-1", 200);
+        ArrearsRecordEntity existing = record(100, 0, 1);
+        existing.setReason("OVERDUE_FEE");
+        when(arrearsRecordDao.selectOne(any())).thenReturn(existing);
+        service.recordShortfall(7L, 99L, "SWO-1", 200, "BALANCE_FEE");
         verify(arrearsRecordDao).update(isNull(), any());
         verify(arrearsRecordDao, never()).insert(any(ArrearsRecordEntity.class));
     }

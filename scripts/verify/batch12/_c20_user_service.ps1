@@ -7,7 +7,7 @@ $root = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
 $out = Join-Path $PSScriptRoot "_c20_out.txt"
 $script:fail = 0
 $script:checks = 0
-$REQUIRED_CHECKS = 15
+$REQUIRED_CHECKS = 18
 function Log($m) { $l = "$(Get-Date -Format HH:mm:ss) $m"; Write-Host $l; Add-Content -Path $out -Value $l -Encoding UTF8 }
 function Check($name, $cond) {
     $script:checks++
@@ -238,6 +238,21 @@ try {
     $types = @($detail.payments | ForEach-Object { $_.paymentType })
     Check "14 coupon-deduct-payment-record" ($types -contains "COUPON_DEDUCT")
 
+    # ---------- D) G1 resilience: billing shortfall must NOT roll back the delivered event ----------
+    $t5 = Login "13800000005"
+    $uid5 = Sql "SELECT id FROM swap_user WHERE phone='13800000005'"
+    Sql "DELETE FROM user_plan WHERE user_id=$uid5" | Out-Null
+    $take5 = New-Order "TAKE" $t5 $null
+    $take5No = ($take5.body | ConvertFrom-Json).data.orderNo
+    $take5Opened = Wait-Status $take5No 2 $t5
+    Sql "UPDATE wallet SET balance_fen=0, deposit_fen=0 WHERE user_id=$uid5" | Out-Null
+    Http "POST" "$sim/sim/battery/out?cabinetNo=$($take5Opened.cabinetNo)&cellNo=$($take5Opened.cellNo)" $null "{}" | Out-Null
+    $take5Done = Wait-Status $take5No 5 $t5
+    Check "16 shortfall-order-completed" ($take5Done -ne $null)
+    $arrears5 = ((Http "GET" "$server/user/arrears" (UH $t5) $null).body | ConvertFrom-Json).data
+    Check "17 shortfall-arrears-10200" ($arrears5.totalOpenFen -eq 10200)
+    $blocked5 = New-Order "SWAP" $t5 $null
+    Check "18 shortfall-blocks-next-order" ($blocked5.status -eq 400 -and $blocked5.body.Contains([char]0x6B20))
     # user2 settle message (station inbox chain)
     $msgs2 = ((Http "GET" "$server/user/messages" (UH $t2) $null).body | ConvertFrom-Json).data
     Check "15 arrears-settle-message" (@($msgs2 | Where-Object { $_.type -eq "ARREARS" }).Count -ge 1)

@@ -62,6 +62,7 @@ class UserReportServiceTest {
     @DisplayName("无记录：建单并写去重键")
     void 建单写键() {
         when(valueOperations.get(anyString())).thenReturn(null);
+        when(workOrderService.findOpenUserReport(7L, "SWAP-C-001")).thenReturn(null);
         when(workOrderService.createFromUserReport(eq(7L), eq("SWAP-C-001"), eq(3),
                 eq("DEVICE_FAULT"), any())).thenReturn(order("WO-NEW"));
 
@@ -72,9 +73,23 @@ class UserReportServiceTest {
     }
 
     @Test
+    @DisplayName("去重窗失效但存在同用户同柜未关闭工单：复用不重复开单（G2）")
+    void 未关单复核复用() {
+        when(valueOperations.get(anyString())).thenReturn(null);
+        when(workOrderService.findOpenUserReport(7L, "SWAP-C-001")).thenReturn(order("WO-OPEN"));
+
+        WorkOrderEntity result = service.report(7L, "SWAP-C-001", null, "OTHER", "still broken");
+
+        assertThat(result.getWoNo()).isEqualTo("WO-OPEN");
+        verify(workOrderService, never()).createFromUserReport(any(), any(), any(), any(), any());
+        verify(valueOperations).set(anyString(), eq("WO-OPEN"), any());
+    }
+
+    @Test
     @DisplayName("Redis 异常 fail-open：照常建单")
     void redis异常放行() {
         when(valueOperations.get(anyString())).thenThrow(new RuntimeException("redis down"));
+        when(workOrderService.findOpenUserReport(any(), any())).thenReturn(null);
         when(workOrderService.createFromUserReport(any(), any(), any(), any(), any()))
                 .thenReturn(order("WO-NEW2"));
 

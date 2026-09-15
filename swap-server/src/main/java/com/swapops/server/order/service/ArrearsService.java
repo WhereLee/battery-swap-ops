@@ -41,8 +41,12 @@ public class ArrearsService {
         this.messageService = messageService;
     }
 
-    /** 计费不足额落单（幂等：同订单累加，重复调用不重复计欠） */
-    public void recordShortfall(Long userId, Long orderId, String orderNo, int shortfallFen) {
+    /**
+     * 计费不足额落单（幂等：同订单累加，重复调用不重复计欠）。
+     *
+     * @param reason 欠费来源标注（BALANCE_FEE / DEPOSIT / OVERDUE_FEE；多个以 + 连接）
+     */
+    public void recordShortfall(Long userId, Long orderId, String orderNo, int shortfallFen, String reason) {
         if (shortfallFen <= 0) {
             return;
         }
@@ -53,6 +57,7 @@ public class ArrearsService {
             record.setUserId(userId);
             record.setOrderId(orderId);
             record.setOrderNo(orderNo);
+            record.setReason(reason);
             record.setAmountFen(shortfallFen);
             record.setSettledFen(0);
             record.setStatus(1);
@@ -64,14 +69,19 @@ public class ArrearsService {
                 if (raced == null) {
                     throw new RRException("欠费单并发写入异常: " + orderId);
                 }
-                accumulate(raced, shortfallFen);
+                accumulate(raced, shortfallFen, reason);
             }
         } else {
-            accumulate(existing, shortfallFen);
+            accumulate(existing, shortfallFen, reason);
         }
         messageService.send(userId, "ARREARS", "欠费提醒",
-                "订单 " + orderNo + " 超时费不足，欠费 " + shortfallFen + " 分，请及时补缴");
-        log.warn("[欠费] 产生欠费 userId={} orderNo={} amount={}", userId, orderNo, shortfallFen);
+                "订单 " + orderNo + " 费用不足，欠费 " + shortfallFen + " 分，请及时补缴");
+        log.warn("[欠费] 产生欠费 userId={} orderNo={} amount={} reason={}", userId, orderNo, shortfallFen, reason);
+    }
+
+    /** 兼容旧签名（测试/历史调用）：默认 OVERDUE_FEE */
+    public void recordShortfall(Long userId, Long orderId, String orderNo, int shortfallFen) {
+        recordShortfall(userId, orderId, orderNo, shortfallFen, "OVERDUE_FEE");
     }
 
     /** 下单门槛：存在未结清欠费 */
@@ -159,12 +169,28 @@ public class ArrearsService {
         return raced;
     }
 
-    private void accumulate(ArrearsRecordEntity record, int shortfallFen) {
+    private void accumulate(ArrearsRecordEntity record, int shortfallFen, String reason) {
         arrearsRecordDao.update(null, new LambdaUpdateWrapper<ArrearsRecordEntity>()
                 .eq(ArrearsRecordEntity::getId, record.getId())
                 .setSql("amount_fen = amount_fen + " + shortfallFen)
+                .set(ArrearsRecordEntity::getReason, mergeReason(record.getReason(), reason))
                 .set(ArrearsRecordEntity::getStatus, 1)
                 .set(ArrearsRecordEntity::getSettleTime, null));
+    }
+
+    /** 来源合并（去重 + 去空，超长截断） */
+    private String mergeReason(String existing, String added) {
+        if (added == null || added.isBlank()) {
+            return existing;
+        }
+        if (existing == null || existing.isBlank()) {
+            return added.length() <= 64 ? added : added.substring(0, 64);
+        }
+        if (existing.contains(added)) {
+            return existing;
+        }
+        String merged = existing + "+" + added;
+        return merged.length() <= 64 ? merged : merged.substring(0, 64);
     }
 
     private void settle(ArrearsRecordEntity record, int amount, String via) {
