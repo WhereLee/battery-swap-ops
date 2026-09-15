@@ -37,6 +37,7 @@
 - block-records/批次9-S5运维审查与预案.md（慢 SQL 审计→db/10 索引、8 类边界极限故障预案、运维缺口修复、_c16 剧本 16/16）
 - block-records/批次10-S7-WP0-WPA.md（押金二次退款修复 + 管理端 RBAC/审计移植：4 角色 38 权限码、_c17 18/18、327 单测）
 - block-records/批次11-S7-WP-C.md（渠道对账 T+1：账单导入幂等/四类差异/处置留痕/每日任务，_c19 10/10、335 单测）
+- block-records/批次12-S7-WP-D.md（用户服务：报障→工单/欠费闭环/优惠券/站内信，_c20 15/15、356 单测）
 
 ### knowledge（节选：入口性文档）
 - knowledge/architecture.md（架构全景/组件机制/安全资金边界/部署形态）
@@ -44,6 +45,7 @@
 - knowledge/ops-troubleshooting.md（慢 SQL 治理 + 8 类边界极限故障预案，S5 运维审查）
 - knowledge/rbac-and-audit.md（管理端身份/权限/审计：角色矩阵、break-glass、覆盖性守卫，S7 WP-A）
 - knowledge/channel-recon.md（渠道对账 T+1：模型/流程/差异分类/证据/边界，S7 WP-C）
+- knowledge/user-service-and-coupon.md（报障/欠费/券/站内信：状态机、分账口径、证据，S7 WP-D）
 - knowledge/s5-quality-delivery.md（S5 质量线：压测/GC/覆盖率设计与结论）
 - 其余为专题档（outbox/支付仲裁/熔断/缓存/策略/调拨/Agent 接缝等），见目录。
 

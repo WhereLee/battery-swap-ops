@@ -19,6 +19,15 @@ public class WorkOrderEntity {
 
     private Long alarmId;
 
+    /** 来源（S7 WP-D）：ALARM / USER_REPORT */
+    private String source;
+
+    /** 报障用户（source=USER_REPORT 时非空） */
+    private Long reporterUserId;
+
+    /** 用户描述（报障原文） */
+    private String description;
+
     private String deviceType;
 
     private String deviceNo;

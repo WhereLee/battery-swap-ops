@@ -64,5 +64,11 @@ public class SwapOrderEntity {
     /** 关闭原因（TIMEOUT/CANCEL/SEND_FAILED/...） */
     private String closeReason;
 
+    /** 用户券（S7 WP-D，下单锁定；核销/释放见 CouponService） */
+    private Long couponId;
+
+    /** 券抵扣（分；分账基数 = 实收 + 抵扣） */
+    private Integer discountFen;
+
     private Long updateTime;
 }

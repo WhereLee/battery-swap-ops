@@ -64,6 +64,15 @@ class DevResetServiceTest {
     private com.swapops.server.user.dao.SwapUserDao swapUserDao;
 
     private DevProperties devProperties;
+    @Mock
+    private com.swapops.server.order.dao.ArrearsRecordDao arrearsRecordDao;
+    @Mock
+    private com.swapops.server.user.dao.UserCouponDao userCouponDao;
+    @Mock
+    private com.swapops.server.user.dao.CouponTemplateDao couponTemplateDao;
+    @Mock
+    private com.swapops.server.user.dao.UserMessageDao userMessageDao;
+
     private DevResetService service;
 
     @BeforeAll
@@ -76,6 +85,10 @@ class DevResetServiceTest {
         TableInfoHelper.initTableInfo(assistant, com.swapops.server.user.entity.WalletEntity.class);
         TableInfoHelper.initTableInfo(assistant, com.swapops.server.user.entity.UserPlanEntity.class);
         TableInfoHelper.initTableInfo(assistant, com.swapops.server.user.entity.SwapUserEntity.class);
+        TableInfoHelper.initTableInfo(assistant, com.swapops.server.order.entity.ArrearsRecordEntity.class);
+        TableInfoHelper.initTableInfo(assistant, com.swapops.server.user.entity.UserCouponEntity.class);
+        TableInfoHelper.initTableInfo(assistant, com.swapops.server.user.entity.CouponTemplateEntity.class);
+        TableInfoHelper.initTableInfo(assistant, com.swapops.server.user.entity.UserMessageEntity.class);
     }
 
     @BeforeEach
@@ -85,7 +98,8 @@ class DevResetServiceTest {
         devProperties.setFullCells(2);
         service = new DevResetService(orderDao, cabinetDao, cellDao, batteryDao,
                 stringRedisTemplate, allocationService, devProperties,
-                walletDao, userPlanDao, swapUserDao);
+                walletDao, userPlanDao, swapUserDao,
+                arrearsRecordDao, userCouponDao, couponTemplateDao, userMessageDao);
         when(walletDao.update(isNull(), any())).thenReturn(5);
         when(userPlanDao.update(isNull(), any())).thenReturn(5);
         when(swapUserDao.selectOne(any())).thenReturn(null);

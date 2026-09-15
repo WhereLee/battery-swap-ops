@@ -46,12 +46,14 @@ public class RefundService {
     private final DelayQueueService delayQueueService;
     private final SnowflakeIdGenerator idGenerator;
     private final DeadlockRetryExecutor deadlockRetryExecutor;
+    private final com.swapops.server.user.service.UserMessageService messageService;
 
     public RefundService(RefundRecordDao refundRecordDao,
                          com.swapops.server.order.dao.PaymentRecordDao paymentRecordDao,
                          PaymentRecordService paymentRecordService, WalletService walletService,
                          DelayQueueService delayQueueService, SnowflakeIdGenerator idGenerator,
-                         DeadlockRetryExecutor deadlockRetryExecutor) {
+                         DeadlockRetryExecutor deadlockRetryExecutor,
+                         com.swapops.server.user.service.UserMessageService messageService) {
         this.refundRecordDao = refundRecordDao;
         this.paymentRecordDao = paymentRecordDao;
         this.paymentRecordService = paymentRecordService;
@@ -59,6 +61,7 @@ public class RefundService {
         this.delayQueueService = delayQueueService;
         this.idGenerator = idGenerator;
         this.deadlockRetryExecutor = deadlockRetryExecutor;
+        this.messageService = messageService;
     }
 
     /**
@@ -127,6 +130,11 @@ public class RefundService {
                 .set(RefundRecordEntity::getUpdateTime, System.currentTimeMillis()));
         if (rows == 0) {
             throw new IllegalStateException("退款状态 CAS 冲突 refundNo=" + record.getRefundNo());
+        }
+        if (record.getAmountFen() != null && record.getAmountFen() > 0) {
+            // S7 WP-D：退款到账站内信（写失败不影响退款）
+            messageService.send(record.getUserId(), "REFUND", "退款到账",
+                    "退款 " + record.getAmountFen() + " 分已入余额（" + record.getReason() + "）");
         }
         log.info("退款成功 refundNo={} orderId={} amountFen={} reason={}",
                 record.getRefundNo(), record.getOrderId(), record.getAmountFen(), record.getReason());

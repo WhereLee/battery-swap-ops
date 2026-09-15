@@ -14,4 +14,7 @@ public class CreateOrderForm {
     private String cabinetNo;
 
     private String stationNo;
+
+    /** 可选：用户券 id（S7 WP-D；仅余额计费单可用，套餐单/RETURN 拒绝） */
+    private Long couponId;
 }

@@ -59,6 +59,9 @@ class WorkOrderServiceTest {
     @Mock
     private SnowflakeIdGenerator idGenerator;
 
+    @Mock
+    private com.swapops.server.user.service.UserMessageService messageService;
+
     private WorkOrderService service;
 
     @BeforeAll
@@ -73,7 +76,7 @@ class WorkOrderServiceTest {
     void setUp() {
         when(idGenerator.nextIdString()).thenReturn("123");
         service = new WorkOrderService(workOrderDao, workOrderLogDao, alarmDao, alarmService,
-                delayQueueService, idGenerator, new WorkOrderProperties());
+                delayQueueService, idGenerator, new WorkOrderProperties(), messageService);
     }
 
     private AlarmEntity alarm() {

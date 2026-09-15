@@ -1,0 +1,22 @@
+﻿== S7 gate: user service ==
+14:36:38 server up
+14:36:39 dev reset done
+14:36:45 sim up
+14:36:45 PASS 1 report-200
+14:36:45 PASS 2 report-dedupe
+14:36:46 PASS 3 wo-lifecycle
+14:36:46 PASS 4 wo-close-message
+14:36:49 PASS 5 arrears-created
+14:36:49 PASS 6 take-blocked-by-arrears
+14:36:49 PASS 7 recharge-ok
+14:36:49 PASS 8 arrears-settled
+14:36:49 PASS 9 swap-allowed-after-settle
+14:36:49 PASS 10 coupon-granted
+14:36:50 stuck-order status=400
+14:36:50 PASS 11 coupon-released-on-send-fail
+14:36:51 PASS 12 coupon-discount-applied
+14:36:51 PASS 13 coupon-used
+14:36:51 PASS 14 coupon-deduct-payment-record
+14:36:51 PASS 15 arrears-settle-message
+14:37:13 server stopped
+14:37:13 GATE-C20 PASS (checks=15/15)

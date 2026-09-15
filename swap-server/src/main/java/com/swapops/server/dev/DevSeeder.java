@@ -57,11 +57,13 @@ public class DevSeeder implements ApplicationRunner {
     private final AllocationService allocationService;
     private final JdbcTemplate jdbcTemplate;
     private final AdminUserDao adminUserDao;
+    private final com.swapops.server.user.service.CouponService couponService;
 
     public DevSeeder(DevProperties devProperties, CabinetDao cabinetDao, CellDao cellDao,
                      BatteryDao batteryDao, SwapUserDao swapUserDao, WalletDao walletDao,
                      PlanDao planDao, UserPlanDao userPlanDao, AllocationService allocationService,
-                     JdbcTemplate jdbcTemplate, AdminUserDao adminUserDao) {
+                     JdbcTemplate jdbcTemplate, AdminUserDao adminUserDao,
+                     com.swapops.server.user.service.CouponService couponService) {
         this.devProperties = devProperties;
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
@@ -73,6 +75,7 @@ public class DevSeeder implements ApplicationRunner {
         this.allocationService = allocationService;
         this.jdbcTemplate = jdbcTemplate;
         this.adminUserDao = adminUserDao;
+        this.couponService = couponService;
     }
 
     @Override
@@ -143,6 +146,7 @@ public class DevSeeder implements ApplicationRunner {
         }
         seedUsersAndPlans();
         seedAdminUser();
+        seedCoupons();
         // 事件/种子可能先于启动重建发生：全量重建可分配集合（与 DB 真值对齐）
         allocationService.rebuildFromDb();
     }
@@ -194,6 +198,33 @@ public class DevSeeder implements ApplicationRunner {
             }
         }
         log.info("联调用户种子就绪 users={}（用户1 押金0，其余押金9900；每人次卡剩5次）", DEV_USER_COUNT);
+    }
+
+    /** S7 WP-D：新客券模板 + 给前 3 个联调用户发券（幂等：模板同名校验 + 每人限领跳过） */
+    private void seedCoupons() {
+        try {
+            com.swapops.server.user.entity.CouponTemplateEntity template =
+                    couponService.listTemplates().stream()
+                            .filter(t -> "新客立减1元".equals(t.getName()))
+                            .findFirst().orElse(null);
+            if (template == null) {
+                template = couponService.createTemplate("新客立减1元", 100, 100, 1000, 1, 365);
+            }
+            java.util.List<Long> userIds = new java.util.ArrayList<>();
+            for (int i = 1; i <= 3; i++) {
+                SwapUserEntity user = swapUserDao.selectOne(new LambdaQueryWrapper<SwapUserEntity>()
+                        .eq(SwapUserEntity::getPhone, String.format("138%08d", i)));
+                if (user != null) {
+                    userIds.add(user.getId());
+                }
+            }
+            if (!userIds.isEmpty()) {
+                couponService.grant(template.getId(), userIds);
+            }
+            log.info("券种子就绪 templateId={} users={}", template.getId(), userIds.size());
+        } catch (Exception e) {
+            log.warn("券种子失败（不阻断启动）: {}", e.getMessage());
+        }
     }
 
     /** S7 WP-A：管理员引导账号（密码 env 注入；已存在跳过；未配置密码则跳过） */

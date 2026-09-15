@@ -65,13 +65,17 @@ public class SwapOrderService {
     private final BillingProperties billingProperties;
     private final OrderDelayService orderDelayService;
     private final SnowflakeIdGenerator idGenerator;
+    private final ArrearsService arrearsService;
+    private final com.swapops.server.user.service.CouponService couponService;
 
     public SwapOrderService(SwapOrderDao orderDao, CabinetDao cabinetDao, CellDao cellDao,
                             BatteryDao batteryDao, StationDao stationDao,
                             UserAccountService userAccountService, WalletService walletService,
                             PlanService planService, AllocationService allocationService,
                             CommandDispatchService commandDispatchService, BillingProperties billingProperties,
-                            OrderDelayService orderDelayService, SnowflakeIdGenerator idGenerator) {
+                            OrderDelayService orderDelayService, SnowflakeIdGenerator idGenerator,
+                            ArrearsService arrearsService,
+                            com.swapops.server.user.service.CouponService couponService) {
         this.orderDao = orderDao;
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
@@ -85,6 +89,8 @@ public class SwapOrderService {
         this.billingProperties = billingProperties;
         this.orderDelayService = orderDelayService;
         this.idGenerator = idGenerator;
+        this.arrearsService = arrearsService;
+        this.couponService = couponService;
     }
 
     /**
@@ -99,6 +105,11 @@ public class SwapOrderService {
             return existing;
         }
         userAccountService.requireActive(userId);
+
+        // S7 WP-D：欠费门槛——TAKE/SWAP 拒绝（RETURN 放行，防逼停归还）
+        if (type != OrderType.RETURN && arrearsService.hasOpenArrears(userId)) {
+            throw new RRException("存在未结清欠费，请先补缴后再下单");
+        }
 
         SwapOrderEntity active = orderDao.selectOne(new LambdaQueryWrapper<SwapOrderEntity>()
                 .eq(SwapOrderEntity::getUserId, userId)
@@ -130,6 +141,12 @@ public class SwapOrderService {
             if (type == OrderType.TAKE && deposit == 0 && balance < billingProperties.getDepositFen()) {
                 throw new RRException("押金不足（需 " + billingProperties.getDepositFen() + " 分）：请先充值或购买套餐");
             }
+            // S7 WP-D：券仅余额计费单可用（有可用套餐 → 拒绝，避免"锁券后走套餐"空转）
+            if (form.getCouponId() != null && usablePlan != null) {
+                throw new RRException("套餐单不可使用优惠券（当前有可用套餐）");
+            }
+        } else if (form.getCouponId() != null) {
+            throw new RRException("退租订单不可使用优惠券");
         }
 
         SwapOrderEntity order = new SwapOrderEntity();
@@ -151,6 +168,13 @@ public class SwapOrderService {
             }
             // idem_key 全局唯一：撞车且查无本人订单 = 该幂等键已被他人占用（防跨用户幂等键劫持）
             throw new RRException("幂等键已被使用，请更换 Idempotency-Key");
+        }
+
+        // S7 WP-D：券锁定（UNUSED→LOCKED；失败抛业务异常由事务整体回滚）
+        if (form.getCouponId() != null) {
+            couponService.lockForOrder(userId, form.getCouponId(), order.getId(),
+                    billingProperties.getBalanceFeeFen());
+            order.setCouponId(form.getCouponId());
         }
 
         boolean fullPath = type != OrderType.RETURN;
@@ -197,6 +221,7 @@ public class SwapOrderService {
             cas(order.getId(), OrderStatus.PENDING_OPEN, OrderStatus.CANCELLED,
                     w -> w.set(SwapOrderEntity::getCancelTime, System.currentTimeMillis())
                             .set(SwapOrderEntity::getCloseReason, "SEND_FAILED"));
+            couponService.releaseLocked(order.getId());
             orderDelayService.cancelAll(order);
             log.warn("开仓指令下发失败，订单已补偿关闭 orderNo={} cause={}", orderNo, e.getMessage());
             throw e;
@@ -215,6 +240,7 @@ public class SwapOrderService {
                             .set(SwapOrderEntity::getCloseReason, "USER_CANCEL"));
             if (closed) {
                 allocationService.release(order.getCellId(), order.getId(), order.getOrderNo());
+                couponService.releaseLocked(order.getId());
                 orderDelayService.cancelAll(order);
                 log.info("订单已取消 orderNo={}", orderNo);
             }
@@ -275,6 +301,7 @@ public class SwapOrderService {
                         .set(SwapOrderEntity::getCloseReason, reason));
         if (marked) {
             allocationService.release(order.getCellId(), order.getId(), order.getOrderNo());
+            couponService.releaseLocked(order.getId());
             orderDelayService.cancelAll(order);
             log.warn("订单转人工异常 orderNo={} reason={}", order.getOrderNo(), reason);
         }
@@ -289,6 +316,7 @@ public class SwapOrderService {
                         .set(SwapOrderEntity::getCloseReason, reason));
         if (closed) {
             allocationService.release(order.getCellId(), order.getId(), order.getOrderNo());
+            couponService.releaseLocked(order.getId());
             orderDelayService.cancelAll(order);
             log.warn("订单超时关闭 orderNo={} from={} reason={}", order.getOrderNo(), from, reason);
         }

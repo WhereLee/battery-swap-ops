@@ -72,9 +72,16 @@ public class ReconcileService {
     private final TransferTaskDao transferTaskDao;
     private final TransferTaskItemDao transferTaskItemDao;
     private final AgentActionDao agentActionDao;
+    private final com.swapops.server.order.dao.ArrearsRecordDao arrearsRecordDao;
+    private final com.swapops.server.user.dao.UserCouponDao userCouponDao;
     private final long staleMarginSeconds;
     private final int windowHours;
     private final int sampleLimit;
+
+    /** 进行中订单状态（券锁定校验用） */
+    private static final List<Integer> ACTIVE_ORDER_STATUSES = List.of(
+            OrderStatus.PENDING_OPEN.getCode(), OrderStatus.OPENED.getCode(),
+            OrderStatus.TAKEN.getCode(), OrderStatus.OVERDUE.getCode());
 
     public ReconcileService(SwapOrderDao orderDao, BatteryDao batteryDao, CellDao cellDao,
                             PaymentRecordDao paymentRecordDao, CommandLogDao commandLogDao,
@@ -82,6 +89,8 @@ public class ReconcileService {
                             AlarmService alarmService, BatteryCycleService batteryCycleService,
                             TransferTaskDao transferTaskDao, TransferTaskItemDao transferTaskItemDao,
                             AgentActionDao agentActionDao,
+                            com.swapops.server.order.dao.ArrearsRecordDao arrearsRecordDao,
+                            com.swapops.server.user.dao.UserCouponDao userCouponDao,
                             @Value("${swap.reconcile.stale-margin-seconds:3600}") long staleMarginSeconds,
                             @Value("${swap.reconcile.window-hours:24}") int windowHours,
                             @Value("${swap.reconcile.sample-limit:200}") int sampleLimit) {
@@ -97,6 +106,8 @@ public class ReconcileService {
         this.transferTaskDao = transferTaskDao;
         this.transferTaskItemDao = transferTaskItemDao;
         this.agentActionDao = agentActionDao;
+        this.arrearsRecordDao = arrearsRecordDao;
+        this.userCouponDao = userCouponDao;
         this.staleMarginSeconds = staleMarginSeconds;
         this.windowHours = windowHours;
         this.sampleLimit = sampleLimit;
@@ -142,7 +153,9 @@ public class ReconcileService {
                 checkEscapedBatteries(),
                 checkBatteryCounters(),
                 checkTransferLedger(),
-                checkStaleAgentActions());
+                checkStaleAgentActions(),
+                checkArrearsIntegrity(),
+                checkCouponConsistency());
         ReconcileReport report = new ReconcileReport(start, System.currentTimeMillis() - start, checks);
         if (report.totalViolations() > 0) {
             alarmService.raise(AlarmService.DEVICE_SYSTEM, "daily-reconcile", AlarmType.RECONCILE_ERROR,
@@ -368,6 +381,64 @@ public class ReconcileService {
                     + " type=" + action.getActionType());
         }
         return new CheckResult("stale-agent-actions", stale.size(), samples);
+    }
+
+    /** ⑩ 欠费单一致（S7 WP-D）：OPEN 欠费金额自洽（amount>settled>=0），异常值暴露交人工 */
+    protected CheckResult checkArrearsIntegrity() {
+        List<com.swapops.server.order.entity.ArrearsRecordEntity> open =
+                arrearsRecordDao.selectList(new LambdaQueryWrapper<com.swapops.server.order.entity.ArrearsRecordEntity>()
+                        .eq(com.swapops.server.order.entity.ArrearsRecordEntity::getStatus, 1)
+                        .last("LIMIT " + sampleLimit));
+        List<String> samples = new ArrayList<>();
+        int violations = 0;
+        for (com.swapops.server.order.entity.ArrearsRecordEntity record : open) {
+            int amount = record.getAmountFen() == null ? 0 : record.getAmountFen();
+            int settled = record.getSettledFen() == null ? 0 : record.getSettledFen();
+            if (amount <= 0 || settled < 0 || settled >= amount) {
+                violations++;
+                addSample(samples, "arrears-inconsistent: id=" + record.getId()
+                        + " orderNo=" + record.getOrderNo() + " amount=" + amount + " settled=" + settled);
+            }
+        }
+        return new CheckResult("arrears-integrity", violations, samples);
+    }
+
+    /** ⑪ 券状态守恒（S7 WP-D）：LOCKED 必挂进行中订单；USED 必挂完成订单（悬挂显性化） */
+    protected CheckResult checkCouponConsistency() {
+        List<String> samples = new ArrayList<>();
+        int violations = 0;
+        List<com.swapops.server.user.entity.UserCouponEntity> locked =
+                userCouponDao.selectList(new LambdaQueryWrapper<com.swapops.server.user.entity.UserCouponEntity>()
+                        .eq(com.swapops.server.user.entity.UserCouponEntity::getStatus,
+                                com.swapops.server.user.enums.UserCouponStatus.LOCKED.getCode())
+                        .last("LIMIT " + sampleLimit));
+        for (com.swapops.server.user.entity.UserCouponEntity coupon : locked) {
+            SwapOrderEntity order = coupon.getLockedOrderId() == null ? null
+                    : orderDao.selectById(coupon.getLockedOrderId());
+            if (order == null || order.getStatus() == null
+                    || !ACTIVE_ORDER_STATUSES.contains(order.getStatus())) {
+                violations++;
+                addSample(samples, "coupon-locked-stale: couponId=" + coupon.getId()
+                        + " lockedOrderId=" + coupon.getLockedOrderId()
+                        + " orderStatus=" + (order == null ? "missing" : order.getStatus()));
+            }
+        }
+        List<com.swapops.server.user.entity.UserCouponEntity> used =
+                userCouponDao.selectList(new LambdaQueryWrapper<com.swapops.server.user.entity.UserCouponEntity>()
+                        .eq(com.swapops.server.user.entity.UserCouponEntity::getStatus,
+                                com.swapops.server.user.enums.UserCouponStatus.USED.getCode())
+                        .last("LIMIT " + sampleLimit));
+        for (com.swapops.server.user.entity.UserCouponEntity coupon : used) {
+            SwapOrderEntity order = coupon.getUsedOrderId() == null ? null
+                    : orderDao.selectById(coupon.getUsedOrderId());
+            if (order == null || order.getStatus() == null
+                    || order.getStatus() != OrderStatus.COMPLETED.getCode()) {
+                violations++;
+                addSample(samples, "coupon-used-mismatch: couponId=" + coupon.getId()
+                        + " usedOrderId=" + coupon.getUsedOrderId());
+            }
+        }
+        return new CheckResult("coupon-consistency", violations, samples);
     }
 
     /** ⑦ 电池计数与流水一致（S4.1）：计数器是派生值，流水是事实；不一致=计漏/计重或人工改动未留痕 */

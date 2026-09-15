@@ -52,6 +52,11 @@ class BillingServiceTest {
     @Mock
     private AlarmService alarmService;
 
+    @Mock
+    private ArrearsService arrearsService;
+    @Mock
+    private com.swapops.server.user.service.CouponService couponService;
+
     private BillingService service;
 
     @BeforeAll
@@ -63,7 +68,7 @@ class BillingServiceTest {
     @BeforeEach
     void setUp() {
         service = new BillingService(planService, walletService, paymentRecordService, orderDao,
-                new BillingProperties(), alarmService);
+                new BillingProperties(), alarmService, arrearsService, couponService);
     }
 
     private SwapOrderEntity order(String type, Long takeTime) {
@@ -153,6 +158,23 @@ class BillingServiceTest {
         service.charge(order("SWAP", takeTime), now);
 
         verify(paymentRecordService).record(eq(7L), eq(99L), eq(PaymentType.OVERDUE_FEE), eq(200), anyString());
+    }
+
+    @Test
+    @DisplayName("用券：实收=基础费-抵扣，COUPON_DEDUCT 记补贴，feeFen 记实收（S7 WP-D）")
+    void 用券抵扣() {
+        when(planService.findUsablePlan(eq(7L), anyLong())).thenReturn(null);
+        when(couponService.consumeForCharge(99L, 9L, 300)).thenReturn(100);
+        when(walletService.deductBalance(7L, 200)).thenReturn(true);
+        SwapOrderEntity order = order("SWAP", null);
+        order.setCouponId(9L);
+
+        service.charge(order, System.currentTimeMillis());
+
+        verify(paymentRecordService).record(eq(7L), eq(99L), eq(PaymentType.BALANCE_FEE), eq(200), anyString());
+        verify(paymentRecordService).record(eq(7L), eq(99L), eq(PaymentType.COUPON_DEDUCT), eq(100), anyString());
+        assertThat(order.getFeeFen()).isEqualTo(200);
+        assertThat(order.getDiscountFen()).isEqualTo(100);
     }
 
     @Test

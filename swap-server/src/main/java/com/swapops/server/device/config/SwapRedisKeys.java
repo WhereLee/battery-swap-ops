@@ -29,6 +29,9 @@ public final class SwapRedisKeys {
     /** 管理端会话 token（value=adminUserId，TTL=会话时长；S7 WP-A） */
     public static final String ADMIN_TOKEN_PREFIX = "swap:admin-token:";
 
+    /** 用户报障去重（value=woNo，TTL=去重窗口；S7 WP-D） */
+    public static final String USER_REPORT_DEDUP_PREFIX = "swap:report-dedup:";
+
     /** 柜当前代际（value=bootId；与 DB last_boot_id 同语义的读优化） */
     public static final String BOOT_CURRENT_PREFIX = "swap:boot-current:";
 

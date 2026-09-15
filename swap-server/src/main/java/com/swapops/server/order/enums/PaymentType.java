@@ -19,5 +19,7 @@ public enum PaymentType {
     /** 充值入账（S3.4：外部资金入口，order_id 为空） */
     RECHARGE,
     /** 退款出账（S3.4：异常补偿/人工，与收费类型互斥） */
-    REFUND
+    REFUND,
+    /** 优惠券抵扣（S7 WP-D：平台补贴流水，金额=券抵扣；分账基数=实收+抵扣） */
+    COUPON_DEDUCT
 }

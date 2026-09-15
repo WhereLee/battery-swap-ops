@@ -56,11 +56,19 @@ public class DevResetService {
     private final WalletDao walletDao;
     private final UserPlanDao userPlanDao;
     private final SwapUserDao swapUserDao;
+    private final com.swapops.server.order.dao.ArrearsRecordDao arrearsRecordDao;
+    private final com.swapops.server.user.dao.UserCouponDao userCouponDao;
+    private final com.swapops.server.user.dao.CouponTemplateDao couponTemplateDao;
+    private final com.swapops.server.user.dao.UserMessageDao userMessageDao;
 
     public DevResetService(SwapOrderDao orderDao, CabinetDao cabinetDao, CellDao cellDao,
                            BatteryDao batteryDao, StringRedisTemplate stringRedisTemplate,
                            AllocationService allocationService, DevProperties devProperties,
-                           WalletDao walletDao, UserPlanDao userPlanDao, SwapUserDao swapUserDao) {
+                           WalletDao walletDao, UserPlanDao userPlanDao, SwapUserDao swapUserDao,
+                           com.swapops.server.order.dao.ArrearsRecordDao arrearsRecordDao,
+                           com.swapops.server.user.dao.UserCouponDao userCouponDao,
+                           com.swapops.server.user.dao.CouponTemplateDao couponTemplateDao,
+                           com.swapops.server.user.dao.UserMessageDao userMessageDao) {
         this.orderDao = orderDao;
         this.cabinetDao = cabinetDao;
         this.cellDao = cellDao;
@@ -71,6 +79,10 @@ public class DevResetService {
         this.walletDao = walletDao;
         this.userPlanDao = userPlanDao;
         this.swapUserDao = swapUserDao;
+        this.arrearsRecordDao = arrearsRecordDao;
+        this.userCouponDao = userCouponDao;
+        this.couponTemplateDao = couponTemplateDao;
+        this.userMessageDao = userMessageDao;
     }
 
     @Transactional
@@ -147,6 +159,27 @@ public class DevResetService {
         int walletsReset = resetWallets(now);
         int plansReset = resetPlans(now);
 
+        // S7 WP-D：用户服务域联调清理（欠费/券/站内信；券模板保留、发行计数回退）
+        int arrearsCleared = arrearsRecordDao.delete(new LambdaQueryWrapper<com.swapops.server.order.entity.ArrearsRecordEntity>()
+                .gt(com.swapops.server.order.entity.ArrearsRecordEntity::getId, 0));
+        int couponsCleared = userCouponDao.delete(new LambdaQueryWrapper<com.swapops.server.user.entity.UserCouponEntity>()
+                .gt(com.swapops.server.user.entity.UserCouponEntity::getId, 0));
+        couponTemplateDao.update(null, new LambdaUpdateWrapper<com.swapops.server.user.entity.CouponTemplateEntity>()
+                .gt(com.swapops.server.user.entity.CouponTemplateEntity::getId, 0)
+                .set(com.swapops.server.user.entity.CouponTemplateEntity::getIssuedCount, 0));
+        int messagesCleared = userMessageDao.delete(new LambdaQueryWrapper<com.swapops.server.user.entity.UserMessageEntity>()
+                .gt(com.swapops.server.user.entity.UserMessageEntity::getId, 0));
+        // 报障去重键（S7 WP-D）：联调复跑需清窗（否则近重返回上轮工单）
+        try {
+            java.util.Set<String> dedupKeys =
+                    stringRedisTemplate.keys(SwapRedisKeys.USER_REPORT_DEDUP_PREFIX + "*");
+            if (dedupKeys != null && !dedupKeys.isEmpty()) {
+                stringRedisTemplate.delete(dedupKeys);
+            }
+        } catch (RuntimeException e) {
+            log.warn("[dev-reset] 报障去重键清理异常（忽略）: {}", e.getMessage());
+        }
+
         allocationService.rebuildFromDb();
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("cabinets", cabinets.size());
@@ -155,6 +188,9 @@ public class DevResetService {
         result.put("extrasParked", parked);
         result.put("walletsReset", walletsReset);
         result.put("plansReset", plansReset);
+        result.put("arrearsCleared", arrearsCleared);
+        result.put("couponsCleared", couponsCleared);
+        result.put("messagesCleared", messagesCleared);
         log.warn("[dev-reset] 联调数据已重置 cabinets={} ordersCancelled={} cellsOccupied={} extrasParked={} "
                         + "walletsReset={} plansReset={}",
                 cabinets.size(), cancelled, occupied, parked, walletsReset, plansReset);

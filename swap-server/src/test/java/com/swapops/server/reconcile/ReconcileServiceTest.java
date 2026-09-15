@@ -58,6 +58,11 @@ class ReconcileServiceTest {
     @Mock
     private com.swapops.server.agent.dao.AgentActionDao agentActionDao;
 
+    @Mock
+    private com.swapops.server.order.dao.ArrearsRecordDao arrearsRecordDao;
+    @Mock
+    private com.swapops.server.user.dao.UserCouponDao userCouponDao;
+
     private ReconcileService service;
 
     @BeforeAll
@@ -67,13 +72,16 @@ class ReconcileServiceTest {
         TableInfoHelper.initTableInfo(assistant, BatteryEntity.class);
         TableInfoHelper.initTableInfo(assistant, CellEntity.class);
         TableInfoHelper.initTableInfo(assistant, CommandLogEntity.class);
+        TableInfoHelper.initTableInfo(assistant, com.swapops.server.order.entity.ArrearsRecordEntity.class);
+        TableInfoHelper.initTableInfo(assistant, com.swapops.server.user.entity.UserCouponEntity.class);
     }
 
     @BeforeEach
     void setUp() {
         service = new ReconcileService(orderDao, batteryDao, cellDao, paymentRecordDao, commandLogDao,
                 new BillingProperties(), new DeviceChannelProperties(), alarmService, batteryCycleService,
-                transferTaskDao, transferTaskItemDao, agentActionDao, 3600, 24, 200);
+                transferTaskDao, transferTaskItemDao, agentActionDao,
+                arrearsRecordDao, userCouponDao, 3600, 24, 200);
     }
 
     @Test
@@ -87,7 +95,7 @@ class ReconcileServiceTest {
 
         ReconcileService.ReconcileReport report = service.run();
 
-        assertThat(report.checks()).hasSize(9);
+        assertThat(report.checks()).hasSize(11);
         assertThat(report.totalViolations()).isZero();
     }
 

@@ -12,6 +12,7 @@ import com.swapops.server.order.enums.PayType;
 import com.swapops.server.order.enums.PaymentType;
 import com.swapops.server.user.entity.UserPlanEntity;
 import com.swapops.server.user.entity.WalletEntity;
+import com.swapops.server.user.service.CouponService;
 import com.swapops.server.user.service.PlanService;
 import com.swapops.server.user.service.WalletService;
 import lombok.extern.slf4j.Slf4j;
@@ -34,16 +35,21 @@ public class BillingService {
     private final SwapOrderDao orderDao;
     private final BillingProperties billingProperties;
     private final AlarmService alarmService;
+    private final ArrearsService arrearsService;
+    private final CouponService couponService;
 
     public BillingService(PlanService planService, WalletService walletService,
                           PaymentRecordService paymentRecordService, SwapOrderDao orderDao,
-                          BillingProperties billingProperties, AlarmService alarmService) {
+                          BillingProperties billingProperties, AlarmService alarmService,
+                          ArrearsService arrearsService, CouponService couponService) {
         this.planService = planService;
         this.walletService = walletService;
         this.paymentRecordService = paymentRecordService;
         this.orderDao = orderDao;
         this.billingProperties = billingProperties;
         this.alarmService = alarmService;
+        this.arrearsService = arrearsService;
+        this.couponService = couponService;
     }
 
     /** 订单完成计费（调用方已完成订单 CAS 到终态） */
@@ -67,6 +73,7 @@ public class BillingService {
         }
 
         int baseFee = 0;
+        int discount = 0;
         PayType payType;
         Long usedPlanId = null;
         UserPlanEntity plan = planService.findUsablePlan(userId, completeTime);
@@ -85,13 +92,25 @@ public class BillingService {
             usedPlanId = plan.getId();
             paymentRecordService.record(userId, order.getId(), PaymentType.PLAN_DEDUCT, 0,
                     "套餐扣次 planId=" + plan.getPlanId());
+            // 券仅余额计费单可核销：套餐单核销未发生 → 释放锁券（S7 WP-D）
+            if (order.getCouponId() != null) {
+                couponService.releaseLocked(order.getId());
+            }
         } else {
             payType = PayType.BALANCE;
             baseFee = billingProperties.getBalanceFeeFen();
-            if (!walletService.deductBalance(userId, baseFee)) {
+            // S7 WP-D：券核销（LOCKED→USED），抵扣不超过基础费
+            discount = couponService.consumeForCharge(order.getId(), order.getCouponId(), baseFee);
+            int payable = baseFee - discount;
+            if (!walletService.deductBalance(userId, payable)) {
                 throw new RRException("余额不足，换电扣费失败（请充值后重试）");
             }
-            paymentRecordService.record(userId, order.getId(), PaymentType.BALANCE_FEE, baseFee, "余额扣费");
+            paymentRecordService.record(userId, order.getId(), PaymentType.BALANCE_FEE, payable,
+                    discount > 0 ? "余额扣费（券抵扣 " + discount + " 分）" : "余额扣费");
+            if (discount > 0) {
+                paymentRecordService.record(userId, order.getId(), PaymentType.COUPON_DEDUCT, discount,
+                        "优惠券抵扣");
+            }
         }
 
         int overdueFee = 0;
@@ -119,15 +138,17 @@ public class BillingService {
 
         orderDao.update(null, new LambdaUpdateWrapper<SwapOrderEntity>()
                 .eq(SwapOrderEntity::getId, order.getId())
-                .set(SwapOrderEntity::getFeeFen, baseFee + overdueFee)
+                .set(SwapOrderEntity::getFeeFen, baseFee - discount + overdueFee)
+                .set(SwapOrderEntity::getDiscountFen, discount)
                 .set(SwapOrderEntity::getPayType, payType.name())
                 .set(SwapOrderEntity::getUserPlanId, usedPlanId)
                 .set(SwapOrderEntity::getUpdateTime, completeTime));
-        order.setFeeFen(baseFee + overdueFee);
+        order.setFeeFen(baseFee - discount + overdueFee);
+        order.setDiscountFen(discount);
         order.setPayType(payType.name());
         order.setUserPlanId(usedPlanId);
-        log.info("订单计费完成 orderNo={} type={} payType={} baseFee={} overdueFee={}",
-                order.getOrderNo(), type, payType, baseFee, overdueFee);
+        log.info("订单计费完成 orderNo={} type={} payType={} baseFee={} discount={} overdueFee={}",
+                order.getOrderNo(), type, payType, baseFee, discount, overdueFee);
     }
 
     /** 超时费：余额优先、押金兜底；不足额记欠费 + ORDER_ARREARS 告警（S5 审查补：欠费必须显性可见） */
@@ -150,10 +171,12 @@ public class BillingService {
         paymentRecordService.record(userId, orderId, PaymentType.OVERDUE_FEE, charged,
                 charged < amount ? "超时费（欠费 " + (amount - charged) + " 分）" : "超时费");
         if (charged < amount) {
+            // S7 WP-D：欠费单闭环（同计费事务）；告警保留（结清自动关）
+            arrearsService.recordShortfall(userId, orderId, orderNo, amount - charged);
             alarmService.raise(AlarmService.DEVICE_ORDER, orderNo, AlarmType.ORDER_ARREARS,
                     "超时费未足额 userId=" + userId + " 应收=" + amount + " 实收=" + charged
                             + " 欠费=" + (amount - charged));
-            log.warn("超时费未足额（ORDER_ARREARS 告警已发）userId={} orderId={} 应收={} 实收={}",
+            log.warn("超时费未足额（欠费单已落 + ORDER_ARREARS 告警）userId={} orderId={} 应收={} 实收={}",
                     userId, orderId, amount, charged);
         }
         return charged;

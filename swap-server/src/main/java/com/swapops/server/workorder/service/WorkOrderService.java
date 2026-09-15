@@ -47,10 +47,12 @@ public class WorkOrderService {
     private final DelayQueueService delayQueueService;
     private final SnowflakeIdGenerator idGenerator;
     private final WorkOrderProperties properties;
+    private final com.swapops.server.user.service.UserMessageService messageService;
 
     public WorkOrderService(WorkOrderDao workOrderDao, WorkOrderLogDao workOrderLogDao, AlarmDao alarmDao,
                             AlarmService alarmService, DelayQueueService delayQueueService,
-                            SnowflakeIdGenerator idGenerator, WorkOrderProperties properties) {
+                            SnowflakeIdGenerator idGenerator, WorkOrderProperties properties,
+                            com.swapops.server.user.service.UserMessageService messageService) {
         this.workOrderDao = workOrderDao;
         this.workOrderLogDao = workOrderLogDao;
         this.alarmDao = alarmDao;
@@ -58,6 +60,7 @@ public class WorkOrderService {
         this.delayQueueService = delayQueueService;
         this.idGenerator = idGenerator;
         this.properties = properties;
+        this.messageService = messageService;
     }
 
     /** 告警转工单（alarm_id 唯一：重复转换幂等返回既有工单） */
@@ -82,6 +85,7 @@ public class WorkOrderService {
         order.setDeviceNo(alarm.getDeviceNo());
         order.setTitle("[" + alarm.getAlarmType() + "] " + alarm.getDeviceNo());
         order.setSeverity(level);
+        order.setSource("ALARM");
         order.setStatus(WorkOrderStatus.OPEN.getCode());
         order.setSlaDeadline(now + properties.slaMinutes(level) * 60_000L);
         order.setSlaBreached(0);
@@ -97,6 +101,50 @@ public class WorkOrderService {
         enqueueSla(order.getWoNo(), order.getSlaDeadline());
         log.info("[工单] 创建 woNo={} alarmId={} severity={} slaDeadline={}",
                 order.getWoNo(), alarmId, level, order.getSlaDeadline());
+        return order;
+    }
+
+    /**
+     * 用户报障转工单（S7 WP-D）：来源 USER_REPORT，device 为柜/仓；
+     * 去重（同用户同柜短窗）由 UserReportService 在入口层做（Redis）。
+     */
+    @Transactional
+    public WorkOrderEntity createFromUserReport(Long userId, String cabinetNo, Integer cellNo,
+                                                String type, String description) {
+        if (cabinetNo == null || cabinetNo.isBlank()) {
+            throw new RRException("报障缺柜编号");
+        }
+        String reportType = type == null ? "OTHER" : type.trim().toUpperCase();
+        String level = switch (reportType) {
+            case "DEVICE_FAULT" -> WorkOrderSeverity.HIGH.name();
+            case "CELL_FAULT", "PAYMENT" -> WorkOrderSeverity.MEDIUM.name();
+            case "OTHER" -> WorkOrderSeverity.LOW.name();
+            default -> throw new RRException("报障类型非法（DEVICE_FAULT/CELL_FAULT/PAYMENT/OTHER）: " + type);
+        };
+        String deviceNo = cellNo == null ? cabinetNo : cabinetNo + "-" + cellNo;
+        String deviceType = cellNo == null ? "CABINET" : "CELL";
+        long now = System.currentTimeMillis();
+        WorkOrderEntity order = new WorkOrderEntity();
+        order.setWoNo("WO" + idGenerator.nextIdString());
+        order.setAlarmId(null);
+        order.setSource("USER_REPORT");
+        order.setReporterUserId(userId);
+        order.setDescription(description == null ? null
+                : (description.length() <= 255 ? description : description.substring(0, 255)));
+        order.setDeviceType(deviceType);
+        order.setDeviceNo(deviceNo);
+        order.setTitle("[用户报障] " + reportType + " " + deviceNo);
+        order.setSeverity(level);
+        order.setStatus(WorkOrderStatus.OPEN.getCode());
+        order.setSlaDeadline(now + properties.slaMinutes(level) * 60_000L);
+        order.setSlaBreached(0);
+        order.setCreateTime(now);
+        order.setUpdateTime(now);
+        workOrderDao.insert(order);
+        writeLog(order.getWoNo(), "CREATE", null, WorkOrderStatus.OPEN, "user:" + userId, description);
+        enqueueSla(order.getWoNo(), order.getSlaDeadline());
+        log.info("[工单] 用户报障转单 woNo={} userId={} device={} type={}",
+                order.getWoNo(), userId, deviceNo, reportType);
         return order;
     }
 
@@ -144,7 +192,7 @@ public class WorkOrderService {
         return afterMove(order, moved, "VERIFY", WorkOrderStatus.VERIFIED, remark);
     }
 
-    /** 关闭：VERIFIED→CLOSED（撤销 SLA 定时） */
+    /** 关闭：VERIFIED→CLOSED（撤销 SLA 定时；用户报障单关闭时站内信回执） */
     public WorkOrderEntity close(Long id, String remark) {
         WorkOrderEntity order = require(id);
         boolean moved = cas(order, WorkOrderStatus.VERIFIED, WorkOrderStatus.CLOSED, wrapper -> wrapper
@@ -152,6 +200,10 @@ public class WorkOrderService {
                 .set(WorkOrderEntity::getRemark, remark));
         if (moved) {
             cancelSla(order.getWoNo());
+            if ("USER_REPORT".equals(order.getSource()) && order.getReporterUserId() != null) {
+                messageService.send(order.getReporterUserId(), "WORK_ORDER", "报障已处理完成",
+                        "工单 " + order.getWoNo() + " 已关闭" + (remark == null ? "" : "：" + remark));
+            }
         }
         return afterMove(order, moved, "CLOSE", WorkOrderStatus.CLOSED, remark);
     }

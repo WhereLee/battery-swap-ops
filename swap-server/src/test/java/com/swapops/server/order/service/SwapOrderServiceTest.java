@@ -79,6 +79,11 @@ class SwapOrderServiceTest {
     @Mock
     private SnowflakeIdGenerator idGenerator;
 
+    @Mock
+    private ArrearsService arrearsService;
+    @Mock
+    private com.swapops.server.user.service.CouponService couponService;
+
     private SwapOrderService service;
 
     @BeforeAll
@@ -94,7 +99,8 @@ class SwapOrderServiceTest {
         when(idGenerator.nextIdString()).thenReturn("123456");
         service = new SwapOrderService(orderDao, cabinetDao, cellDao, batteryDao, stationDao,
                 userAccountService, walletService, planService, allocationService,
-                commandDispatchService, new BillingProperties(), orderDelayService, idGenerator);
+                commandDispatchService, new BillingProperties(), orderDelayService, idGenerator,
+                arrearsService, couponService);
     }
 
     private CreateOrderForm form(String type, String cabinetNo) {
@@ -192,6 +198,65 @@ class SwapOrderServiceTest {
         assertThatThrownBy(() -> service.create(7L, form("TAKE", "SWAP-C-001"), "idem-2"))
                 .isInstanceOf(RRException.class)
                 .hasMessageContaining("进行中的订单");
+    }
+
+    @Test
+    @DisplayName("欠费门槛：TAKE/SWAP 拒绝（S7 WP-D）")
+    void 欠费门槛拒绝() {
+        when(orderDao.selectOne(any())).thenReturn(null);
+        when(userAccountService.requireActive(7L)).thenReturn(new SwapUserEntity());
+        when(arrearsService.hasOpenArrears(7L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.create(7L, form("TAKE", "SWAP-C-001"), "idem-arrears"))
+                .isInstanceOf(RRException.class)
+                .hasMessageContaining("欠费");
+    }
+
+    @Test
+    @DisplayName("欠费门槛：RETURN 放行（不查欠费，防逼停归还）")
+    void 欠费门槛RETURN放行() {
+        when(orderDao.selectOne(any())).thenReturn(null);
+        when(userAccountService.requireActive(7L)).thenReturn(new SwapUserEntity());
+        BatteryEntity holder = new BatteryEntity();
+        holder.setBatteryNo("BAT-0009");
+        when(batteryDao.selectOne(any())).thenReturn(holder);
+        when(allocationService.allocate(eq("SWAP-C-001"), any(), anyString(), eq(false)))
+                .thenReturn(new AllocationService.AllocResult(cellEntity(), null));
+        CabinetEntity cabinet = new CabinetEntity();
+        cabinet.setId(1L);
+        cabinet.setStationId(1L);
+        cabinet.setCabinetNo("SWAP-C-001");
+        when(cabinetDao.selectOne(any())).thenReturn(cabinet);
+        when(cabinetDao.selectById(1L)).thenReturn(cabinet);
+        when(orderDao.insert(any(SwapOrderEntity.class))).thenReturn(1);
+        when(orderDao.updateById(any(SwapOrderEntity.class))).thenReturn(1);
+
+        service.create(7L, form("RETURN", "SWAP-C-001"), "idem-return-arrears");
+
+        verify(arrearsService, never()).hasOpenArrears(any());
+    }
+
+    @Test
+    @DisplayName("券下单：余额单锁定券并绑定订单（S7 WP-D）")
+    void 券下单锁定() {
+        when(orderDao.selectOne(any())).thenReturn(null);
+        when(batteryDao.selectOne(any())).thenReturn(null);
+        stubCreateCommon();
+        CreateOrderForm form = form("TAKE", "SWAP-C-001");
+        form.setCouponId(9L);
+
+        SwapOrderEntity order = service.create(7L, form, "idem-coupon");
+
+        assertThat(order.getCouponId()).isEqualTo(9L);
+        verify(couponService).lockForOrder(eq(7L), eq(9L), any(), eq(300));
+    }
+
+    private CellEntity cellEntity() {
+        CellEntity cell = new CellEntity();
+        cell.setId(11L);
+        cell.setCellNo(3);
+        cell.setCabinetId(1L);
+        return cell;
     }
 
     @Test

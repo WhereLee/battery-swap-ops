@@ -60,6 +60,9 @@ class RefundServiceTest {
     @Mock
     private SnowflakeIdGenerator idGenerator;
 
+    @Mock
+    private com.swapops.server.user.service.UserMessageService messageService;
+
     private RefundService service;
 
     @BeforeAll
@@ -74,7 +77,7 @@ class RefundServiceTest {
         when(idGenerator.nextIdString()).thenReturn("123456");
         service = new RefundService(refundRecordDao, paymentRecordDao,
                 paymentRecordService, walletService, delayQueueService, idGenerator,
-                new com.swapops.server.common.retry.DeadlockRetryExecutor());
+                new com.swapops.server.common.retry.DeadlockRetryExecutor(), messageService);
         // 默认可退口径：该订单已收 300（基础费），无历史退款（S5 审查：refund 入口先做可退上限校验）
         when(paymentRecordDao.selectList(any())).thenReturn(List.of(
                 payment(7L, 99L, PaymentType.BALANCE_FEE, 300)));
