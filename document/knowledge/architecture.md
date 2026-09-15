@@ -44,19 +44,20 @@ flowchart TB
 
 ## 3. 换电闭环（S2）
 
-订单状态机：`CREATED → PAID → PENDING_OPEN → OPENED → PENDING_CLOSE → COMPLETED`（取消/异常旁路）。
-分配是"单条条件 UPDATE 原子占仓"；计费规则=按时长阶梯（套餐/单次/最低时长）；押金账本与余额支付为流水记账，
-幂等靠 `payNotifyId` 唯一键 + 终态仲裁（响应脱敏，无明文回传）。
+订单状态机：`PENDING_OPEN → OPENED → TAKEN → COMPLETED`（OVERDUE / TIMEOUT_CLOSED / CANCELLED / EXCEPTION 旁路；
+枚举以 `swap-contract` 的 OrderStatus 为准，见 S0.2）。
+分配=Redis LUA 弹仓 + 单条条件 UPDATE 原子占仓兜底；计费=套餐扣次优先 → 余额单次费（券抵扣）→ 超时按小时加收（硬失败欠费化）；
+资金幂等靠 `pay_order.trade_no` / `refund_record.refund_no` 唯一键 + CAS 终态跃迁 + `payment_record(order_id,payment_type)` 幂等闸（回调响应脱敏）。
 
 ## 4. 可靠性组件（S3）
 
 | 组件 | 机制 | 文档 |
 |---|---|---|
 | MQ 保序消费 | 并发度=1、毒消息分级、死信、懒重建 | outbox-pattern / 契约 §7 |
-| 定时对账 | 9 组不变量（超时订单/分账/履约/老化指令/计数/调拨/Agent 悬挂…） | charge-policy / transfer / agent-seam |
-| 任务看护 | 8 个任务 beat 登记 + 停摆告警（心跳仍存活时的任务假死检测） | s5-quality-delivery |
+| 定时对账 | 14 组不变量（订单/资产/持有者/调拨台账/Agent 悬挂/分账守恒/结算单/欠费/券/计数/老化指令等） | charge-policy / transfer / agent-seam |
+| 任务看护 | 9 个任务 beat 登记 + 停摆告警（心跳仍存活时的任务假死检测） | s5-quality-delivery |
 | outbox 事务消息 | 本地表 + 5s 轮询中继，接入顺延不丢事 | outbox-pattern |
-| 延迟任务 | DB 调度表 + 500ms 轮询分发 | payment-terminal-arbitration |
+| 延迟任务 | DB 调度表 + 秒级轮询分发（默认 1s，fast 剧本 500ms） | payment-terminal-arbitration |
 | 限流 | 注解 + Redis 令牌桶（关=注解失效，load 模式用） | rate-limit-token-bucket |
 | 熔断/舱壁 | Resilience4j 按通道隔离 | circuit-breaker-bulkhead |
 | 缓存 | L1 Caffeine + L2 Redis 两级 | two-level-cache |
@@ -66,12 +67,12 @@ flowchart TB
 ## 5. 运营域（S4 + S7）
 
 - **工单 SLA**：告警→派单→处理→关闭；高中低优先级 SLA 时限；自动关闭/超时升级（work-order-sla）。
-- **看板**：站点/柜/仓/电池视图 + 30min 粒度聚合指标（dashboard-metrics）。
+- **看板**：站点/柜/仓/电池视图 + 三指标聚合（L2 缓存 60s，dashboard-metrics）。
 - **电池健康**：循环计数以"服务循环"计、标称"BMS 等效循环"（口径声明在 battery-health）。
-- **调拨**：按"整柜转运"模型：批次→调度→理仓，可拆箱、防错箱错柜（transfer）。
+- **调拨**：站点间电池级调拨——启发式供需（富余/缺口阈值）→ 建议 → 审批 → 出库/入库（明细 CAS 聚合推进）→ 对账不变量⑧（transfer）。
 - **充电策略**：单价+峰谷价差，柜侧单调应用、版本单调递增、可回滚（charge-policy）。
 - **Agent 接缝**：建议单（PROPOSED→APPROVED→EXECUTING→CONFIRMED/REJECTED），建议与确认可异步 CAS（agent-seam）。
-- **管理端身份与审计（S7 WP-A）**：RBAC（SUPER/OPS/FINANCE/SUPPORT × 38 权限码）方法级鉴权 +
+- **管理端身份与审计（S7 WP-A）**：RBAC（SUPER/OPS/FINANCE/SUPPORT × 37 权限码）方法级鉴权 +
   admin_op_log 操作审计 + break-glass 静态 token（rbac-and-audit）。
 - **渠道对账 T+1（S7 WP-C）**：账单导入（幂等覆盖）→ 四类差异重建（HANDLED 留痕）→ 处置 + 日任务 + 告警（channel-recon）。
 - **用户服务与营销（S7 WP-D）**：报障→工单（去重+未关单复核）/ 欠费闭环（门槛+补缴/减免）/ 优惠券状态机
@@ -89,5 +90,7 @@ flowchart TB
 
 ## 7. 部署形态
 
-- 当前：Windows 单机全栈（MySQL/Redis/RocketMQ + server/sim 各一进程，详见 runbook）。
-- 云部署：待定（jar+systemd 或 Docker、端口/HTTPS 口径待拍板），占位见 runbook §9。
+- 本地：Windows 单机全栈（MySQL/Redis/RocketMQ + server/sim 各一进程，详见 runbook）。
+- 云端（2026-09-14 起）：`/opt/swap` jar + systemd 双服务（swap-server :8400 / swap-sim :8500），
+  HTTP 事件通道（未装 RocketMQ），密钥在 `/opt/swap/config/swap.env`（600），每日备份 cron + 恢复演练；
+  暴露面仅 SSH（ufw 仅 22）。见《服务器连接文档》§九与 runbook §9。

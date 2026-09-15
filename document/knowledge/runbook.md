@@ -87,12 +87,12 @@ load 模式附加：`-Xms512m -Xmx512m -Xlog:gc:file=gc.log:time,uptime` + `swap
 | 端口占用 | 8400/8500/8401/9876/10911/8081 → `netstat -ano` + `taskkill /F /PID` |
 | 幂等/重复事件 | 序守卫双线 → `plans/S0.3` §幂等 |
 | 单测假绿/真红 | 静态缓存坑 → `pitfalls/mp-lambda-cache-test-order.md`（push 前 random 复跑） |
-| 对账告警 | 9 组不变量语义 → `knowledge/agent-seam.md` 等 + `fixes/` 各档 |
+| 对账告警 | 14 组不变量语义 → `knowledge/agent-seam.md` 等 + `fixes/` 各档 |
 | GC/压测分析 | `gc.log` + `scripts/verify/batch7/_load_out.txt` |
 
 ## 8. 实机剧本
 
-总索引 `scripts/verify/README.md`（19 个剧本 + 容量证据；`_out.txt` 为统计数据，原件归档 diag-archive/）。
+总索引 `scripts/verify/README.md`（29 个剧本 + 容量证据；`_out.txt` 为统计数据，原件归档 diag-archive/）。
 剧本前置 = 中间件 + fast 模式平台 + dual 模拟器（`_g*` 部分只需 http）。
 
 ## 9. 云端部署（2026-09-14 已部署，阶段1）

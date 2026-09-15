@@ -11,10 +11,10 @@
 
 - 阶段：S0 设计冻结 ✅ / S1 指令闭环 ✅ / S2 换电闭环 ✅ / S3 可靠性深水 ✅ / S4 运营调度 ✅ /
   S5 质量与云交付 ✅ / **S7 运营纵深 ✅**（管理端 RBAC+审计 / 渠道对账 T+1 / 用户服务与营销 / 代理分润结算 / 韧性补丁）
-- 测试：**375/375**（契约 4 + 平台 343 + 模拟器 28）；JaCoCo 门槛 server 65% / sim 55% / contract 70%，CI `mvn verify` 强制
+- 测试：**376/376**（契约 4 + 平台 343 + 模拟器 29）；JaCoCo 门槛 server 65% / sim 55% / contract 70%，CI `mvn verify` 强制
 - 对账不变量 **14 组**（含分账守恒/结算单一致/完成单必分账/欠费/券状态）；任务看护 9 项
 - 容量（读路径，512m 堆，限流关）：**465.5/s**、0 错误、p95 11ms / p99 14ms；GC 16 次 / 总暂停 68.5ms / 最大 9.9ms（证据 `scripts/verify/batch7/`）
-- 实机剧本 24 个（batch1-13 全 PASS，含 S7 五条新剧本 `_c16`-`_c20`）
+- 实机剧本 29 个（`_g1`-`_g8` + `_c0`-`_c20`，batch1-13 全 PASS，含 S7 五条新剧本 `_c16`-`_c20`）
 
 ## 架构
 
@@ -53,12 +53,12 @@ flowchart LR
 ```powershell
 # 1) 中间件：MySQL 3306(root/root)；Redis（--dir F:\Redis 保证 RDB 可写）；
 #    RocketMQ namesrv 9876 + broker 10911 + proxy 8081（.local/start-broker-proxy.bat）
+#    有 Docker 的机器可跳过本节：docker compose -f docker-compose.middleware.yml up -d（仅 MySQL+Redis）
 
-# 2) 建库建表（幂等，全量迁移 db/00-09 依次执行）
+# 2) 建库建表（幂等，db/00-15 共 16 个迁移脚本，按序执行）
 mysql -uroot -proot < db/00-create-database.sql
 mysql -uroot -proot < db/01-swap-schema.sql
-mysql -uroot -proot < db/02-s2-migration.sql
-# ... db/03-s3-payment.sql ~ db/09-agent-action.sql 依次执行
+# ... db/02-s2-migration.sql ~ db/15-resilience-patch.sql 依次执行
 
 # 3) 密钥零明文：SWAP_DEV_SECRET / SWAP_ADMIN_TOKEN / SWAP_PAY_SECRET（.local/*.txt，gitignored）
 
@@ -72,6 +72,19 @@ powershell -File scripts/verify/batch1/_g1_open_loop.ps1
 ```
 
 运行模式与通道矩阵（fast 模式 / load 模式 / http|mq|dual 取舍）：`document/knowledge/runbook.md`。
+
+## 演示与复现（P0-4）
+
+```powershell
+# 一键演示：换电全链路（TAKE/SWAP/RETURN）+ 管理端对账（break-glass）+ OpenAPI 导出
+powershell -File scripts/demo/_p0_demo.ps1        # 证据：scripts/demo/_p0_demo_out.txt
+
+# 第三方契约客户端（Python 标准库手写 HMAC，验证协议可被非 Java 端实现）
+python scripts/verify/batch15/_py_contract_client.py   # 运行后建议重启 sim（更换代际）
+
+# OpenAPI 文档页（本地）：http://127.0.0.1:8400/api/swagger-ui.html
+# 离线快照：document/api/openapi.json；HTTP 请求集：scripts/demo/battery-swap-ops.http
+```
 
 ## 契约（v1）
 
@@ -88,7 +101,7 @@ mvn -B -ntp test "-Dsurefire.runOrder=random"       # push 前随机顺序复跑
 mvn -B -ntp clean verify                            # 覆盖率门槛（CI 同款）
 ```
 
-- 实机剧本 19 个（`scripts/verify/`，全 PASS）；容量与 GC 证据在 `batch7/`（jtl/GC 原件归档 `diag-archive/`，不入 git）
+- 实机剧本 29 个（`scripts/verify/`，全 PASS）；容量与 GC 证据在 `batch7/`（jtl/GC 原件归档 `diag-archive/`，不入 git）
 - CI：`.github/workflows/ci.yml`（build → test → coverage summary，每 push 收口）
 
 ## 文档地图
@@ -96,7 +109,7 @@ mvn -B -ntp clean verify                            # 覆盖率门槛（CI 同�
 | 位置 | 内容 |
 |---|---|
 | `document/plans/` | S0 设计冻结 + S3 可靠性方案 |
-| `document/block-records/` | 批次 1-7 实施记录（做了什么/取舍/验证证据） |
+| `document/block-records/` | 批次 1-14 实施记录（做了什么/取舍/验证证据） |
 | `document/pitfalls/` `fixes/` | 踩坑与修复（环境/编码/并发/JVM） |
 | `document/knowledge/` | 领域知识（含 architecture / runbook / s5-quality-delivery） |
 | `scripts/verify/` | 剧本与证据（README 为总索引） |
