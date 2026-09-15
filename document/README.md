@@ -39,6 +39,7 @@
 - block-records/批次11-S7-WP-C.md（渠道对账 T+1：账单导入幂等/四类差异/处置留痕/每日任务，_c19 10/10、335 单测）
 - block-records/批次12-S7-WP-D.md（用户服务：报障→工单/欠费闭环/优惠券/站内信，_c20 15/15、356 单测）
 - block-records/批次13-S7-WP-B.md（代理分润结算：分账流水/冲正/补行/结算单状态机，_c18 12/12、375 单测）
+- block-records/批次14-S7收口.md（全量回归 _g1+_c16-_c20 全 PASS；S7 交付面与声明总表）
 
 ### knowledge（节选：入口性文档）
 - knowledge/architecture.md（架构全景/组件机制/安全资金边界/部署形态）

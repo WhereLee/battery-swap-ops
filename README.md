@@ -7,11 +7,14 @@
 > 运行详见 `document/knowledge/runbook.md`；剧本索引 `scripts/verify/README.md`。
 > 阶段计划见工作区 `项目一-阶段计划.md`；参考基准见工作区 `项目一-参考基准.md`。
 
-## 现状（2026-09-14）
+## 现状（2026-09-16）
 
-- 阶段：S0 设计冻结 ✅ / S1 指令闭环 ✅ / S2 换电闭环 ✅ / S3 可靠性深水 ✅ / S4 运营调度 ✅ / S5 质量交付（进行中：覆盖率门槛+压测+GC 已完成，文档收口+云部署待做）
-- 测试：**294/294**（契约 4 + 平台 262 + 模拟器 28）；JaCoCo 门槛 server 65% / sim 55% / contract 70%（实测 69.0 / 61.1 / 77.2），CI `mvn verify` 强制
+- 阶段：S0 设计冻结 ✅ / S1 指令闭环 ✅ / S2 换电闭环 ✅ / S3 可靠性深水 ✅ / S4 运营调度 ✅ /
+  S5 质量与云交付 ✅ / **S7 运营纵深 ✅**（管理端 RBAC+审计 / 渠道对账 T+1 / 用户服务与营销 / 代理分润结算 / 韧性补丁）
+- 测试：**375/375**（契约 4 + 平台 343 + 模拟器 28）；JaCoCo 门槛 server 65% / sim 55% / contract 70%，CI `mvn verify` 强制
+- 对账不变量 **14 组**（含分账守恒/结算单一致/完成单必分账/欠费/券状态）；任务看护 9 项
 - 容量（读路径，512m 堆，限流关）：**465.5/s**、0 错误、p95 11ms / p99 14ms；GC 16 次 / 总暂停 68.5ms / 最大 9.9ms（证据 `scripts/verify/batch7/`）
+- 实机剧本 24 个（batch1-13 全 PASS，含 S7 五条新剧本 `_c16`-`_c20`）
 
 ## 架构
 
@@ -21,17 +24,19 @@ flowchart LR
     MQ[[RocketMQ swap-device-event]] --> SERVER
     SERVER[swap-server 平台 :8400/api] -->|指令 commandSeq 幂等| SIM
     USER[骑手小程序端] --> SERVER
-    ADMIN[运营后台] --> SERVER
+    ADMIN[运营后台<br/>RBAC: SUPER/OPS/FINANCE/SUPPORT] --> SERVER
     AGENT[电柜 Agent 建议单] --> SERVER
     PAY[支付网关-模拟] --> SERVER
-    SERVER --> DB[(MySQL 8 流水+状态机)]
+    SERVER --> DB[(MySQL 8 流水+状态机+分账)]
     SERVER --> RD[(Redis 缓存/限流/锁/雪花)]
     SIM --> MQ
 ```
 
-可靠性组件：MQ 并发度=1 保序消费 / 幂等双线（`(bootId,eventSeq)` 序守卫 + `commandSeq` 已受理/已被拒）/
-定时对账（9 组不变量）/ 任务看护（8 个任务停摆告警）/ outbox 事务消息 / 延迟任务 / 令牌桶限流 / 熔断舱壁 /
-两级缓存 / 支付终态仲裁。详见 `document/knowledge/architecture.md`。
+可靠性组件：MQ 保序消费 / 幂等双线 / 定时对账（14 组不变量）/ 任务看护（9 任务）/ outbox / 延迟任务 /
+限流 / 熔断舱壁 / 两级缓存 / 支付终态仲裁 / **计费硬失败欠费化（事件不回滚）**。
+经营组件：**代理分润结算（append-only 分账+退款冲正）** / **渠道对账 T+1（四类差异+处置）** /
+**用户服务（报障→工单 / 欠费闭环 / 优惠券 / 站内信）** / 工单 SLA / 看板 / 调拨 / 充电策略 / Agent 接缝。
+详见 `document/knowledge/architecture.md`。
 
 ## 模块
 

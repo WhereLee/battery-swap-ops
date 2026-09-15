@@ -63,7 +63,7 @@ flowchart TB
 | ID | Snowflake（workerId Redis 预约，-1 自动编号） | snowflake-id-and-clock-rollback |
 | 优雅停机 | 停流量→排空→关线程池→关连接 | 批次4 记录 |
 
-## 5. 运营域（S4）
+## 5. 运营域（S4 + S7）
 
 - **工单 SLA**：告警→派单→处理→关闭；高中低优先级 SLA 时限；自动关闭/超时升级（work-order-sla）。
 - **看板**：站点/柜/仓/电池视图 + 30min 粒度聚合指标（dashboard-metrics）。
@@ -71,15 +71,21 @@ flowchart TB
 - **调拨**：按"整柜转运"模型：批次→调度→理仓，可拆箱、防错箱错柜（transfer）。
 - **充电策略**：单价+峰谷价差，柜侧单调应用、版本单调递增、可回滚（charge-policy）。
 - **Agent 接缝**：建议单（PROPOSED→APPROVED→EXECUTING→CONFIRMED/REJECTED），建议与确认可异步 CAS（agent-seam）。
+- **管理端身份与审计（S7 WP-A）**：RBAC（SUPER/OPS/FINANCE/SUPPORT × 38 权限码）方法级鉴权 +
+  admin_op_log 操作审计 + break-glass 静态 token（rbac-and-audit）。
+- **渠道对账 T+1（S7 WP-C）**：账单导入（幂等覆盖）→ 四类差异重建（HANDLED 留痕）→ 处置 + 日任务 + 告警（channel-recon）。
+- **用户服务与营销（S7 WP-D）**：报障→工单（去重+未关单复核）/ 欠费闭环（门槛+补缴/减免）/ 优惠券状态机
+  （发→锁→核销/4 路径释放）/ 站内信（user-service-and-coupon）。
+- **代理分润结算（S7 WP-B）**：站点归属代理 → 完成单 append-only 分账（CASH/次卡折算/月卡口径）→
+  退款负向冲正、欠费补缴补行 → 顺序批结算单（PAID 不可变）→ 报表（agent-settlement）。
 
 ## 6. 安全与资金边界
 
-- 密钥零明文：环境变量注入，响应脱敏（含柜密钥分页脱敏），日志无密钥；管理接口 AdminToken 静态鉴权。
-- 身份分层：**三面隔离**——设备面（per-柜 HMAC）/ 用户面（X-User-Token 会话）/ 管理面（X-Admin-Token）。
-  用户面与设备面之外的**管理员内部分层（RBAC）与数据权限（按网点过滤）未做**：所有管理员共用单 token，
-  无角色/最小权限/操作人身份（告警 handler=null、工单 operator 固定 "admin"、建议单 confirmer="admin"），
-  无独立管理操作审计表（仅应用日志）——S0.4 §3 明确取舍，欠账如实声明。
-- 资金链路：无缓存、无 Agent 直连路径；改动唯一入口是流水+状态机。
+- 密钥零明文：环境变量注入，响应脱敏（含柜密钥分页脱敏），日志无密钥；管理接口会话 token + break-glass。
+- 身份分层：**三面隔离**——设备面（per-柜 HMAC）/ 用户面（X-User-Token 会话）/ 管理面（会话 + RBAC 权限码）；
+  **管理员内部分层（RBAC）已落地**（S7 WP-A）；数据权限（按网点过滤，DataFilter 模式）仍未做，声明后置。
+- 资金链路：无缓存、无 Agent 直连路径；改动唯一入口是流水+状态机；
+  **计费硬失败不改写设备事实**（欠费化，G1 韧性补丁）。
 
 ## 7. 部署形态
 
