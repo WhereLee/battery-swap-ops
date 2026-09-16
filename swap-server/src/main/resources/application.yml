@@ -187,6 +187,10 @@ swap:
     offline-scan-interval-ms: 30000
     watchdog-interval-ms: 60000
     event-enabled: true
+    webhook:
+      # P1-11：告警出站 webhook（url/secret 非空才启用；secret 经环境变量注入，仓库零明文）
+      url: ${SWAP_ALARM_WEBHOOK_URL:}
+      secret: ${SWAP_ALARM_WEBHOOK_SECRET:}
   dev:
     # 本地联调开关：默认关闭；运行参数 -Dspring-boot.run.arguments=--swap.dev.enabled=true 打开
     enabled: false

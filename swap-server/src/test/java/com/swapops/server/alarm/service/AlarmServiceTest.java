@@ -54,6 +54,8 @@ class AlarmServiceTest {
     private AlarmEventPublisher publisher;
     @Mock
     private com.swapops.server.outbox.service.OutboxService outboxService;
+    @Mock
+    private AlarmWebhookNotifier webhookNotifier;
 
     private AlarmService service;
 
@@ -65,7 +67,7 @@ class AlarmServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AlarmService(alarmDao, redis, new AlarmProperties(), publisher, outboxService);
+        service = new AlarmService(alarmDao, redis, new AlarmProperties(), publisher, outboxService, webhookNotifier);
         when(publisher.buildEnvelope(any(), anyString())).thenReturn("{\"alarmId\":1}");
     }
 
@@ -97,6 +99,7 @@ class AlarmServiceTest {
 
         assertThat(id).isEqualTo(1L);
         verify(outboxService).enqueue(eq("alarm:1:RAISED"), eq("ALARM"), anyString(), anyString());
+        verify(webhookNotifier).notify(eq("RAISED"), anyString());
     }
 
     @Test
@@ -145,6 +148,20 @@ class AlarmServiceTest {
     }
 
     @Test
+    @DisplayName("自动恢复：关闭后出站 RECOVERED webhook 通知（P1-11）")
+    void 恢复出站通知() {
+        when(redis.delete(anyString())).thenReturn(true);
+        AlarmEntity open = new AlarmEntity();
+        open.setId(3L);
+        when(alarmDao.selectList(any())).thenReturn(java.util.List.of(open));
+        when(alarmDao.update(isNull(), any())).thenReturn(1);
+
+        assertThat(service.markRecovered(AlarmService.DEVICE_CABINET, "SWAP-C-001", AlarmType.OFFLINE))
+                .isEqualTo(1);
+        verify(webhookNotifier).notify(eq("RECOVERED"), anyString());
+    }
+
+    @Test
     @DisplayName("人工处理：CAS 未命中拒绝；命中处理事件入 outbox（审计可补投）")
     void 人工处理() {
         when(alarmDao.update(isNull(), any())).thenReturn(0);
@@ -155,6 +172,7 @@ class AlarmServiceTest {
         when(alarmDao.selectById(5L)).thenReturn(new AlarmEntity());
         assertThat(service.handle(5L, 7L)).isTrue();
         verify(outboxService).enqueue(eq("alarm:5:HANDLED"), eq("ALARM"), anyString(), anyString());
+        verify(webhookNotifier).notify(eq("HANDLED"), anyString());
     }
 
     @Test

@@ -1,0 +1,26 @@
+﻿== batch21: P1-11 webhook ==
+22:28:00 PASS server healthy before scenario
+22:28:04 PASS mock receiver started on :8490
+22:28:04 events baseline lines: 9
+22:28:04 dedup keys cleared: 0
+22:28:05 sim stopped (pids: 27340,33528)
+22:28:29 PASS RAISED webhook delivered after sim outage
+22:28:29 RAISED ts=2026-09-16T22:28:29 sign_ok=True body_len=342
+22:28:29 PASS RAISED HMAC signature verified by receiver (byte-level)
+22:28:29 PASS RAISED body carries traceId
+22:28:29 sim started
+22:28:35 PASS RECOVERED webhook delivered after sim recovery
+22:28:35 RECOVERED ts=2026-09-16T22:28:33 sign_ok=True
+22:28:35 PASS RECOVERED HMAC signature verified by receiver
+22:28:35 PASS offline-family list empty before isolation round
+22:28:37 receiver stopped (isolation round)
+22:28:37 sim stopped (pids: 17152,23192)
+22:29:07 PASS new alarm stored while webhook receiver down
+22:29:07 PASS health stays 200 while webhook receiver down
+22:29:07 PASS business path alive while webhook receiver down
+22:29:07 sim started
+22:29:42 PASS sim heartbeat back after restart
+22:29:42 PASS alarm auto-recovered while webhook receiver down
+22:29:42 webhook mentions in server log: 70
+22:29:42 PASS notifier activity present in server log
+22:29:42 BATCH21-WEBHOOK PASS

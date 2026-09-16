@@ -1,0 +1,29 @@
+﻿== batch21: P1-7 validation ==
+21:58:50 user 13800000003 login ok
+21:58:50 blank type -> http 400
+21:58:50 PASS blank type rejected (400)
+21:58:50 PASS blank type unified validation message
+21:58:50 illegal type -> http 400
+21:58:50 PASS illegal type rejected (400)
+21:58:50 PASS illegal type unified validation message
+21:58:50 malformed json -> http 400
+21:58:50 PASS malformed json rejected (400)
+21:58:50 PASS malformed json message mentions JSON
+21:58:50 recharge zero -> http 400
+21:58:50 PASS recharge zero rejected (400)
+21:58:50 PASS recharge zero unified validation message
+21:58:50 recharge negative -> http 400
+21:58:50 PASS recharge negative rejected (400)
+21:58:50 recharge missing amount -> http 400
+21:58:50 PASS recharge missing amount rejected (400)
+21:58:50 refund amountFen=0 -> http 400
+21:58:50 PASS refund param 0 rejected (400)
+21:58:50 PASS refund param 0 unified validation message
+21:58:50 valid recharge -> http 200
+21:58:50 PASS valid recharge passes (200)
+21:58:50 PASS valid recharge business code=0
+21:58:50 valid form w/o idem-key -> http 400
+21:58:50 PASS valid order form reaches business layer (idem-key business error, not validation)
+21:58:50 refund w/o amount -> http 400
+21:58:50 PASS refund w/o amount reaches business layer (order-not-found, not validation)
+21:58:50 BATCH21-VALIDATION PASS

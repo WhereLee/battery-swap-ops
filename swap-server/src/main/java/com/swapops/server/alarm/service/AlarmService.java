@@ -45,15 +45,17 @@ public class AlarmService {
     private final AlarmProperties properties;
     private final AlarmEventPublisher publisher;
     private final OutboxService outboxService;
+    private final AlarmWebhookNotifier webhookNotifier;
 
     public AlarmService(AlarmDao alarmDao, StringRedisTemplate stringRedisTemplate,
                         AlarmProperties properties, AlarmEventPublisher publisher,
-                        OutboxService outboxService) {
+                        OutboxService outboxService, AlarmWebhookNotifier webhookNotifier) {
         this.alarmDao = alarmDao;
         this.stringRedisTemplate = stringRedisTemplate;
         this.properties = properties;
         this.publisher = publisher;
         this.outboxService = outboxService;
+        this.webhookNotifier = webhookNotifier;
     }
 
     /**
@@ -107,23 +109,40 @@ public class AlarmService {
         log.warn("告警产生 id={} type={} deviceType={} deviceNo={} content={}",
                 alarm.getId(), type, deviceType, deviceNo, content);
         // S3.8 WP6：事件走 outbox（与告警同事务落库），中继补投——发布失败不再丢事件
+        String raisedEnvelope = publisher.buildEnvelope(alarm, "RAISED");
         outboxService.enqueue("alarm:" + alarm.getId() + ":RAISED", AlarmOutboxPublisher.EVENT_TYPE_ALARM,
-                publisher.buildEnvelope(alarm, "RAISED"), TraceIdFilter.currentOrGenerate());
+                raisedEnvelope, TraceIdFilter.currentOrGenerate());
+        // P1-11：出站 webhook 通知（异步尽力而为；RAISED/HANDLED/RECOVERED 三类事件）
+        webhookNotifier.notify("RAISED", raisedEnvelope);
         return alarm.getId();
     }
 
     /** 自动恢复（事件到位/心跳恢复）：关闭未处理的同 key 告警；返回关闭条数 */
     public int markRecovered(String deviceType, String deviceNo, AlarmType type) {
         clearDedup(type, deviceNo);
+        // 先查未处理告警（update 前取内容，用于构造 RECOVERED 出站信封）；
+        // CAS 语义仍以 update 的 rows 为准：并发人工处理抢先时本处 update=0 不通知
+        List<AlarmEntity> openList = alarmDao.selectList(new LambdaQueryWrapper<AlarmEntity>()
+                .eq(AlarmEntity::getDeviceType, deviceType)
+                .eq(AlarmEntity::getDeviceNo, deviceNo)
+                .eq(AlarmEntity::getAlarmType, type.name())
+                .eq(AlarmEntity::getHandled, 0));
+        long now = System.currentTimeMillis();
         int rows = alarmDao.update(null, new LambdaUpdateWrapper<AlarmEntity>()
                 .eq(AlarmEntity::getDeviceType, deviceType)
                 .eq(AlarmEntity::getDeviceNo, deviceNo)
                 .eq(AlarmEntity::getAlarmType, type.name())
                 .eq(AlarmEntity::getHandled, 0)
                 .set(AlarmEntity::getHandled, 1)
-                .set(AlarmEntity::getHandledTime, System.currentTimeMillis()));
+                .set(AlarmEntity::getHandledTime, now));
         if (rows > 0) {
             log.info("告警自动恢复 type={} deviceNo={} rows={}", type, deviceNo, rows);
+            // P1-11：恢复通知（自动关不走 outbox——审计事件仅 RAISED/HANDLED；webhook 侧仍出站 RECOVERED 闭环）
+            for (AlarmEntity alarm : openList) {
+                alarm.setHandled(1);
+                alarm.setHandledTime(now);
+                webhookNotifier.notify("RECOVERED", publisher.buildEnvelope(alarm, "RECOVERED"));
+            }
         }
         return rows;
     }
@@ -147,8 +166,10 @@ public class AlarmService {
         }
         AlarmEntity alarm = alarmDao.selectById(alarmId);
         if (alarm != null) {
+            String handledEnvelope = publisher.buildEnvelope(alarm, "HANDLED");
             outboxService.enqueue("alarm:" + alarmId + ":HANDLED", AlarmOutboxPublisher.EVENT_TYPE_ALARM,
-                    publisher.buildEnvelope(alarm, "HANDLED"), TraceIdFilter.currentOrGenerate());
+                    handledEnvelope, TraceIdFilter.currentOrGenerate());
+            webhookNotifier.notify("HANDLED", handledEnvelope);
         }
         log.info("告警人工处理 alarmId={} handler={}", alarmId, userId);
         return true;

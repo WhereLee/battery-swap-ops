@@ -36,7 +36,7 @@ public class UserOrderController {
     @com.swapops.server.common.ratelimit.RateLimit(name = "order-create",
             dimension = com.swapops.server.common.ratelimit.RateLimitDimension.USER, permits = 5, windowSeconds = 60)
     @PostMapping("/order")
-    public Result<Map<String, Object>> create(@RequestBody CreateOrderForm form,
+    public Result<Map<String, Object>> create(@jakarta.validation.Valid @RequestBody CreateOrderForm form,
                                               @RequestHeader(value = IDEM_HEADER, required = false) String idemKey) {
         if (idemKey == null || idemKey.isBlank()) {
             throw new RRException("缺少幂等键 Idempotency-Key");

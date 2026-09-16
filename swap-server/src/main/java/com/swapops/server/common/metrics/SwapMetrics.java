@@ -54,19 +54,27 @@ public class SwapMetrics {
     }
 
     private void registerGauges() {
+        // strongReference(true)：Gauge 默认弱引用持有实例，一旦被 GC 指标静默变 NaN；
+        // SwapMetrics 是 Spring 单例（生命周期=应用），显式强引用消除该隐患
         Gauge.builder("swap.outbox.backlog", this, m -> m.safe(m::outboxBacklog))
+                .strongReference(true)
                 .description("outbox 待投递消息数（status=NEW）").register(registry);
         Gauge.builder("swap.outbox.dead", this, m -> m.safe(m::outboxDead))
+                .strongReference(true)
                 .description("outbox 死信数（status=DEAD）").register(registry);
         Gauge.builder("swap.alarm.unhandled", this, m -> m.safe(m::alarmUnhandled))
+                .strongReference(true)
                 .description("未处理告警数（handled=0）").register(registry);
         for (String topic : DELAY_TOPICS) {
             Gauge.builder("swap.delay.backlog", this, m -> m.safe(() -> m.delayBacklog(topic)))
+                    .strongReference(true)
                     .tag("topic", topic).description("延迟任务积压（按 topic）").register(registry);
         }
         Gauge.builder("swap.reconcile.violations", this, m -> m.safe(m::reconcileViolations))
+                .strongReference(true)
                 .description("最近一次对账差异总数（-1=报告不可得）").register(registry);
         Gauge.builder("swap.alloc.available", this, m -> m.safe(m::allocAvailableFull))
+                .strongReference(true)
                 .description("全部可用柜的可分配满电仓总数").register(registry);
     }
 

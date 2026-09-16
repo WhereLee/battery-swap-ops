@@ -42,7 +42,7 @@ public class UserWalletController {
     @com.swapops.server.common.ratelimit.RateLimit(name = "wallet-recharge",
             dimension = com.swapops.server.common.ratelimit.RateLimitDimension.USER, permits = 3, windowSeconds = 60)
     @PostMapping("/wallet/recharge")
-    public Result<Map<String, Object>> recharge(@RequestBody RechargeForm form) {
+    public Result<Map<String, Object>> recharge(@jakarta.validation.Valid @RequestBody RechargeForm form) {
         if (form.getAmountFen() == null) {
             throw new RRException("充值金额必填");
         }

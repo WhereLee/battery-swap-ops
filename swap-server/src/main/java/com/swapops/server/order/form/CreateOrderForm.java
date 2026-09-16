@@ -1,5 +1,7 @@
 package com.swapops.server.order.form;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 
 /**
@@ -9,6 +11,8 @@ import lombok.Data;
 public class CreateOrderForm {
 
     /** SWAP / TAKE / RETURN */
+    @NotBlank(message = "type 必填")
+    @Pattern(regexp = "SWAP|TAKE|RETURN", message = "type 仅支持 SWAP/TAKE/RETURN")
     private String type;
 
     private String cabinetNo;

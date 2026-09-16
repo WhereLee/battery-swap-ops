@@ -46,11 +46,13 @@ class SwapMetricsTest {
     private DailyReconcileTask dailyReconcileTask;
 
     private SimpleMeterRegistry registry;
+    /** 保持强引用（模拟 Spring 容器持有单例）——否则 GC 后 Gauge 弱引用失效，值静默变 NaN */
+    private SwapMetrics metrics;
 
     @BeforeEach
     void setUp() {
         registry = new SimpleMeterRegistry();
-        new SwapMetrics(registry, outboxEventDao, alarmDao, delayQueueService, allocationService,
+        metrics = new SwapMetrics(registry, outboxEventDao, alarmDao, delayQueueService, allocationService,
                 cabinetDao, dailyReconcileTask);
     }
 

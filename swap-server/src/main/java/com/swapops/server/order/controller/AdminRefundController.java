@@ -26,6 +26,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("admin/refund")
+@org.springframework.validation.annotation.Validated
 public class AdminRefundController {
 
     private static final String REASON = "ADMIN_MANUAL";
@@ -42,7 +43,8 @@ public class AdminRefundController {
         @PreAuthorize("hasAuthority('admin:refund:create')")
     @AdminLog("REFUND_CREATE")
     public Result<Map<String, Object>> refund(@PathVariable String orderNo,
-                                              @RequestParam(required = false) Integer amountFen) {
+                                              @RequestParam(required = false)
+                                              @jakarta.validation.constraints.Min(value = 1, message = "退款金额需大于 0") Integer amountFen) {
         SwapOrderEntity order = swapOrderService.findByOrderNo(orderNo);
         if (order == null) {
             throw new RRException("订单不存在: " + orderNo);
