@@ -45,6 +45,7 @@
 - block-records/批次17-P0-3d-e写路径容量与JVM故事.md（写路径零超卖/计费恰一次、JVM 96m vs 512m；台账孤占根因复核）
 - block-records/批次18-dev复位收敛与台账孤占归零.md（两阶段 reset 收敛修复/T2 孤儿柜退役/batch18 防回归剧本/MQ 环境整备；对账 18→0、全量 378/378）
 - block-records/批次19-P1-10混沌演练与演练驱动缺陷修复.md（混沌 3 剧本 PASS：Redis/MySQL/broker 停机；演练驱动 3 缺陷修复 + workerId 租约稳定化；单测 347/347）
+- block-records/批次20-P1-6可观测性.md（Prometheus 6 业务指标 + 401 鉴权 + traceId 日志 pattern + Grafana 面板 JSON；_c24 9/9 PASS、单测 349/349）
 - block-records/2026-09-16-1856-写路径容量模块-交接文档.md（模块暂停交接书；其 §7 执行序已由批次17 收口）
 
 ### knowledge（节选：入口性文档）

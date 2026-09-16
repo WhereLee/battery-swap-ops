@@ -92,6 +92,18 @@ load 模式附加：`-Xms512m -Xmx512m -Xlog:gc:file=gc.log:time,uptime` + `swap
 | Redis 故障/数据丢失后 | 恢复清单（rebuild-alloc→对账→workerId 日志）→ `pitfalls/redis-data-loss-runtime-consistency.md`；级联拖死全站 → `pitfalls/redis-fault-cascade-no-timeout.md` |
 | GC/压测分析 | `gc.log` + `scripts/verify/batch7/_load_out.txt` |
 
+### 7.1 监控接入（P1-6）
+
+- **Prometheus 指标**：`GET /api/actuator/prometheus`——**需 `X-Admin-Token`**（health/info 公开；无 token 401）。
+  业务指标 6 项：`swap_outbox_backlog` / `swap_outbox_dead` / `swap_alarm_unhandled` /
+  `swap_delay_backlog{topic}` / `swap_reconcile_violations` / `swap_alloc_available`；JVM/Hikari/HTTP 为 Micrometer 自带。
+  求值异常统一降级 -1（不拖垮抓取链路）。
+- **面板**：`scripts/verify/batch20/grafana-dashboard.json` 导入任意 Grafana（数据源变量 DS_PROMETHEUS）。
+  抓取配置示例：`job_name: swap-ops`、`metrics_path: /api/actuator/prometheus`、
+  `headers: {X-Admin-Token: <经 secrets 注入，零明文>}`、targets `127.0.0.1:8400`。
+- **日志 traceId**：`logging.pattern.console` 已含 `%X{traceId:-}`；HTTP 请求沿用/生成 `X-Trace-Id` 头。
+- 证据：`scripts/verify/batch20/_c24_out.txt`（9/9 PASS）。
+
 ## 8. 实机剧本
 
 总索引 `scripts/verify/README.md`（29 个剧本 + 容量证据；`_out.txt` 为统计数据，原件归档 diag-archive/）。
