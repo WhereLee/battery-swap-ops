@@ -108,4 +108,15 @@ class CabinetSimTest {
                 m.eventType() == EventType.BATTERY_IN && m.soc() == 15));
         assertThat(cabinet.snapshot().get("lastCommandSeq")).isEqualTo(0L);
     }
+
+    @Test
+    @DisplayName("联调电量上报：SOC_REPORT 携 soc、无 commandSeq（满电回池）")
+    void 电量上报事件() {
+        cabinet.devSoc(1, "BAT-0001", 100, "t-soc");
+        verify(reporter, timeout(5000)).report(argThat(m ->
+                m.eventType() == EventType.SOC_REPORT
+                        && "BAT-0001".equals(m.batteryNo())
+                        && Integer.valueOf(100).equals(m.soc())
+                        && m.commandSeq() == null));
+    }
 }

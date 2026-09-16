@@ -62,6 +62,15 @@ public class SimDevController {
         return ok("故障注入已更新 doorStuck=" + doorStuck);
     }
 
+    /** 联调：模拟 BMS 电量上报（SOC_REPORT）；soc>=满电阈值时平台侧电池回到满电池池 */
+    @PostMapping("/battery/soc")
+    public Map<String, Object> batterySoc(@RequestParam String cabinetNo, @RequestParam int cellNo,
+                                          @RequestParam String batteryNo, @RequestParam int soc) {
+        CabinetSim cabinet = require(cabinetNo);
+        cabinet.devSoc(cellNo, batteryNo, soc, TraceIds.generate());
+        return ok("电量上报已模拟（事件已上报）");
+    }
+
     private CabinetSim require(String cabinetNo) {
         CabinetSim cabinet = registry.get(cabinetNo);
         if (cabinet == null) {

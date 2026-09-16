@@ -226,6 +226,15 @@ public class CabinetSim {
         return sessionSeq.get(cellNo);
     }
 
+    /**
+     * 联调：模拟 BMS 电量上报（SOC_REPORT，非指令驱动、seq 为空）。
+     * 还电后电池在平台侧为 CHARGING，需设备上报满电才回到可分配池——负载/演示用它模拟充电完成。
+     */
+    public void devSoc(int cellNo, String batteryNo, int soc, String traceId) {
+        log.info("[{}] 电量上报 cellNo={} batteryNo={} soc={}", cabinetNo, cellNo, batteryNo, soc);
+        actionExecutor.submit(() -> reportEvent(EventType.SOC_REPORT, cellNo, batteryNo, soc, null, traceId));
+    }
+
     public void setDoorStuck(boolean stuck) {
         this.doorStuck = stuck;
         log.warn("[{}] 门锁故障注入置为 {}", cabinetNo, stuck);
