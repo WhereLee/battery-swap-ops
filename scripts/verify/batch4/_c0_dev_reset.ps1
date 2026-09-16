@@ -13,11 +13,11 @@ function Check($name, $cond) {
 Set-Content -Path $out -Value "== S4-pre gate: dev reset ==" -Encoding UTF8
 
 $r1 = (Invoke-RestMethod -Method Post "$server/dev/device/reset" -TimeoutSec 60).data
-Log "reset#1 cabinets=$($r1.cabinets) cancelled=$($r1.ordersCancelled) occupied=$($r1.cellsOccupied) extras=$($r1.extrasParked)"
+Log "reset#1 cabinets=$($r1.cabinets) cancelled=$($r1.ordersCancelled) occupied=$($r1.cellsOccupied) detached=$($r1.batteriesDetached) seedMissing=$(@($r1.seedMissing).Count)"
 Check "reset#1 occupied = cabinets x full(6)" ($r1.cellsOccupied -eq ($r1.cabinets * 6))
 
 $r2 = (Invoke-RestMethod -Method Post "$server/dev/device/reset" -TimeoutSec 60).data
-Log "reset#2 cancelled=$($r2.ordersCancelled) occupied=$($r2.cellsOccupied) extras=$($r2.extrasParked)"
+Log "reset#2 cancelled=$($r2.ordersCancelled) occupied=$($r2.cellsOccupied) detached=$($r2.batteriesDetached)"
 Check "reset#2 idempotent (no active orders cancelled)" ($r2.ordersCancelled -eq 0)
 Check "reset#2 occupied stable" ($r2.cellsOccupied -eq $r1.cellsOccupied)
 

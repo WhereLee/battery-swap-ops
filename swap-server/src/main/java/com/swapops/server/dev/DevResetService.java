@@ -27,16 +27,20 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * 联调数据重置（S4-pre，仅 swap.dev.enabled=true 生效）：
  * 把"设备侧事实"恢复为可复跑状态——活跃订单取消、电池全部归位/停用、分配池重建。
  * 幂等：重复执行结果一致；不做资金回滚（联调语义，钱包/套餐保持不动）。
+ *
+ * <p>收敛性设计（批次18）："清场→绑定"两阶段——先全量脱仓/清引用，再按种子定义统一重绑；
+ * 输出只依赖种子定义与输入状态无关（旧实现"逐仓边扫边脱+绑"在交错引用图上不收敛：
+ * 后序仓的 detach 会打掉前序仓刚建立的一致绑定，残留集合随输入漂移）。
+ * 种子电池缺失时对应仓保持空仓并记入报告（旧实现静默 continue，孤儿引用永不修复）。</p>
  */
 @Slf4j
 @Service
@@ -95,13 +99,21 @@ public class DevResetService {
     public Map<String, Object> reset() {
         long now = System.currentTimeMillis();
         int cancelled = cancelActiveOrders(now);
-        int occupied = 0;
-        int parked = 0;
-        Set<Long> seededBatteryIds = new HashSet<>();
 
         List<CabinetEntity> cabinets = cabinetDao.selectList(new LambdaQueryWrapper<CabinetEntity>()
                 .orderByAsc(CabinetEntity::getCabinetNo));
         int cellsPerCabinet = devProperties.getCellsPerCabinet();
+
+        // ---- 阶段一：清场（收敛的前提——先统一脱仓/清引用，再统一绑定） ----
+        // ① 全部电池脱仓、清持有人、回充电态（种子电池随后回满电位）
+        int detached = batteryDao.update(null, new LambdaUpdateWrapper<BatteryEntity>()
+                .set(BatteryEntity::getCellId, null)
+                .set(BatteryEntity::getHolderUserId, null)
+                .set(BatteryEntity::getStatus, BatteryStatus.CHARGING.getCode())
+                .set(BatteryEntity::getUpdateTime, now));
+        // ② 全部柜仓清引用并删仓锁（含种子仓旧引用——旧实现"边扫边脱+绑"在交错引用图上不收敛，
+        //    后序仓的 detach 会打掉前序仓刚建立的一致绑定；全量清场后重绑与输入状态无关）
+        Map<String, CellEntity> cellIndex = new LinkedHashMap<>();
         for (int i = 0; i < cabinets.size(); i++) {
             CabinetEntity cabinet = cabinets.get(i);
             for (int j = 1; j <= cellsPerCabinet; j++) {
@@ -112,53 +124,54 @@ public class DevResetService {
                     continue;
                 }
                 stringRedisTemplate.delete(SwapRedisKeys.CELL_LOCK_PREFIX + cell.getId());
-                if (j <= devProperties.getFullCells()) {
-                    String batteryNo = String.format("BAT-%04d", i * cellsPerCabinet + j);
-                    BatteryEntity battery = batteryDao.selectOne(new LambdaQueryWrapper<BatteryEntity>()
-                            .eq(BatteryEntity::getBatteryNo, batteryNo));
-                    if (battery == null) {
-                        continue;
-                    }
-                    seededBatteryIds.add(battery.getId());
-                    // S5 修复：先脱旧占位（换电剧本残留旧电池占种子仓时，直接绑种子会撞 uk_battery_cell 唯一键）
-                    if (cell.getBatteryId() != null && !cell.getBatteryId().equals(battery.getId())) {
-                        detachBattery(cell.getBatteryId(), now);
-                    }
-                    batteryDao.update(null, new LambdaUpdateWrapper<BatteryEntity>()
-                            .eq(BatteryEntity::getId, battery.getId())
-                            .set(BatteryEntity::getCellId, cell.getId())
-                            .set(BatteryEntity::getHolderUserId, null)
-                            .set(BatteryEntity::getStatus, BatteryStatus.FULL.getCode())
-                            .set(BatteryEntity::getSoc, 100)
-                            .set(BatteryEntity::getUpdateTime, now));
-                    cellDao.update(null, new LambdaUpdateWrapper<CellEntity>()
-                            .eq(CellEntity::getId, cell.getId())
-                            .set(CellEntity::getBatteryId, battery.getId())
-                            .set(CellEntity::getStatus, CellStatus.OCCUPIED.getCode())
-                            .set(CellEntity::getLockOrderId, null)
-                            .set(CellEntity::getUpdateTime, now));
-                    occupied++;
-                } else {
-                    // 空仓分支同样先脱旧占位（防仓空而旧电池 cell_id 悬空 → 对账②误报）
-                    if (cell.getBatteryId() != null) {
-                        detachBattery(cell.getBatteryId(), now);
-                    }
-                    cellDao.update(null, new LambdaUpdateWrapper<CellEntity>()
-                            .eq(CellEntity::getId, cell.getId())
-                            .set(CellEntity::getBatteryId, null)
-                            .set(CellEntity::getStatus, CellStatus.EMPTY.getCode())
-                            .set(CellEntity::getLockOrderId, null)
-                            .set(CellEntity::getUpdateTime, now));
-                }
+                cellDao.update(null, new LambdaUpdateWrapper<CellEntity>()
+                        .eq(CellEntity::getId, cell.getId())
+                        .set(CellEntity::getBatteryId, null)
+                        .set(CellEntity::getStatus, CellStatus.EMPTY.getCode())
+                        .set(CellEntity::getLockOrderId, null)
+                        .set(CellEntity::getUpdateTime, now));
+                cellIndex.put(i + ":" + j, cell);
             }
         }
 
-        // 非种子电池（历史剧本产物/在途）：脱仓、清持有人、置充电态
-        List<BatteryEntity> extras = batteryDao.selectList(new LambdaQueryWrapper<BatteryEntity>()
-                .notIn(!seededBatteryIds.isEmpty(), BatteryEntity::getId, seededBatteryIds));
-        for (BatteryEntity extra : extras) {
-            detachBattery(extra.getId(), now);
-            parked++;
+        // ---- 阶段二：绑定种子（只依赖种子定义，重跑收敛） ----
+        int occupied = 0;
+        List<String> seedMissing = new ArrayList<>();
+        for (int i = 0; i < cabinets.size(); i++) {
+            CabinetEntity cabinet = cabinets.get(i);
+            for (int j = 1; j <= devProperties.getFullCells(); j++) {
+                CellEntity cell = cellIndex.get(i + ":" + j);
+                if (cell == null) {
+                    continue;
+                }
+                String batteryNo = String.format("BAT-%04d", i * cellsPerCabinet + j);
+                BatteryEntity battery = batteryDao.selectOne(new LambdaQueryWrapper<BatteryEntity>()
+                        .eq(BatteryEntity::getBatteryNo, batteryNo));
+                if (battery == null) {
+                    // 种子电池缺失（历史柜/未建种子）：该仓保持空仓并入报告——旧实现此处静默 continue，
+                    // 导致旧引用永不修复（孤儿柜残留根因之一）
+                    seedMissing.add(batteryNo + "@" + cabinet.getCabinetNo() + "#" + j);
+                    continue;
+                }
+                batteryDao.update(null, new LambdaUpdateWrapper<BatteryEntity>()
+                        .eq(BatteryEntity::getId, battery.getId())
+                        .set(BatteryEntity::getCellId, cell.getId())
+                        .set(BatteryEntity::getHolderUserId, null)
+                        .set(BatteryEntity::getStatus, BatteryStatus.FULL.getCode())
+                        .set(BatteryEntity::getSoc, 100)
+                        .set(BatteryEntity::getUpdateTime, now));
+                cellDao.update(null, new LambdaUpdateWrapper<CellEntity>()
+                        .eq(CellEntity::getId, cell.getId())
+                        .set(CellEntity::getBatteryId, battery.getId())
+                        .set(CellEntity::getStatus, CellStatus.OCCUPIED.getCode())
+                        .set(CellEntity::getLockOrderId, null)
+                        .set(CellEntity::getUpdateTime, now));
+                occupied++;
+            }
+        }
+        if (!seedMissing.isEmpty()) {
+            log.warn("[dev-reset] 种子电池缺失 {} 处（对应仓保持空仓；补种子或退役该柜前 reset 无法将其置满）: {}",
+                    seedMissing.size(), seedMissing);
         }
 
         // 资金/套餐恢复播种基线：钱包余额 20000（首个用户押金 0，其余 9900）；次卡剩 5 次
@@ -198,7 +211,8 @@ public class DevResetService {
         result.put("cabinets", cabinets.size());
         result.put("ordersCancelled", cancelled);
         result.put("cellsOccupied", occupied);
-        result.put("extrasParked", parked);
+        result.put("batteriesDetached", detached);
+        result.put("seedMissing", seedMissing);
         result.put("walletsReset", walletsReset);
         result.put("plansReset", plansReset);
         result.put("arrearsCleared", arrearsCleared);
@@ -206,20 +220,10 @@ public class DevResetService {
         result.put("messagesCleared", messagesCleared);
         result.put("statementsCleared", statementsCleared);
         result.put("statementsUnlinked", unlinked);
-        log.warn("[dev-reset] 联调数据已重置 cabinets={} ordersCancelled={} cellsOccupied={} extrasParked={} "
-                        + "walletsReset={} plansReset={}",
-                cabinets.size(), cancelled, occupied, parked, walletsReset, plansReset);
+        log.warn("[dev-reset] 联调数据已重置 cabinets={} ordersCancelled={} cellsOccupied={} batteriesDetached={} "
+                        + "seedMissing={} walletsReset={} plansReset={}",
+                cabinets.size(), cancelled, occupied, detached, seedMissing.size(), walletsReset, plansReset);
         return result;
-    }
-
-    /** 电池脱仓：置充电态、清持有人（重置/清理旧占位共用） */
-    private void detachBattery(Long batteryId, long now) {
-        batteryDao.update(null, new LambdaUpdateWrapper<BatteryEntity>()
-                .eq(BatteryEntity::getId, batteryId)
-                .set(BatteryEntity::getCellId, null)
-                .set(BatteryEntity::getHolderUserId, null)
-                .set(BatteryEntity::getStatus, BatteryStatus.CHARGING.getCode())
-                .set(BatteryEntity::getUpdateTime, now));
     }
 
     private int resetWallets(long now) {

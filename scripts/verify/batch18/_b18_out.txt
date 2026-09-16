@@ -1,0 +1,19 @@
+﻿== batch18: dev-reset convergence (interleaved refs -> reset -> zero residue) ==
+20:11:07 server health=UP
+20:11:07 PASS server up
+20:11:07 reset#1 cabinets=10 occupied=60 detached=61 seedMissing=0
+20:11:07 PASS reset#1 occupied = cabinets x 6
+20:11:07 PASS reset#1 no seed missing
+20:11:08 PASS reset#1 reconcile cell-battery = 0
+20:11:08 interleaved graph built: 1<->6, 6<->4, 4<->5, 5<->1, 2<->2, 3<->3
+20:11:08 PASS interleaved graph consistent (reconcile 0)
+20:11:09 reset#2 occupied=60 seedMissing=0
+20:11:09 fwd=1=BAT-0001,2=BAT-0002,3=BAT-0003,4=BAT-0004,5=BAT-0005,6=BAT-0006
+20:11:09 rev=1=1,2=2,3=3,4=4,5=5,6=6
+20:11:09 PASS C-001 cells reseated exactly (1..6 -> BAT-0001..0006)
+20:11:09 PASS battery backrefs exact (b1..b6 -> cell 1..6)
+20:11:09 PASS reset#2 reconcile cell-battery = 0
+20:11:09 reset#3 occupied=60
+20:11:09 PASS reset#3 occupied stable
+20:11:10 PASS reset#3 reconcile cell-battery = 0
+20:11:10 BATCH18 RESET-CONVERGENCE PASS
