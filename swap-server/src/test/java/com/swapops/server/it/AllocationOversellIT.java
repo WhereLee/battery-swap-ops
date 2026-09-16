@@ -87,6 +87,9 @@ class AllocationOversellIT extends AbstractContainersIT {
         }
         pool.shutdownNow();
 
+        // P0-1 门禁验收探针（临时，验证"IT 失败能红 CI"后即回滚，勿保留）
+        assertThat(true).as("CI-RED-PROBE 故意失败：验证 IT 失败能让 CI 变红").isFalse();
+
         // 1) 恰好库存数成功、无重复授予、其余全部被拒
         assertThat(granted).as("零超卖：成功数 == 库存").hasSize(stock);
         assertThat(granted).extracting(Grant::cellId).doesNotHaveDuplicates();
