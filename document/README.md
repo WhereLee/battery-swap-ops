@@ -46,6 +46,7 @@
 - block-records/批次18-dev复位收敛与台账孤占归零.md（两阶段 reset 收敛修复/T2 孤儿柜退役/batch18 防回归剧本/MQ 环境整备；对账 18→0、全量 378/378）
 - block-records/批次19-P1-10混沌演练与演练驱动缺陷修复.md（混沌 3 剧本 PASS：Redis/MySQL/broker 停机；演练驱动 3 缺陷修复 + workerId 租约稳定化；单测 347/347）
 - block-records/批次20-P1-6可观测性.md（Prometheus 6 业务指标 + 401 鉴权 + traceId 日志 pattern + Grafana 面板 JSON；_c24 9/9 PASS、单测 349/349）
+- block-records/批次21-P1-7参数校验与P1-11告警webhook.md（校验统一 400 + 出站 webhook 签名/重试/熔断/隔离；_c25 13/13、_c26 12/12 PASS、单测 356/356）
 - block-records/2026-09-16-1856-写路径容量模块-交接文档.md（模块暂停交接书；其 §7 执行序已由批次17 收口）
 
 ### knowledge（节选：入口性文档）
@@ -68,12 +69,14 @@
 - pitfalls/graceful-shutdown-jvm-not-exit.md
 - pitfalls/mp-lambda-cache-test-order.md
 - pitfalls/mp-updatebyid-ignores-null.md
-- pitfalls/ps-utf8-bom-and-mojibake.md
+- pitfalls/ps-utf8-bom-and-mojibake.md（PS 5.1 BOM/GBK 坑集；§5 批次21 补"必须断言中文→UTF-8 with BOM"正解 + `-OutFile` StatusCode 坑）
 - pitfalls/spring-wiring-traps-not-covered-by-unit-tests.md
 - pitfalls/dev-reset-nonconvergent-orphans.md（dev reset 不收敛 + 孤儿柜种子缺失 → 台账孤占残留；**已修复·已归零**，批次18）
 - pitfalls/mq-store-rebuild-topic-recovery.md（RocketMQ store 重建后 topic 丢失 + proxy 40014 消息类型校验；已处置·dev 口径）
 - pitfalls/redis-fault-cascade-no-timeout.md（Redis 无超时级联拖死全站；已修复，批次19）
 - pitfalls/redis-data-loss-runtime-consistency.md（Redis 数据回退的运行时一致性三连坑 + 恢复清单；已修复，批次19）
+- pitfalls/micrometer-gauge-weak-ref-flaky.md（Gauge 弱引用 + 测试无强引用 → 全量偶发 NaN；已修复，批次21）
+- pitfalls/ps-function-return-unroll-count.md（PS 函数返回展开：`.Count` 0/1/N 三态假 FAIL/假 PASS；已收敛，批次21）
 
 ### 外部关联（工作区根，不入本仓库）
 - `项目一-换电运营平台-设计备忘.md`（项目定位/架构/分期）

@@ -104,9 +104,22 @@ load 模式附加：`-Xms512m -Xmx512m -Xlog:gc:file=gc.log:time,uptime` + `swap
 - **日志 traceId**：`logging.pattern.console` 已含 `%X{traceId:-}`；HTTP 请求沿用/生成 `X-Trace-Id` 头。
 - 证据：`scripts/verify/batch20/_c24_out.txt`（9/9 PASS）。
 
+### 7.2 告警出站 webhook 接入（P1-11）
+
+- **配置**：`swap.alarm.webhook.url` / `secret`（env `SWAP_ALARM_WEBHOOK_URL` / `SWAP_ALARM_WEBHOOK_SECRET`）。
+  本地联调：`.local/webhook-url.txt` + `.local/webhook-secret.txt`（gitignored，run-server*.bat 已有读取行）；**url 为空=整体禁用**。
+- **事件契约**：POST JSON（告警信封，与 swap-alarm MQ 同构：alarmId/alarmType/deviceType/deviceNo/
+  content/handled/createTime/handledTime/**eventKind**/traceId）；头 `X-Swap-Event: RAISED|HANDLED|RECOVERED`、
+  `X-Swap-Sign: hex(HMAC-SHA256(secret, raw body))`——接收端验签必须用**原始字节**。
+- **投递语义**：尽力而为——单发送线程 + 有界队列 1000（满丢弃计数）；单事件内联重试 3 次（退避 500ms×n）；
+  连续失败 5 次熔断 60s。失败只影响 webhook 自身（告警入库/MQ 出站不受影响，已在 `_c26` 隔离轮实证）。
+- **排障关键词**：服务日志 grep `webhook`——"已投递/发送异常/非 2xx/熔断打开/队列已满"五类；
+  本地验证接收端：`python scripts/verify/batch21/_c26_mock_receiver.py 8490 <events.jsonl> <secret>`（记录含 sign_ok）。
+- 证据：`scripts/verify/batch21/_c26_out.txt`（12/12 PASS；RAISED 22s / RECOVERED 4s / 隔离轮 26s 入库）。
+
 ## 8. 实机剧本
 
-总索引 `scripts/verify/README.md`（29 个剧本 + 容量证据；`_out.txt` 为统计数据，原件归档 diag-archive/）。
+总索引 `scripts/verify/README.md`（31 个剧本 + 容量证据；`_out.txt` 为统计数据，原件归档 diag-archive/）。
 剧本前置 = 中间件 + fast 模式平台 + dual 模拟器（`_g*` 部分只需 http）。
 
 ## 9. 云端部署（2026-09-14 已部署，阶段1）

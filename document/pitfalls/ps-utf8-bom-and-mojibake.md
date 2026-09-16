@@ -31,3 +31,13 @@
 4. **补充实证（2026-09-12，S4.5 `_c9` 剧本）**：无 BOM 的 UTF-8 `.ps1` 中出现中文字面量时，
    PS 5.1 按 ANSI 解码可触发**解析错误**（如"字符串缺少终止符"），且报错行号指向文件末尾、误导排查；
    处置：剧本内所有字面量改英文（本次 `联调套餐`→`E2E-PLAN-`）。这是第 2 条不是洁癖而是硬约束的又一证据。
+5. **补充实证（2026-09-16，批次21 校验剧本）——「必须断言中文」时的正解**：
+   P1-7 断言的就是产品输出的中文消息（"参数校验失败/幂等/订单不存在"），改英文不可行。
+   正解：把 `.ps1` 转存为 **UTF-8 with BOM**（PS 5.1 对有 BOM 文件按 UTF-8 解析，中文安全）：
+   `$c = Get-Content -Raw -Encoding UTF8 $p; [IO.File]::WriteAllText($p, $c, (New-Object Text.UTF8Encoding($true)))`。
+   注意：转换前用 `-Encoding UTF8` 显式读源文件（无 BOM 源按默认读也会乱码二连击）；转后中文断言 13/13 PASS。
+   规则收敛：**英文文案剧本可无 BOM；含中文字面量的 .ps1 一律 UTF-8 with BOM**。
+6. **附属坑（同批次，HTTP 断言）**：PS 5.1 `Invoke-WebRequest -OutFile` 的返回对象 **取不到 `.StatusCode`**
+   （`[int]$null`=0，静默把 200 断成失败）；且默认 `.Content` 对无 charset 的 JSON 按 ANSI 解码，中文断言必乱。
+   正解：`-OutFile` 落盘后用 `Get-Content -Raw -Encoding UTF8` 读 body；状态码在成功分支回退 200
+   （IW 对 4xx/5xx 抛异常已天然分流），失败分支用 `StreamReader(resp.GetResponseStream(), UTF8)` 读错误体。
