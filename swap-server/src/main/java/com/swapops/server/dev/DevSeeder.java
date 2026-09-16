@@ -1,6 +1,7 @@
 package com.swapops.server.dev;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.swapops.contract.BatteryStatus;
 import com.swapops.contract.CabinetStatus;
 import com.swapops.contract.CellStatus;
@@ -138,9 +139,25 @@ public class DevSeeder implements ApplicationRunner {
                         battery.setUpdateTime(now);
                         batteryDao.insert(battery);
                     }
-                    if (cell.getBatteryId() == null) {
-                        cell.setBatteryId(battery.getId());
-                        cellDao.updateById(cell);
+                    // P1-10 混沌发现：仅在"电池确在仓"时补全绑定——旧逻辑只看 cell 侧为空就绑，
+                    // 会把已被用户取走的电池硬绑回仓（cell.battery_id 半写悬挂）；
+                    // 反向自愈：仓引用着种子电池但电池不在仓（历史错绑）→ 解除引用。
+                    boolean batteryInCell = battery.getCellId() != null
+                            && battery.getCellId().equals(cell.getId());
+                    Long boundId = cell.getBatteryId();
+                    if (boundId == null && batteryInCell) {
+                        cellDao.update(null, new LambdaUpdateWrapper<CellEntity>()
+                                .eq(CellEntity::getId, cell.getId())
+                                .set(CellEntity::getBatteryId, battery.getId())
+                                .set(CellEntity::getUpdateTime, now));
+                    } else if (battery.getId().equals(boundId) && !batteryInCell) {
+                        cellDao.update(null, new LambdaUpdateWrapper<CellEntity>()
+                                .eq(CellEntity::getId, cell.getId())
+                                .eq(CellEntity::getBatteryId, battery.getId())
+                                .set(CellEntity::getBatteryId, null)
+                                .set(CellEntity::getStatus, CellStatus.EMPTY.getCode())
+                                .set(CellEntity::getUpdateTime, now));
+                        log.warn("种子自愈：解除错绑 cellNo={} batteryNo={}（电池不在仓）", cell.getCellNo(), batteryNo);
                     }
                 }
             }

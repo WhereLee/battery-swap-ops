@@ -1,0 +1,18 @@
+﻿== batch19 chaos-2: MySQL connection disruption ==
+21:28:56 baseline: health=200 reconcile=0
+21:28:56 baseline login user1 ok
+21:28:56 round#1 killed=7 db connections
+21:28:57 round#2 killed=2 db connections
+21:28:58 round#3 killed=5 db connections
+21:28:59 round#4 killed=5 db connections
+21:28:59 round#5 killed=6 db connections
+21:29:00 probe outcomes: ok=2 err=3 hang=0 maxMs=135
+21:29:00 PASS no hang (all probes returned within timeout)
+21:29:00 PASS process alive (http reachable)
+21:29:00 order try#1 ok: SW93699661734477824
+21:29:00 order numbers seen=1 distinct=1
+21:29:00 PASS order eventually created after disruption
+21:29:00 PASS same Idempotency-Key never yields two orders
+21:29:00 final reconcile=0 (baseline=0)
+21:29:00 PASS reconcile back to baseline
+21:29:00 BATCH19-MYSQL PASS

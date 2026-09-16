@@ -56,19 +56,29 @@ class CommandLogServiceTest {
     }
 
     @Test
-    @DisplayName("nextSeq：Redis INCR 原子递增")
+    @DisplayName("nextSeq：单脚本原子（现值与 DB max 取大 +1），以 DB 为底")
     void nextSeq_原子递增() {
-        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.increment("swap:cmd-seq:SWAP-C-001")).thenReturn(5L);
+        when(commandLogDao.selectMaxSeq("SWAP-C-001")).thenReturn(3L);
+        when(stringRedisTemplate.execute(any(RedisScript.class), anyList(), eq("3"))).thenReturn(5L);
 
         assertThat(service.nextSeq("SWAP-C-001")).isEqualTo(5L);
     }
 
     @Test
+    @DisplayName("nextSeq：Redis 数据回退（现值低于 DB max）→ 传 DB max 为底，杜绝撞唯一索引")
+    void nextSeq_redis回退_以db为底() {
+        when(commandLogDao.selectMaxSeq("SWAP-C-001")).thenReturn(2758L);
+        when(stringRedisTemplate.execute(any(RedisScript.class), anyList(), eq("2758"))).thenReturn(2759L);
+
+        assertThat(service.nextSeq("SWAP-C-001")).isEqualTo(2759L);
+        verify(stringRedisTemplate).execute(any(RedisScript.class), anyList(), eq("2758"));
+    }
+
+    @Test
     @DisplayName("nextSeq：Redis 不可用快速失败（宁可不发也不发重）")
     void nextSeq_redis不可用_失败() {
-        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.increment(anyString())).thenReturn(null);
+        when(commandLogDao.selectMaxSeq(anyString())).thenReturn(0L);
+        when(stringRedisTemplate.execute(any(RedisScript.class), anyList(), anyString())).thenReturn(null);
 
         assertThatThrownBy(() -> service.nextSeq("SWAP-C-001"))
                 .isInstanceOf(RRException.class)

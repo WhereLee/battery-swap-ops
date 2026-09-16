@@ -10,6 +10,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.net.InetAddress;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.UUID;
@@ -39,14 +40,26 @@ public class WorkerIdRegistry {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final Duration leaseTtl;
-    private final String owner = UUID.randomUUID().toString().replace("-", "");
+    /** 稳定实例标识（ip:port，P1-10）：同实例重启/RDB 回退后仍能识别"自己的旧租约"；
+     *  跨机/跨端口冲突语义不变（owner 不同仍拒绝，不静默顶掉）。 */
+    private final String owner;
 
     private volatile Integer leasedWorkerId;
 
     public WorkerIdRegistry(StringRedisTemplate stringRedisTemplate,
-                            @Value("${swap.id.worker-lease-seconds:120}") long leaseSeconds) {
+                            @Value("${swap.id.worker-lease-seconds:120}") long leaseSeconds,
+                            @Value("${server.port:0}") int serverPort) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.leaseTtl = Duration.ofSeconds(leaseSeconds);
+        this.owner = instanceId(serverPort);
+    }
+
+    static String instanceId(int serverPort) {
+        try {
+            return InetAddress.getLocalHost().getHostAddress() + ":" + serverPort;
+        } catch (Exception e) {
+            return "unknown:" + serverPort;
+        }
     }
 
     /** 申请 workerId（0~31 第一个空闲者）；无空闲/Redis 不可用即抛（fail-fast）。
@@ -59,6 +72,15 @@ public class WorkerIdRegistry {
             if (Boolean.TRUE.equals(acquired)) {
                 leasedWorkerId = id;
                 log.info("[ID] workerId 租约获取成功 workerId={} ttl={}s", id, leaseTtl.toSeconds());
+                return id;
+            }
+            // P1-10 混沌修复：键被"本实例"持有（强杀重启未释放 / Redis 回退到本机旧键）→ 直接夺回续期；
+            // 他实例持有（owner 不同）→ 跳过，跨机冲突语义不变。
+            String current = stringRedisTemplate.opsForValue().get(key);
+            if (owner.equals(current)) {
+                stringRedisTemplate.opsForValue().set(key, owner, leaseTtl);
+                leasedWorkerId = id;
+                log.info("[ID] workerId 租约夺回（本实例旧租约）workerId={}", id);
                 return id;
             }
         }

@@ -1,0 +1,21 @@
+﻿== batch19 chaos-3: broker outage ==
+21:29:08 baseline: reconcile=0 alarms=3737 wallet(balance=20000)
+21:29:09 PASS broker running before inject
+21:29:14 injected: broker killed (pid=34616)
+21:29:14 PASS broker down after inject
+21:29:14 PASS user path unaffected by broker outage
+21:29:15 PASS sim running before inject
+21:29:15 sim killed (pid=27228); waiting OFFLINE alarm (heartbeat 30s + scan, budget 80s)
+21:29:40 alarm count 3737 -> 3738 (waited 25s)
+21:29:40 PASS OFFLINE alarm raised while broker down
+21:29:40 outbox: unsent=1 last_error=告警事件发布失败: org.apache.rocketmq.client.java.exception.NotFoundException: [request-
+21:29:40 PASS alarm event persisted in outbox (no loss)
+21:29:46 broker back: True (4s)
+21:29:46 PASS broker restarted
+21:30:12 delivery: sent=1 (waited 25s) last_error_now=NULL
+21:30:12 PASS alarm delivered after broker-only restart (proxy self-reconnect)
+21:30:18 sim back: True (4s)
+21:30:18 PASS sim restarted
+21:30:21 final reconcile=0 (baseline=0)
+21:30:21 PASS reconcile back to baseline
+21:30:21 BATCH19-BROKER PASS

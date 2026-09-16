@@ -1,0 +1,22 @@
+﻿== batch19 chaos-1: Redis outage ==
+21:28:29 baseline: health=200 redis=PONG reconcile=0
+21:28:30 baseline login user1 ok
+21:28:30 PASS redis running before inject
+21:28:32 injected: redis-server killed (pid=27272)
+21:28:34 PASS redis down after inject
+21:28:36 health during outage=http:503 (process-alive probe)
+21:28:36 PASS http layer reachable during redis outage (not conn-refused)
+21:28:38 user order during outage: ERR: 远程服务器返回错误: (500) 内部服务器错误。 (2s)
+21:28:38 PASS user request returned fast (no hang, <=15s)
+21:28:44 admin reconcile during outage=0 (db-path probe)
+21:28:44 PASS db-path (admin reconcile) alive during redis outage
+21:28:45 redis restored: True (1s)
+21:28:45 PASS redis restored
+21:28:47 PASS rebuild-alloc accepted
+21:28:47 post-recovery pre-order reconcile=0 (baseline=0)
+21:28:47 PASS reconcile back to baseline immediately after recovery
+21:28:50 post-recovery order: SW93699618856108032 status=1
+21:28:50 PASS post-recovery order created
+21:28:50 post-recovery reconcile=0 (baseline=0)
+21:28:50 PASS post-recovery reconcile back to baseline
+21:28:50 BATCH19-REDIS PASS

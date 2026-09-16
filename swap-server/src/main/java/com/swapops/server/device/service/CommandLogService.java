@@ -21,8 +21,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 指令流水：Redis INCR 生成柜内单调 seq（跨重启持久）；状态跃迁全部 CAS（from 守卫），
- * 事件按 (cabinetNo,seq) 精确销账——沿用范例语义。
+ * 指令流水：柜内单调 seq（单脚本 GET-取大-SET，DB 历史最大值兜底——跨重启/Redis 回退均单调）；
+ * 状态跃迁全部 CAS（from 守卫），事件按 (cabinetNo,seq) 精确销账——沿用范例语义。
  */
 @Slf4j
 @Service
@@ -37,6 +37,20 @@ public class CommandLogService {
                     + "redis.call('SET', KEYS[1], ARGV[1]) "
                     + "return 1 end "
                     + "return 0",
+            Long.class);
+
+    /**
+     * 生成脚本（P1-10 混沌修复）：GET 现值 → 与 DB 历史最大值取大 → +1 → SET，单脚本原子。
+     * 运行时 Redis 数据回退（旧 dump 被加载）时以 DB 为底，杜绝撞 uk_cabinet_seq。
+     * ARGV[1]=DB max（下限）
+     */
+    private static final RedisScript<Long> NEXT_SEQ_SCRIPT = new DefaultRedisScript<>(
+            "local cur = tonumber(redis.call('GET', KEYS[1]) or '0') "
+                    + "local floor = tonumber(ARGV[1]) "
+                    + "if cur < floor then cur = floor end "
+                    + "local next = cur + 1 "
+                    + "redis.call('SET', KEYS[1], next) "
+                    + "return next",
             Long.class);
 
     private final CommandLogDao commandLogDao;
@@ -76,9 +90,12 @@ public class CommandLogService {
         }
     }
 
-    /** 柜内单调指令序号（Redis INCR；不可用即快速失败——宁可不发也不发重） */
+    /** 柜内单调指令序号：单脚本原子（现值与 DB max 取大后 +1）；Redis 不可用即快速失败——宁可不发也不发重 */
     public long nextSeq(String cabinetNo) {
-        Long seq = stringRedisTemplate.opsForValue().increment(SwapRedisKeys.CMD_SEQ_PREFIX + cabinetNo);
+        Long dbMax = commandLogDao.selectMaxSeq(cabinetNo);
+        long floor = dbMax == null ? 0L : dbMax;
+        Long seq = stringRedisTemplate.execute(NEXT_SEQ_SCRIPT,
+                Collections.singletonList(SwapRedisKeys.CMD_SEQ_PREFIX + cabinetNo), String.valueOf(floor));
         if (seq == null) {
             throw new RRException("指令序号生成失败(Redis 不可用): " + cabinetNo);
         }

@@ -36,7 +36,7 @@ class WorkerIdRegistryTest {
 
     @BeforeEach
     void setUp() {
-        registry = new WorkerIdRegistry(redis, 120);
+        registry = new WorkerIdRegistry(redis, 120, 8400);
         when(redis.opsForValue()).thenReturn(valueOps);
     }
 
@@ -58,6 +58,28 @@ class WorkerIdRegistryTest {
         assertThatThrownBy(() -> registry.lease())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("已用尽");
+    }
+
+    @Test
+    @DisplayName("P1-10：worker0 键 owner 为本实例（重启未释放/Redis 回退）→ 夺回而非跳过")
+    void 夺回本实例旧租约() {
+        String owner = WorkerIdRegistry.instanceId(8400);
+        when(valueOps.setIfAbsent(eq("swap:id:worker:0"), anyString(), any(Duration.class))).thenReturn(false);
+        when(valueOps.get("swap:id:worker:0")).thenReturn(owner);
+
+        assertThat(registry.lease()).isEqualTo(0);
+        assertThat(registry.leasedWorkerId()).isEqualTo(0);
+        org.mockito.Mockito.verify(valueOps).set(eq("swap:id:worker:0"), eq(owner), any(Duration.class));
+    }
+
+    @Test
+    @DisplayName("P1-10：worker0 键 owner 为其他实例 → 不夺回，取下一个空闲")
+    void 不夺他实例租约() {
+        when(valueOps.setIfAbsent(eq("swap:id:worker:0"), anyString(), any(Duration.class))).thenReturn(false);
+        when(valueOps.get("swap:id:worker:0")).thenReturn("10.0.0.9:8400");
+        when(valueOps.setIfAbsent(eq("swap:id:worker:1"), anyString(), any(Duration.class))).thenReturn(true);
+
+        assertThat(registry.lease()).isEqualTo(1);
     }
 
     @Test

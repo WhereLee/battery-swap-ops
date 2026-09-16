@@ -46,6 +46,10 @@ spring:
       host: 127.0.0.1
       port: 6379
       database: 0
+      # P1-10 混沌发现：Redis 故障必须快速失败——默认 Lettuce command timeout 60s
+      # 会把调度/请求线程池拖死（HTTP 层 CONN_REFUSED），故障面从"Redis 依赖功能"扩散为"全站瘫痪"
+      connect-timeout: 1s
+      timeout: 2s
 
 resilience4j:
   # S3.8 WP3：设备下行护栏（程序化使用，配置驱动）
