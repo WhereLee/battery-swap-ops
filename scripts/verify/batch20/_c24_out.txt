@@ -1,19 +1,19 @@
 ﻿== batch20: P1-6 metrics ==
-21:42:59 health -> 200
-21:42:59 PASS health public (200)
-21:42:59 prometheus without token -> 401
-21:42:59 PASS prometheus protected (401 without token)
-21:43:00 prometheus body bytes: 61480
-21:43:00 metric found: swap_outbox_backlog @ 
-21:43:00 metric found: swap_outbox_dead @ 
-21:43:00 metric found: swap_alarm_unhandled @ 
-21:43:00 metric found: swap_delay_backlog @ 
-21:43:00 metric found: swap_reconcile_violations @ 
-21:43:00 metric found: swap_alloc_available @ 
-21:43:00 PASS 6 business metrics exposed
-21:43:00 PASS jvm metric exposed
-21:43:00 PASS hikari metric exposed
-21:43:00 PASS http server metric exposed
-21:43:02 traceId hits in log: 1 (trace=b20trace214300)
-21:43:02 PASS traceId appears in log text (pattern wired)
-21:43:02 BATCH20-METRICS PASS
+22:52:40 health -> 200
+22:52:40 PASS health public (200)
+22:52:40 prometheus without token -> 401
+22:52:40 PASS prometheus protected (401 without token)
+22:52:41 prometheus body bytes: 72938
+22:52:41 metric found: swap_outbox_backlog @ 
+22:52:41 metric found: swap_outbox_dead @ 
+22:52:41 metric found: swap_alarm_unhandled @ 
+22:52:41 metric found: swap_delay_backlog @ 
+22:52:41 metric found: swap_reconcile_violations @ 
+22:52:41 metric found: swap_alloc_available @ 
+22:52:41 PASS 6 business metrics exposed
+22:52:41 PASS jvm metric exposed
+22:52:41 PASS hikari metric exposed
+22:52:41 PASS http server metric exposed
+22:52:43 traceId hits in log: 1 (trace=b20trace225241)
+22:52:43 PASS traceId appears in log text (pattern wired)
+22:52:43 BATCH20-METRICS PASS

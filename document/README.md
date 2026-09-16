@@ -47,13 +47,14 @@
 - block-records/批次19-P1-10混沌演练与演练驱动缺陷修复.md（混沌 3 剧本 PASS：Redis/MySQL/broker 停机；演练驱动 3 缺陷修复 + workerId 租约稳定化；单测 347/347）
 - block-records/批次20-P1-6可观测性.md（Prometheus 6 业务指标 + 401 鉴权 + traceId 日志 pattern + Grafana 面板 JSON；_c24 9/9 PASS、单测 349/349）
 - block-records/批次21-P1-7参数校验与P1-11告警webhook.md（校验统一 400 + 出站 webhook 签名/重试/熔断/隔离；_c25 13/13、_c26 12/12 PASS、单测 356/356）
+- block-records/批次22-P1-8数据权限.md（DataFilter：按站点隔离的管理端数据范围——六类列表过滤 + 资源级 403 + fail-closed + 自检切面；_c27 24/24 PASS、单测 371/371）
 - block-records/2026-09-16-1856-写路径容量模块-交接文档.md（模块暂停交接书；其 §7 执行序已由批次17 收口）
 
 ### knowledge（节选：入口性文档）
 - knowledge/architecture.md（架构全景/组件机制/安全资金边界/部署形态）
 - knowledge/runbook.md（中间件/启动器矩阵/通道矩阵/排障索引/云端占位）
 - knowledge/ops-troubleshooting.md（慢 SQL 治理 + 8 类边界极限故障预案，S5 运维审查）
-- knowledge/rbac-and-audit.md（管理端身份/权限/审计：角色矩阵、break-glass、覆盖性守卫，S7 WP-A）
+- knowledge/rbac-and-audit.md（管理端身份/权限/审计：角色矩阵、break-glass、覆盖性守卫 + P1-8 数据范围（站点隔离）；S7 WP-A）
 - knowledge/channel-recon.md（渠道对账 T+1：模型/流程/差异分类/证据/边界，S7 WP-C）
 - knowledge/user-service-and-coupon.md（报障/欠费/券/站内信：状态机、分账口径、证据，S7 WP-D）
 - knowledge/agent-settlement.md（代理分润结算：基数口径/冲正/结算单/守恒，S7 WP-B）
@@ -76,7 +77,7 @@
 - pitfalls/redis-fault-cascade-no-timeout.md（Redis 无超时级联拖死全站；已修复，批次19）
 - pitfalls/redis-data-loss-runtime-consistency.md（Redis 数据回退的运行时一致性三连坑 + 恢复清单；已修复，批次19）
 - pitfalls/micrometer-gauge-weak-ref-flaky.md（Gauge 弱引用 + 测试无强引用 → 全量偶发 NaN；已修复，批次21）
-- pitfalls/ps-function-return-unroll-count.md（PS 函数返回展开：`.Count` 0/1/N 三态假 FAIL/假 PASS；已收敛，批次21）
+- pitfalls/ps-function-return-unroll-count.md（PS 函数返回展开：`.Count` 0/1/N 三态假 FAIL/假 PASS；批次21 收敛、批次22 剧本再现并改为调用处 `@()` 全量覆盖）
 
 ### 外部关联（工作区根，不入本仓库）
 - `项目一-换电运营平台-设计备忘.md`（项目定位/架构/分期）

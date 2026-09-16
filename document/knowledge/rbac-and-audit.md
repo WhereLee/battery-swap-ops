@@ -43,16 +43,32 @@
 | 建议单 confirmer/proposer | 客户端传参 | 服务端上下文（proposer 不再可伪造） |
 | 退款单 operator | 无列 | `refund_record.operator_id/operator_name`（补偿通道为 null） |
 
-## 5. 证据
+## 5. 数据范围（P1-8，按站点隔离）
+
+- 模型：角色（能干什么）× 数据范围（能看谁的数据）正交；`admin_user.data_scope` = ALL（缺省）/ STATION，
+  STATION 时 `scope_station_nos` 逗号分隔站点编号（创建时校验存在，防"配了不存在的站→静默无数据"）；
+- 身份化：登录期解析为站点 id 集入 `AdminContext.Principal`；**fail-closed**——解析异常/空配置=空集=不见任何数据；
+- 注入点：`DataScopeSupport.applyStation/applyIds`（类型安全的 `.in()`/`.eq()`，不拼 SQL）；
+  两级解析 `站点→柜 id 集→仓 id 集`覆盖 cell/battery；空集→`eq(列,-1)` 恒假；
+- 资源级：详情（柜实况/电池健康/订单详情）+ 状态运维 + 登记 CRUD 越域一律 403；
+  无站点归属操作（新建站点/在途电池登记）对受限身份 403；
+- 看板：受限身份**绕全局缓存直算**本域口径（不读也不污染全局聚合）；
+- 自检：`@DataFilter` 标记 8 个查询端点 + `DataFilterAspect` 旁路告警（受限身份进入标注端点却从未 apply 时记 warn），
+  防未来新增查询漏接；实测 0 告警；
+- 覆盖边界：资产域（站/柜/仓/电池）+ 订单 + 看板；告警/工单/资金/结算未按站隔离（无站点维度或总部角色使用）。
+
+## 6. 证据
 
 - 单测：`AdminRoleTest`（矩阵边界）、`AdminSecretsTest`、`AdminAuthServiceTest`、`AdminAuthFilterTest`、
-  `AdminLogAspectTest`（脱敏/失败留痕）、`AdminEndpointGuardTest`（覆盖性守卫）；
+  `AdminLogAspectTest`（脱敏/失败留痕）、`AdminEndpointGuardTest`（覆盖性守卫）、`DataScopeSupportTest`（数据范围三态）、
+  `AdminAccountServiceTest`（范围字段校验）；
 - 实机剧本：`scripts/verify/batch10/_c17_rbac.ps1`——18/18 PASS（未认证 401 / 三角色矩阵 403·200 /
-  审计真实身份 / 登出吊销 / break-glass 存活）；
-- 回归：`_c16`（旧脚本零改动，静态 token 走 break-glass）16/16 PASS。
+  审计真实身份 / 登出吊销 / break-glass 存活）；`scripts/verify/batch22/_c27_data_scope.ps1`——24/24 PASS
+  （域内可见/域外 403/写入 403/无副作用）；
+- 回归：`_c16`（旧脚本零改动，静态 token 走 break-glass）16/16 PASS；`_c24`（指标）9/9 PASS（批22 同轮）。
 
-## 6. 取舍与边界
+## 7. 取舍与边界
 
-- 数据权限（按站点/网点过滤管理员可见范围）未做——壳子 `DataFilterAspect` 模式留档，后置；
 - 动态菜单/按钮级权限未做（无前端）；管理员令牌不可被 SUPER 强制吊销（可停用账号即时生效）；
-- 登录失败仅审计+限流，无账号锁定（撞库防护依赖 IP 限流；可后置 LoginAttemptGuard 同壳子）。
+- 登录失败仅审计+限流，无账号锁定（撞库防护依赖 IP 限流；可后置 LoginAttemptGuard 同壳子）；
+- 数据范围是登录期快照（会话期内改配置需重新登录生效）；未做"创建者"行级维度与可视化配置界面。
