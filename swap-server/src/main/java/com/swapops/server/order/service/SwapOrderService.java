@@ -323,18 +323,20 @@ public class SwapOrderService {
         return closed;
     }
 
-    /** 管理端订单分页（A6；只读运营视角） */
+    /** 管理端订单分页（A6；只读运营视角；P1-8：受数据范围约束时按站点过滤） */
     public com.swapops.server.common.utils.PageResult<SwapOrderEntity> pageOrders(
             Integer page, Integer limit, Long userId, Integer status, String orderNo) {
         int pageNum = com.swapops.server.common.utils.PageParams.page(page);
         int size = com.swapops.server.common.utils.PageParams.limit(limit);
+        LambdaQueryWrapper<SwapOrderEntity> wrapper = new LambdaQueryWrapper<SwapOrderEntity>()
+                .eq(userId != null, SwapOrderEntity::getUserId, userId)
+                .eq(status != null, SwapOrderEntity::getStatus, status)
+                .like(StringUtils.isNotBlank(orderNo), SwapOrderEntity::getOrderNo, orderNo)
+                .orderByDesc(SwapOrderEntity::getCreateTime);
+        com.swapops.server.admin.data.DataScopeSupport.applyStation(wrapper, SwapOrderEntity::getStationId);
         com.baomidou.mybatisplus.core.metadata.IPage<SwapOrderEntity> result = orderDao.selectPage(
                 new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(pageNum, size),
-                new LambdaQueryWrapper<SwapOrderEntity>()
-                        .eq(userId != null, SwapOrderEntity::getUserId, userId)
-                        .eq(status != null, SwapOrderEntity::getStatus, status)
-                        .like(StringUtils.isNotBlank(orderNo), SwapOrderEntity::getOrderNo, orderNo)
-                        .orderByDesc(SwapOrderEntity::getCreateTime));
+                wrapper);
         return com.swapops.server.common.utils.PageResult.of(result);
     }
 

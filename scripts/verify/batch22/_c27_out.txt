@@ -1,0 +1,28 @@
+﻿== batch22: P1-8 data scope (station-scoped admin) ==
+22:58:38 PASS 0 server healthy
+22:58:38 PASS 1 bootstrap station list has ST-001/ST-002
+22:58:38 PASS 2 bootstrap cabinet list has SWAP-C-009
+22:58:38 PASS 3 bootstrap sees more than scoped domain (stations/cabinets)
+22:58:38 account create returned status=400 msg= (assume exists -> reuse)
+22:58:38 PASS 4 scoped account ready (created or existing)
+22:58:38 PASS 5 STATION without stationNos -> 400
+22:58:38 PASS 6 STATION with unknown station -> 400
+22:58:38 PASS 7 invalid dataScope -> 400
+22:58:38 PASS 8 scoped login ok (32-hex session token)
+22:58:38 PASS 9 scoped station list == 1 (ST-002)
+22:58:38 PASS 10 scoped cabinet list == 1 (SWAP-C-009)
+22:58:38 PASS 11 scoped cell list all in C-009 (count == cellCount)
+22:58:38 PASS 12 scoped battery list all in scoped cells (non-empty)
+22:58:40 PASS 13 scoped order list all ST-002 (0 < count < global)
+22:58:40 PASS 14 scoped dashboard totalStations == 1
+22:58:40 PASS 15 cabinetState in-scope 200 / out-of-scope 403
+22:58:40 PASS 16 batteryHealth in-scope 200 / out-of-scope 403
+22:58:40 PASS 17 order detail in-scope 200 / out-of-scope 403
+22:58:40 PASS 18 cross-domain cabinet status write -> 403
+22:58:40 PASS 19 cross-domain station status write -> 403
+22:58:40 PASS 20 create station -> 403 (no station home for scoped identity)
+22:58:40 PASS 21 create cabinet in other station -> 403
+22:58:40 PASS 22 create battery without cell (no home) -> 403
+22:58:41 PASS 23 in-scope cabinet status round-trip (4 then 1) -> 200/200
+22:58:41 PASS 24 rejected writes left no rows (station/cabinet)
+22:58:41 == summary: fail=0 ==

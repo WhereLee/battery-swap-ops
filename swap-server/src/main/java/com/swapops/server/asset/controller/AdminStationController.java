@@ -1,6 +1,7 @@
 package com.swapops.server.asset.controller;
 
 import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.annotation.DataFilter;
 import com.swapops.server.admin.enums.AdminRole;
 import com.swapops.server.admin.security.AdminContext;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -34,6 +35,7 @@ public class AdminStationController {
 
     @GetMapping
         @PreAuthorize("hasAuthority('admin:asset:read')")
+    @DataFilter("station-list")
     public Result<PageResult<StationEntity>> page(@RequestParam(required = false) Integer page,
                                                   @RequestParam(required = false) Integer limit,
                                                   @RequestParam(required = false) Integer status) {

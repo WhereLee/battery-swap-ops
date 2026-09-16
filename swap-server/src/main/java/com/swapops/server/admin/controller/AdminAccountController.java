@@ -43,7 +43,7 @@ public class AdminAccountController {
     @AdminLog("ADMIN_CREATE")
     public Result<AdminUserEntity> create(@RequestBody AdminCreateForm form) {
         return Result.ok(adminAccountService.create(form.getUsername(), form.getPassword(),
-                form.getRealName(), form.getRole()));
+                form.getRealName(), form.getRole(), form.getDataScope(), form.getScopeStationNos()));
     }
 
     @PostMapping("/{id}/status")
@@ -62,12 +62,14 @@ public class AdminAccountController {
         return Result.ok(adminAccountService.pageLogs(page, limit, adminId, action));
     }
 
-    /** 创建表单（仅本控制器使用；密码不落响应） */
+    /** 创建表单（仅本控制器使用；密码不落响应；P1-8：可指定数据范围 ALL/STATION + 站点编号列表） */
     public static class AdminCreateForm {
         private String username;
         private String password;
         private String realName;
         private String role;
+        private String dataScope;
+        private String scopeStationNos;
 
         public String getUsername() {
             return username;
@@ -99,6 +101,22 @@ public class AdminAccountController {
 
         public void setRole(String role) {
             this.role = role;
+        }
+
+        public String getDataScope() {
+            return dataScope;
+        }
+
+        public void setDataScope(String dataScope) {
+            this.dataScope = dataScope;
+        }
+
+        public String getScopeStationNos() {
+            return scopeStationNos;
+        }
+
+        public void setScopeStationNos(String scopeStationNos) {
+            this.scopeStationNos = scopeStationNos;
         }
     }
 }

@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.swapops.contract.BatteryStatus;
 import com.swapops.contract.CabinetStatus;
 import com.swapops.contract.CellStatus;
+import com.swapops.server.admin.data.DataScopeSupport;
 import com.swapops.server.asset.dao.StationDao;
 import com.swapops.server.asset.entity.StationEntity;
 import com.swapops.server.asset.form.BatteryAdminForm;
@@ -98,6 +99,7 @@ public class AssetAdminService {
         if (battery == null) {
             throw new RRException("电池不存在: " + batteryNo);
         }
+        requireBatteryScope(battery); // P1-8：资源级越域 403
         int soh = battery.getSoh() == null ? 100 : battery.getSoh();
         String level = soh >= batteryHealthProperties.getSohGoodThreshold() ? "GOOD"
                 : soh >= batteryHealthProperties.getSohFairThreshold() ? "FAIR" : "POOR";
@@ -120,6 +122,7 @@ public class AssetAdminService {
     // ---------- 站点登记（S4.5 批二） ----------
 
     public StationEntity createStation(StationAdminForm form) {
+        DataScopeSupport.requireUnrestricted("创建站点"); // P1-8：新站点无既有归属，受限身份禁止
         String stationNo = requirePattern(form.getStationNo(), "站点编号", ASSET_NO_PATTERN);
         if (stationDao.selectOne(new LambdaQueryWrapper<StationEntity>()
                 .eq(StationEntity::getStationNo, stationNo)) != null) {
@@ -143,6 +146,7 @@ public class AssetAdminService {
 
     public StationEntity updateStation(Long id, StationAdminForm form) {
         StationEntity station = requireStation(id);
+        DataScopeSupport.requireStationAccess(id); // P1-8：资源级越域 403
         if (form.getStationNo() != null && !form.getStationNo().isBlank()
                 && !station.getStationNo().equals(form.getStationNo().trim())) {
             throw new RRException("站点编号不可变更: " + station.getStationNo());
@@ -178,6 +182,7 @@ public class AssetAdminService {
 
     public void deleteStation(Long id) {
         StationEntity station = requireStation(id);
+        DataScopeSupport.requireStationAccess(id); // P1-8：资源级越域 403
         Long cabinets = cabinetDao.selectCount(new LambdaQueryWrapper<CabinetEntity>()
                 .eq(CabinetEntity::getStationId, id));
         if (cabinets != null && cabinets > 0) {
@@ -221,6 +226,7 @@ public class AssetAdminService {
             throw new RRException("柜编号已存在: " + cabinetNo);
         }
         StationEntity station = requireStation(form.getStationId());
+        DataScopeSupport.requireStationAccess(station.getId()); // P1-8：受限身份只能在本域建柜
         int cellCount = requireCellCount(form.getCellCount());
         String secret = requirePattern(form.getSecret(), "设备密钥", SECRET_PATTERN);
         long now = System.currentTimeMillis();
@@ -252,8 +258,10 @@ public class AssetAdminService {
         if (cabinet == null) {
             throw new RRException("柜不存在: " + id);
         }
+        DataScopeSupport.requireStationAccess(cabinet.getStationId()); // P1-8：资源级越域 403
         if (form.getStationId() != null && !form.getStationId().equals(cabinet.getStationId())) {
             StationEntity station = requireStation(form.getStationId());
+            DataScopeSupport.requireStationAccess(station.getId()); // P1-8：迁入站点也须在本域
             cabinet.setStationId(station.getId());
         }
         if (form.getSecret() != null && !form.getSecret().isBlank()) {
@@ -275,6 +283,7 @@ public class AssetAdminService {
         if (cabinet == null) {
             throw new RRException("柜不存在: " + id);
         }
+        DataScopeSupport.requireStationAccess(cabinet.getStationId()); // P1-8：资源级越域 403
         List<CellEntity> cells = cellDao.selectList(new LambdaQueryWrapper<CellEntity>()
                 .eq(CellEntity::getCabinetId, id));
         for (CellEntity cell : cells) {
@@ -357,6 +366,7 @@ public class AssetAdminService {
         battery.setUpdateTime(now);
         if (form.getCellId() != null) {
             CellEntity cell = requireEmptyCell(form.getCellId());
+            requireCellScope(cell); // P1-8：受限身份只能登记到本域仓位
             battery.setCellId(cell.getId());
             battery.setStatus(soc >= properties.getSocFullThreshold()
                     ? BatteryStatus.FULL.getCode() : BatteryStatus.CHARGING.getCode());
@@ -367,6 +377,7 @@ public class AssetAdminService {
                     .set(CellEntity::getStatus, CellStatus.OCCUPIED.getCode())
                     .set(CellEntity::getUpdateTime, now));
         } else {
+            DataScopeSupport.requireUnrestricted("登记无归属电池（未指定仓位）"); // P1-8
             battery.setCellId(null);
             battery.setStatus(BatteryStatus.CHARGING.getCode());
             batteryDao.insert(battery);
@@ -386,6 +397,7 @@ public class AssetAdminService {
         if (battery.getHolderUserId() != null) {
             throw new RRException("电池在用户手中，请走归还流程后再编辑: " + batteryNo);
         }
+        requireBatteryScope(battery); // P1-8：资源级越域 403
         long now = System.currentTimeMillis();
         if (form.getModel() != null && !form.getModel().isBlank()) {
             battery.setModel(requireOptionalText(form.getModel(), "电池型号", 32));
@@ -444,6 +456,7 @@ public class AssetAdminService {
         if (battery.getCellId() != null || battery.getHolderUserId() != null) {
             throw new RRException("仅在途且无持有人的电池可删除: " + batteryNo);
         }
+        requireBatteryScope(battery); // P1-8：在途电池无站点归属，受限身份 403（fail-closed）
         Long refs = orderDao.selectCount(new LambdaQueryWrapper<SwapOrderEntity>()
                 .and(w -> w.eq(SwapOrderEntity::getTakeBatteryId, battery.getId())
                         .or().eq(SwapOrderEntity::getReturnBatteryId, battery.getId())));
@@ -460,6 +473,7 @@ public class AssetAdminService {
             return;
         }
         CellEntity target = requireEmptyCell(cellId);
+        requireCellScope(target); // P1-8：迁入仓也须在本域
         if (battery.getCellId() != null) {
             requireUnlockedSourceCell(battery.getCellId(), battery.getBatteryNo());
             clearCell(battery.getCellId(), now);
@@ -545,17 +559,20 @@ public class AssetAdminService {
     public PageResult<StationEntity> pageStations(Integer page, Integer limit, Integer status) {
         int pageNum = PageParams.page(page);
         int size = PageParams.limit(limit);
-        IPage<StationEntity> result = stationDao.selectPage(new Page<>(pageNum, size),
-                new LambdaQueryWrapper<StationEntity>()
-                        .eq(status != null, StationEntity::getStatus, status)
-                        .orderByAsc(StationEntity::getId));
+        LambdaQueryWrapper<StationEntity> wrapper = new LambdaQueryWrapper<StationEntity>()
+                .eq(status != null, StationEntity::getStatus, status)
+                .orderByAsc(StationEntity::getId);
+        DataScopeSupport.applyStation(wrapper, StationEntity::getId); // P1-8：站点范围过滤
+        IPage<StationEntity> result = stationDao.selectPage(new Page<>(pageNum, size), wrapper);
         return PageResult.of(result);
     }
 
     /** 站点归属视图（含代理名；管理端列表用） */
     public java.util.List<java.util.Map<String, Object>> listStationsWithAgent() {
-        java.util.List<StationEntity> stations = stationDao.selectList(
-                new LambdaQueryWrapper<StationEntity>().orderByAsc(StationEntity::getId).last("LIMIT 200"));
+        LambdaQueryWrapper<StationEntity> wrapper = new LambdaQueryWrapper<StationEntity>()
+                .orderByAsc(StationEntity::getId).last("LIMIT 200");
+        DataScopeSupport.applyStation(wrapper, StationEntity::getId); // P1-8：站点范围过滤
+        java.util.List<StationEntity> stations = stationDao.selectList(wrapper);
         java.util.List<java.util.Map<String, Object>> views = new java.util.ArrayList<>();
         for (StationEntity station : stations) {
             java.util.Map<String, Object> view = new java.util.LinkedHashMap<>();
@@ -585,6 +602,7 @@ public class AssetAdminService {
         if (station == null) {
             throw new RRException("站点不存在: " + id);
         }
+        DataScopeSupport.requireStationAccess(id); // P1-8：资源级越域 403
         stationDao.update(null, new LambdaUpdateWrapper<StationEntity>()
                 .eq(StationEntity::getId, id)
                 .set(StationEntity::getStatus, status)
@@ -600,12 +618,13 @@ public class AssetAdminService {
                                                   Integer status, String cabinetNo) {
         int pageNum = PageParams.page(page);
         int size = PageParams.limit(limit);
-        IPage<CabinetEntity> result = cabinetDao.selectPage(new Page<>(pageNum, size),
-                new LambdaQueryWrapper<CabinetEntity>()
-                        .eq(stationId != null, CabinetEntity::getStationId, stationId)
-                        .eq(status != null, CabinetEntity::getStatus, status)
-                        .like(cabinetNo != null && !cabinetNo.isBlank(), CabinetEntity::getCabinetNo, cabinetNo)
-                        .orderByAsc(CabinetEntity::getId));
+        LambdaQueryWrapper<CabinetEntity> wrapper = new LambdaQueryWrapper<CabinetEntity>()
+                .eq(stationId != null, CabinetEntity::getStationId, stationId)
+                .eq(status != null, CabinetEntity::getStatus, status)
+                .like(cabinetNo != null && !cabinetNo.isBlank(), CabinetEntity::getCabinetNo, cabinetNo)
+                .orderByAsc(CabinetEntity::getId);
+        DataScopeSupport.applyStation(wrapper, CabinetEntity::getStationId); // P1-8：站点范围过滤
+        IPage<CabinetEntity> result = cabinetDao.selectPage(new Page<>(pageNum, size), wrapper);
         // S5 云部署冒烟暴露：分页此前明文返回柜密钥——列表一律脱敏（密钥仅在设备注册/更新时单向写入）
         result.getRecords().forEach(cabinet -> cabinet.setSecret(null));
         return PageResult.of(result);
@@ -614,6 +633,7 @@ public class AssetAdminService {
     /** 柜实况：档案 + 仓/电池快照 + 在线态（运维排障入口） */
     public Map<String, Object> cabinetState(String cabinetNo) {
         CabinetEntity cabinet = requireCabinet(cabinetNo);
+        DataScopeSupport.requireStationAccess(cabinet.getStationId()); // P1-8：资源级越域 403
         List<CellEntity> cells = cellDao.selectList(new LambdaQueryWrapper<CellEntity>()
                 .eq(CellEntity::getCabinetId, cabinet.getId())
                 .orderByAsc(CellEntity::getCellNo));
@@ -647,7 +667,8 @@ public class AssetAdminService {
 
     public void updateCabinetStatus(String cabinetNo, Integer status) {
         requireIn(status, CABINET_ADMIN_STATUS, "柜状态可选 1 在线 / 4 维护 / 5 停用");
-        requireCabinet(cabinetNo);
+        CabinetEntity cabinet = requireCabinet(cabinetNo);
+        DataScopeSupport.requireStationAccess(cabinet.getStationId()); // P1-8：资源级越域 403
         cabinetDao.update(null, new LambdaUpdateWrapper<CabinetEntity>()
                 .eq(CabinetEntity::getCabinetNo, cabinetNo)
                 .set(CabinetEntity::getStatus, status)
@@ -662,11 +683,13 @@ public class AssetAdminService {
         int pageNum = PageParams.page(page);
         int size = PageParams.limit(limit);
         Long cabinetId = cabinetNo == null || cabinetNo.isBlank() ? null : requireCabinet(cabinetNo).getId();
-        IPage<CellEntity> result = cellDao.selectPage(new Page<>(pageNum, size),
-                new LambdaQueryWrapper<CellEntity>()
-                        .eq(cabinetId != null, CellEntity::getCabinetId, cabinetId)
-                        .eq(status != null, CellEntity::getStatus, status)
-                        .orderByAsc(CellEntity::getCabinetId).orderByAsc(CellEntity::getCellNo));
+        LambdaQueryWrapper<CellEntity> wrapper = new LambdaQueryWrapper<CellEntity>()
+                .eq(cabinetId != null, CellEntity::getCabinetId, cabinetId)
+                .eq(status != null, CellEntity::getStatus, status)
+                .orderByAsc(CellEntity::getCabinetId).orderByAsc(CellEntity::getCellNo);
+        DataScopeSupport.applyIds(wrapper, CellEntity::getCabinetId,
+                DataScopeSupport.cabinetIdsOrNull(cabinetDao)); // P1-8：站点范围 → 柜 id 集过滤
+        IPage<CellEntity> result = cellDao.selectPage(new Page<>(pageNum, size), wrapper);
         return PageResult.of(result);
     }
 
@@ -680,6 +703,7 @@ public class AssetAdminService {
         if (cell == null) {
             throw new RRException("仓不存在: " + cellId);
         }
+        requireCellScope(cell); // P1-8：资源级越域 403
         int target;
         if (status == 0) {
             target = cell.getBatteryId() == null ? CellStatus.EMPTY.getCode() : CellStatus.OCCUPIED.getCode();
@@ -699,11 +723,13 @@ public class AssetAdminService {
     public PageResult<BatteryEntity> pageBatteries(Integer page, Integer limit, Integer status, String batteryNo) {
         int pageNum = PageParams.page(page);
         int size = PageParams.limit(limit);
-        IPage<BatteryEntity> result = batteryDao.selectPage(new Page<>(pageNum, size),
-                new LambdaQueryWrapper<BatteryEntity>()
-                        .eq(status != null, BatteryEntity::getStatus, status)
-                        .like(batteryNo != null && !batteryNo.isBlank(), BatteryEntity::getBatteryNo, batteryNo)
-                        .orderByAsc(BatteryEntity::getId));
+        LambdaQueryWrapper<BatteryEntity> wrapper = new LambdaQueryWrapper<BatteryEntity>()
+                .eq(status != null, BatteryEntity::getStatus, status)
+                .like(batteryNo != null && !batteryNo.isBlank(), BatteryEntity::getBatteryNo, batteryNo)
+                .orderByAsc(BatteryEntity::getId);
+        DataScopeSupport.applyIds(wrapper, BatteryEntity::getCellId,
+                DataScopeSupport.cellIdsOrNull(cabinetDao, cellDao)); // P1-8：站点范围 → 仓 id 集过滤
+        IPage<BatteryEntity> result = batteryDao.selectPage(new Page<>(pageNum, size), wrapper);
         return PageResult.of(result);
     }
 
@@ -719,6 +745,7 @@ public class AssetAdminService {
         if (battery == null) {
             throw new RRException("电池不存在: " + batteryNo);
         }
+        requireBatteryScope(battery); // P1-8：资源级越域 403
         int target;
         if (status == 0) {
             if (battery.getCellId() == null) {
@@ -771,6 +798,24 @@ public class AssetAdminService {
             throw new RRException("柜不存在: " + cabinetNo);
         }
         return cabinet;
+    }
+
+    // ---------- 数据范围（P1-8） ----------
+
+    /** 仓 → 柜 → 站链解析：受限身份越域 403（链条缺失视为无归属） */
+    private void requireCellScope(CellEntity cell) {
+        CabinetEntity cabinet = cell == null || cell.getCabinetId() == null
+                ? null : cabinetDao.selectById(cell.getCabinetId());
+        DataScopeSupport.requireStationAccess(cabinet == null ? null : cabinet.getStationId());
+    }
+
+    /** 电池 → 仓 → 柜 → 站链解析：在途/无归属电池对受限身份 403（fail-closed） */
+    private void requireBatteryScope(BatteryEntity battery) {
+        if (battery == null || battery.getCellId() == null) {
+            DataScopeSupport.requireStationAccess(null);
+            return;
+        }
+        requireCellScope(cellDao.selectById(battery.getCellId()));
     }
 
     private void requireIn(Integer value, Set<Integer> allowed, String message) {

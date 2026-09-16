@@ -1,6 +1,7 @@
 package com.swapops.server.asset.controller;
 
 import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.annotation.DataFilter;
 import com.swapops.server.admin.enums.AdminRole;
 import com.swapops.server.admin.security.AdminContext;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -36,6 +37,7 @@ public class AdminCabinetController {
 
     @GetMapping
         @PreAuthorize("hasAuthority('admin:asset:read')")
+    @DataFilter("cabinet-list")
     public Result<PageResult<CabinetEntity>> page(@RequestParam(required = false) Integer page,
                                                   @RequestParam(required = false) Integer limit,
                                                   @RequestParam(required = false) Long stationId,
@@ -46,6 +48,7 @@ public class AdminCabinetController {
 
     @GetMapping("/{cabinetNo}/state")
         @PreAuthorize("hasAuthority('admin:asset:read')")
+    @DataFilter("cabinet-state")
     public Result<Map<String, Object>> state(@PathVariable String cabinetNo) {
         return Result.ok(assetAdminService.cabinetState(cabinetNo));
     }

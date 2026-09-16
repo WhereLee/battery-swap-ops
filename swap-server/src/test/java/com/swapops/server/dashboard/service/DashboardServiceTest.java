@@ -3,11 +3,14 @@ package com.swapops.server.dashboard.service;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.swapops.contract.BatteryStatus;
+import com.swapops.server.admin.enums.AdminRole;
+import com.swapops.server.admin.security.AdminContext;
 import com.swapops.server.asset.dao.StationDao;
 import com.swapops.server.asset.entity.StationEntity;
 import com.swapops.server.common.cache.TwoLevelCacheService;
 import com.swapops.server.device.dao.BatteryDao;
 import com.swapops.server.device.dao.CabinetDao;
+import com.swapops.server.device.dao.CellDao;
 import com.swapops.server.device.entity.BatteryEntity;
 import com.swapops.server.device.entity.CabinetEntity;
 import com.swapops.server.order.dao.SwapOrderDao;
@@ -25,6 +28,7 @@ import org.mockito.quality.Strictness;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,6 +51,8 @@ class DashboardServiceTest {
     @Mock
     private CabinetDao cabinetDao;
     @Mock
+    private CellDao cellDao;
+    @Mock
     private SwapOrderDao orderDao;
     @Mock
     private AllocationService allocationService;
@@ -61,12 +67,14 @@ class DashboardServiceTest {
         TableInfoHelper.initTableInfo(assistant, BatteryEntity.class);
         TableInfoHelper.initTableInfo(assistant, StationEntity.class);
         TableInfoHelper.initTableInfo(assistant, CabinetEntity.class);
+        TableInfoHelper.initTableInfo(assistant, com.swapops.server.device.entity.CellEntity.class);
         TableInfoHelper.initTableInfo(assistant, com.swapops.server.order.entity.SwapOrderEntity.class);
     }
 
     @BeforeEach
     void setUp() {
-        service = new DashboardService(batteryDao, stationDao, cabinetDao, orderDao, allocationService, cache);
+        service = new DashboardService(batteryDao, stationDao, cabinetDao, cellDao, orderDao,
+                allocationService, cache);
         when(cache.getEntity(any(), eq(Map.class), any(), eq(DashboardService.CACHE_TTL_SECONDS)))
                 .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(2)).get());
     }
@@ -130,5 +138,36 @@ class DashboardServiceTest {
         org.mockito.Mockito.verify(cache).getEntity(eq(
                         com.swapops.server.common.cache.CacheKeys.DASHBOARD_OVERVIEW),
                 eq(Map.class), any(), eq(DashboardService.CACHE_TTL_SECONDS));
+    }
+
+    @Test
+    @DisplayName("P1-8 数据范围：受限身份绕过全局缓存直算本域口径（站点/电池/订单按范围过滤）")
+    void 受限身份绕过缓存() {
+        AdminContext.set(new AdminContext.Principal(9L, "ops-st", AdminRole.OPS, false, "STATION", Set.of(1L)));
+        try {
+            CabinetEntity cabinet = cabinet("SWAP-C-001");
+            cabinet.setId(11L);
+            cabinet.setStationId(1L);
+            com.swapops.server.device.entity.CellEntity cell = new com.swapops.server.device.entity.CellEntity();
+            cell.setId(111L);
+            cell.setCabinetId(11L);
+            when(cabinetDao.selectList(any())).thenReturn(List.of(cabinet));
+            when(cellDao.selectList(any())).thenReturn(List.of(cell));
+            when(batteryDao.selectCount(any())).thenReturn(12L, 5L);
+            when(stationDao.selectList(any())).thenReturn(List.of(station(1L, "ST-001")));
+            when(allocationService.countAvailable(any(), eq(true))).thenReturn(4L);
+            when(orderDao.selectCount(any())).thenReturn(7L);
+
+            Map<String, Object> result = service.overview();
+
+            assertThat(result.get("totalStations")).isEqualTo(1);
+            assertThat(result.get("totalBatteries")).isEqualTo(12L);
+            assertThat(result.get("fullBatteries")).isEqualTo(5L);
+            assertThat(result.get("completedToday")).isEqualTo(7L);
+            org.mockito.Mockito.verify(cache, org.mockito.Mockito.never())
+                    .getEntity(any(), eq(Map.class), any(), eq(DashboardService.CACHE_TTL_SECONDS));
+        } finally {
+            AdminContext.set(null);
+        }
     }
 }

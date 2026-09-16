@@ -1,6 +1,7 @@
 package com.swapops.server.asset.controller;
 
 import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.annotation.DataFilter;
 import com.swapops.server.admin.enums.AdminRole;
 import com.swapops.server.admin.security.AdminContext;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -34,6 +35,7 @@ public class AdminBatteryController {
 
     @GetMapping
         @PreAuthorize("hasAuthority('admin:asset:read')")
+    @DataFilter("battery-list")
     public Result<PageResult<BatteryEntity>> page(@RequestParam(required = false) Integer page,
                                                   @RequestParam(required = false) Integer limit,
                                                   @RequestParam(required = false) Integer status,
@@ -44,6 +46,7 @@ public class AdminBatteryController {
     /** 电池健康档案（S4.1）：SOH 分级 + swaps/cycle 计数 + 最近循环流水 */
     @GetMapping("/{batteryNo}/health")
         @PreAuthorize("hasAuthority('admin:asset:read')")
+    @DataFilter("battery-health")
     public Result<java.util.Map<String, Object>> health(@PathVariable String batteryNo) {
         return Result.ok(assetAdminService.batteryHealth(batteryNo));
     }

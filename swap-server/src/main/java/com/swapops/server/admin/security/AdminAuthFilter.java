@@ -36,15 +36,18 @@ public class AdminAuthFilter extends OncePerRequestFilter {
     private static final String HEADER = "X-Admin-Token";
 
     private final AdminAuthService adminAuthService;
+    private final com.swapops.server.asset.dao.StationDao stationDao;
     private final byte[] bootstrapToken;
 
     public AdminAuthFilter(AdminAuthService adminAuthService,
+                           com.swapops.server.asset.dao.StationDao stationDao,
                            @Value("${swap.admin.token:}") String token) {
         if (token == null || !token.matches("^[0-9a-fA-F]{32,64}$")) {
             throw new IllegalStateException(
                     "swap.admin.token 未配置或格式非法（32~64 位 hex，经环境变量 SWAP_ADMIN_TOKEN 注入）");
         }
         this.adminAuthService = adminAuthService;
+        this.stationDao = stationDao;
         this.bootstrapToken = token.getBytes(StandardCharsets.UTF_8);
     }
 
@@ -60,30 +63,48 @@ public class AdminAuthFilter extends OncePerRequestFilter {
         try {
             if (token != null && !token.isBlank()) {
                 if (MessageDigest.isEqual(bootstrapToken, token.getBytes(StandardCharsets.UTF_8))) {
-                    authenticate(null, "bootstrap", AdminRole.SUPER, true);
+                    authenticate(null, "bootstrap", AdminRole.SUPER, true, "ALL", null);
                 } else {
                     AdminUserEntity user = adminAuthService.resolve(token);
                     if (user == null) {
                         WebErrors.write(response, 401, 401, "管理端未认证");
                         return;
                     }
+                    // P1-8：数据范围身份化——STATION 范围在认证期解析为站点 id 集（fail-closed 空集）
+                    String dataScope = user.getDataScope() == null ? "ALL" : user.getDataScope();
+                    Set<Long> scopeStationIds = "STATION".equalsIgnoreCase(dataScope)
+                            ? com.swapops.server.admin.data.DataScopeSupport.resolveScopeStationIds(
+                                    stationDao, parseStationNos(user.getScopeStationNos()))
+                            : null;
                     authenticate(user.getId(), user.getUsername(),
-                            AdminRole.fromCode(user.getRole()), false);
+                            AdminRole.fromCode(user.getRole()), false, dataScope, scopeStationIds);
                 }
             }
             chain.doFilter(request, response);
         } finally {
             AdminContext.clear();
             SecurityContextHolder.clearContext();
+            com.swapops.server.admin.data.DataScopeGuard.clear(); // P1-8：自检标记兜底清理（防线程复用残留）
         }
     }
 
-    private void authenticate(Long adminId, String username, AdminRole role, boolean bootstrap) {
+    private void authenticate(Long adminId, String username, AdminRole role, boolean bootstrap,
+                              String dataScope, Set<Long> scopeStationIds) {
         Set<String> perms = role.permissions();
-        AdminContext.set(new AdminContext.Principal(adminId, username, role, bootstrap));
+        AdminContext.set(new AdminContext.Principal(adminId, username, role, bootstrap,
+                dataScope == null ? "ALL" : dataScope, scopeStationIds));
         UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                 username, null,
                 perms.stream().map(SimpleGrantedAuthority::new).collect(Collectors.toList()));
         SecurityContextHolder.getContext().setAuthentication(authentication);
+    }
+
+    /** 逗号分隔 station_no → 列表（空白过滤；空串/空配置 → 空列表=fail-closed 空集） */
+    private java.util.List<String> parseStationNos(String nos) {
+        if (nos == null || nos.isBlank()) {
+            return java.util.List.of();
+        }
+        return java.util.Arrays.stream(nos.split(","))
+                .map(String::trim).filter(s -> !s.isEmpty()).toList();
     }
 }

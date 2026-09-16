@@ -1,6 +1,7 @@
 package com.swapops.server.asset.controller;
 
 import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.annotation.DataFilter;
 import com.swapops.server.admin.enums.AdminRole;
 import com.swapops.server.admin.security.AdminContext;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -31,6 +32,7 @@ public class AdminCellController {
 
     @GetMapping
         @PreAuthorize("hasAuthority('admin:asset:read')")
+    @DataFilter("cell-list")
     public Result<PageResult<CellEntity>> page(@RequestParam(required = false) Integer page,
                                                @RequestParam(required = false) Integer limit,
                                                @RequestParam(required = false) String cabinetNo,

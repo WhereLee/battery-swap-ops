@@ -10,13 +10,19 @@ import com.swapops.server.admin.entity.AdminOpLogEntity;
 import com.swapops.server.admin.entity.AdminUserEntity;
 import com.swapops.server.admin.enums.AdminRole;
 import com.swapops.server.admin.security.AdminSecrets;
+import com.swapops.server.asset.dao.StationDao;
+import com.swapops.server.asset.entity.StationEntity;
 import com.swapops.server.common.RRException;
 import com.swapops.server.common.utils.PageParams;
 import com.swapops.server.common.utils.PageResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 管理员账号管理（S7 WP-A）：创建/查询/启停；密码 BCrypt 存储，接口不回传密码哈希。
@@ -30,13 +36,20 @@ public class AdminAccountService {
 
     private final AdminUserDao adminUserDao;
     private final AdminOpLogDao adminOpLogDao;
+    private final StationDao stationDao;
 
-    public AdminAccountService(AdminUserDao adminUserDao, AdminOpLogDao adminOpLogDao) {
+    public AdminAccountService(AdminUserDao adminUserDao, AdminOpLogDao adminOpLogDao, StationDao stationDao) {
         this.adminUserDao = adminUserDao;
         this.adminOpLogDao = adminOpLogDao;
+        this.stationDao = stationDao;
     }
 
     public AdminUserEntity create(String username, String password, String realName, String role) {
+        return create(username, password, realName, role, null, null);
+    }
+
+    public AdminUserEntity create(String username, String password, String realName, String role,
+                                  String dataScope, String scopeStationNos) {
         String name = username == null ? "" : username.trim();
         if (!name.matches(USERNAME_PATTERN)) {
             throw new RRException("用户名格式非法（3~32 位字母/数字/_/-）: " + username);
@@ -50,16 +63,21 @@ public class AdminAccountService {
             throw new RRException("用户名已存在: " + name);
         }
         long now = System.currentTimeMillis();
+        String scope = normalizeDataScope(dataScope); // P1-8：数据范围（ALL/STATION）
+        String scopeNos = "STATION".equals(scope) ? normalizeStationNos(scopeStationNos) : null;
         AdminUserEntity user = new AdminUserEntity();
         user.setUsername(name);
         user.setPasswordHash(AdminSecrets.hashPassword(password));
         user.setRealName(realName == null || realName.isBlank() ? null : realName.trim());
         user.setRole(adminRole.name());
+        user.setDataScope(scope);
+        user.setScopeStationNos(scopeNos);
         user.setStatus(1);
         user.setCreateTime(now);
         user.setUpdateTime(now);
         adminUserDao.insert(user);
-        log.info("[admin] 管理员创建 id={} username={} role={}", user.getId(), name, adminRole);
+        log.info("[admin] 管理员创建 id={} username={} role={} dataScope={} scopeNos={}",
+                user.getId(), name, adminRole, scope, scopeNos);
         return mask(user);
     }
 
@@ -102,5 +120,39 @@ public class AdminAccountService {
             user.setPasswordHash(null);
         }
         return user;
+    }
+
+    /** 数据范围校验（P1-8）：缺省 ALL；仅 ALL / STATION 合法 */
+    private String normalizeDataScope(String dataScope) {
+        String scope = dataScope == null || dataScope.isBlank()
+                ? "ALL" : dataScope.trim().toUpperCase(Locale.ROOT);
+        if (!"ALL".equals(scope) && !"STATION".equals(scope)) {
+            throw new RRException("数据范围可选 ALL（全部）/ STATION（按站点）");
+        }
+        return scope;
+    }
+
+    /** STATION 范围：逗号分隔站点编号去重+存在性校验（配不存在的站=静默无数据，直接拒绝） */
+    private String normalizeStationNos(String raw) {
+        List<String> nos = raw == null ? List.of() : Arrays.stream(raw.split(","))
+                .map(String::trim).filter(s -> !s.isEmpty()).distinct().toList();
+        if (nos.isEmpty()) {
+            throw new RRException("STATION 数据范围必须配置站点编号（逗号分隔，如 ST-002）");
+        }
+        if (nos.size() > 20) {
+            throw new RRException("站点编号最多 20 个");
+        }
+        List<StationEntity> found = stationDao.selectList(new LambdaQueryWrapper<StationEntity>()
+                .in(StationEntity::getStationNo, nos));
+        Set<String> foundNos = found.stream().map(StationEntity::getStationNo).collect(Collectors.toSet());
+        List<String> missing = nos.stream().filter(no -> !foundNos.contains(no)).toList();
+        if (!missing.isEmpty()) {
+            throw new RRException("站点编号不存在: " + String.join(",", missing));
+        }
+        String joined = String.join(",", nos);
+        if (joined.length() > 255) {
+            throw new RRException("站点编号配置过长（<=255 字符）");
+        }
+        return joined;
     }
 }

@@ -1,6 +1,8 @@
 package com.swapops.server.order.controller;
 
 import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.annotation.DataFilter;
+import com.swapops.server.admin.data.DataScopeSupport;
 import com.swapops.server.admin.enums.AdminRole;
 import com.swapops.server.admin.security.AdminContext;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -42,6 +44,7 @@ public class AdminOrderController {
 
     @GetMapping
         @PreAuthorize("hasAuthority('admin:order:read')")
+    @DataFilter("order-list")
     public Result<PageResult<SwapOrderEntity>> page(@RequestParam(required = false) Integer page,
                                                     @RequestParam(required = false) Integer limit,
                                                     @RequestParam(required = false) Long userId,
@@ -52,12 +55,14 @@ public class AdminOrderController {
 
     @GetMapping("/{orderNo}")
         @PreAuthorize("hasAuthority('admin:order:read')")
+    @DataFilter("order-detail")
     public Result<Map<String, Object>> detail(@PathVariable String orderNo) {
         SwapOrderEntity order = orderDao.selectOne(new LambdaQueryWrapper<SwapOrderEntity>()
                 .eq(SwapOrderEntity::getOrderNo, orderNo));
         if (order == null) {
             return Result.error(1, "订单不存在: " + orderNo);
         }
+        DataScopeSupport.requireStationAccess(order.getStationId()); // P1-8：资源级越域 403
         Map<String, Object> data = new LinkedHashMap<>(swapOrderService.view(order));
         data.put("payments", paymentRecordDao.selectList(new LambdaQueryWrapper<PaymentRecordEntity>()
                 .eq(PaymentRecordEntity::getOrderId, order.getId())

@@ -27,6 +27,12 @@ public class AdminUserEntity {
     /** 1 启用 / 2 停用 */
     private Integer status;
 
+    /** P1-8 数据范围：ALL=全部（默认）/ STATION=按站点隔离 */
+    private String dataScope;
+
+    /** P1-8 数据范围：逗号分隔 station_no（STATION 时必填） */
+    private String scopeStationNos;
+
     private Long lastLoginTime;
 
     private Long createTime;
