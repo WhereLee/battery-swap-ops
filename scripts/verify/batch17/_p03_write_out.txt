@@ -1,0 +1,32 @@
+﻿== P0-3d write-path capacity (TAKE+RETURN) ==
+19:03:44 server health=UP
+19:03:44 sim health=UP
+19:03:45 reset: sim cabinets=10 | dev occupied=60
+19:03:45 reconcile baseline total=8
+19:03:45 reset: sim cabinets=10 | dev occupied=60
+19:06:41 warmup-w5 threads=5 duration=30s wall=176s samples=355 err=0 rate=2.1/s avg=16ms p95=32 p99=40 max=138
+19:06:41 warmup-w5 labels: W-login: n=5 err=0 | W-TAKE-create: n=50 err=0 | W-SIM-out: n=50 err=0 | W-TAKE-status: n=50 err=0 | W-RETURN-create: n=50 err=0 | W-SIM-in: n=50 err=0 | W-SIM-soc: n=50 err=0 | W-RETURN-status: n=50 err=0
+19:06:41 warmup-w5 warmup errors tolerated (discarded segment): 0
+19:06:41 warmup done (discarded)
+19:06:41 reset: sim cabinets=10 | dev occupied=60
+19:09:06 steady-w20 threads=20 duration=120s wall=145s samples=1140 err=0 rate=8.2/s avg=16ms p95=30 p99=47 max=233
+19:09:06 steady-w20 labels: W-login: n=20 err=0 | W-TAKE-create: n=160 err=0 | W-SIM-out: n=160 err=0 | W-TAKE-status: n=160 err=0 | W-RETURN-create: n=160 err=0 | W-SIM-in: n=160 err=0 | W-SIM-soc: n=160 err=0 | W-RETURN-status: n=160 err=0
+19:09:06 PASS steady-w20 zero http errors
+19:09:06 steady-w20 orders: completed=320 cancelledOrClosed=0 dupPayment=0 dupActiveCell=0
+19:09:06 PASS steady-w20 completed orders > 0
+19:09:06 PASS steady-w20 billing exactly-once (no dup order+type)
+19:09:06 PASS steady-w20 zero oversell (no dup active cell)
+19:09:06 reset: sim cabinets=10 | dev occupied=60
+19:11:31 steady-w20-repeat threads=20 duration=120s wall=145s samples=1140 err=0 rate=8.1/s avg=16ms p95=29 p99=43 max=359
+19:11:31 steady-w20-repeat labels: W-login: n=20 err=0 | W-TAKE-create: n=160 err=0 | W-SIM-out: n=160 err=0 | W-TAKE-status: n=160 err=0 | W-RETURN-create: n=160 err=0 | W-SIM-in: n=160 err=0 | W-SIM-soc: n=160 err=0 | W-RETURN-status: n=160 err=0
+19:11:31 PASS steady-w20-repeat zero http errors
+19:11:31 steady-w20-repeat orders: completed=320 cancelledOrClosed=0 dupPayment=0 dupActiveCell=0
+19:11:31 PASS steady-w20-repeat completed orders > 0
+19:11:31 PASS steady-w20-repeat billing exactly-once (no dup order+type)
+19:11:31 PASS steady-w20-repeat zero oversell (no dup active cell)
+19:11:41 reconcile after total=7 baseline=8 delta=-1
+19:11:41 PASS reconcile money checks clean
+19:11:41 PASS reconcile no new violations
+19:11:41 PASS completed-has-payment zero
+19:11:41 raw evidence: C:\Users\lrs\Desktop\py\interview\battery-swap-ops\..\diag-archive\p03-write-20260916-190344
+19:11:41 P0-3 WRITE PASS

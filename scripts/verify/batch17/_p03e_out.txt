@@ -1,0 +1,15 @@
+﻿== P0-3e JVM story: 96m vs 512m heap (read load, 100 threads, 45s each) ==
+Method: ./_p03e_jvm_story.ps1 is the reproduction driver (generated .bat per heap);本机 shell 包装进程对 cmd/start 有等待现象，
+本次按驱动同款步骤手工执行并归档证据（gc 日志/ jstat / jtl 原件在 diag-archive/p03e-jvm-*）。
+Load: read path (login once/thread + plans/stations/wallet), ratelimit OFF, same-host.
+
+96m  : samples=105702 err=0 alive=UP throughput=2344.5/s avg=40ms
+        GC pauses=2040 sumMs=3996.7 maxMs=20  (pause share ~8.9% of 45s)
+        jstat: OC 63.4MB, OU 52.1MB (~82%), YGC=85, FGC=0, CGC=30 (concurrent GC ok, thin headroom)
+512m : samples=134705 err=0 alive=UP throughput=2987.1/s avg=31ms
+        GC pauses=98 sumMs=277.0 maxMs=9.8  (pause share ~0.6%)
+Ratio: pause-count 20.8x / pause-time 14.4x / throughput -21.5% / avg-latency +29% (96m vs 512m)
+
+Conclusion: 96m 堆下并发 GC 保住服务不 OOM，但老年代占用 ~82%、暂停时间占比近 9%、吞吐/延迟明显劣化；
+512m 稳定档（云上 768m）具备充分余量。排障方法链：现象（延迟上升）→ GC log 暂停统计 + jstat 老年代占用 →
+结论（堆过小/对象churn）→ 调参对比。
