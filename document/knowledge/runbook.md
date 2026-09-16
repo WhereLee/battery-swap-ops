@@ -89,6 +89,7 @@ load 模式附加：`-Xms512m -Xmx512m -Xlog:gc:file=gc.log:time,uptime` + `swap
 | 幂等/重复事件 | 序守卫双线 → `plans/S0.3` §幂等 |
 | 单测假绿/真红 | 静态缓存坑 → `pitfalls/mp-lambda-cache-test-order.md`（push 前 random 复跑） |
 | 对账告警 | 14 组不变量语义 → `knowledge/agent-seam.md` 等 + `fixes/` 各档 |
+| Redis 故障/数据丢失后 | 恢复清单（rebuild-alloc→对账→workerId 日志）→ `pitfalls/redis-data-loss-runtime-consistency.md`；级联拖死全站 → `pitfalls/redis-fault-cascade-no-timeout.md` |
 | GC/压测分析 | `gc.log` + `scripts/verify/batch7/_load_out.txt` |
 
 ## 8. 实机剧本
