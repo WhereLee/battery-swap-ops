@@ -49,8 +49,9 @@
 | batch21 | `_c25_validation.ps1` | 参数校验：7 类非法输入→统一 400 中文消息 + 坏 JSON + 合法路径放行（P1-7） | PASS 13/13 |
 | batch21 | `_c26_webhook.ps1` | 告警出站 webhook：RAISED/RECOVERED HMAC 验签 + “接收端停机无影响”隔离轮（P1-11） | PASS 16/16 |
 | batch22 | `_c27_data_scope.ps1` | 数据权限（DataFilter）：站点范围账号仅见本域（列表/看板）+ 越域详情/写入 403 + 拒绝无副作用（P1-8） | PASS 24/24 |
+| batch23 | （CI 门禁，非本地剧本）IT×3 | 集成测试进 CI：Testcontainers（MySQL8/Redis7）+ failsafe 跑 *IT——换电主链路/对账检出/并发零超卖；另含"IT 失败可红 CI"探针实证（P0-1） | CI 3/3 绿（run 35113915369）+ 探针红（35114318706）→ 回滚绿（35114891453） |
 
-合计 32 个剧本（`_g1`-`_g8` + `_c0`-`_c27`）+ 容量工程脚本（batch16 读路径复测 / batch17 写路径 + JVM 对比驱动）+ 1 个第三方契约验证脚本 + batch18 防回归脚本（dev reset 收敛）+ batch19 混沌三剧本（Redis/MySQL/broker 停机）+ batch20 指标监控剧本（P1-6）+ batch21 校验/webhook 剧本（P1-7/P1-11）+ batch22 数据权限剧本（P1-8）；batch9（S5 运维收口）与 batch14（S7 收口）为文档/运维层面，无独立剧本。
+合计 32 个剧本（`_g1`-`_g8` + `_c0`-`_c27`）+ 容量工程脚本（batch16 读路径复测 / batch17 写路径 + JVM 对比驱动）+ 1 个第三方契约验证脚本 + batch18 防回归脚本（dev reset 收敛）+ batch19 混沌三剧本（Redis/MySQL/broker 停机）+ batch20 指标监控剧本（P1-6）+ batch21 校验/webhook 剧本（P1-7/P1-11）+ batch22 数据权限剧本（P1-8）+ batch23 集成测试门禁证据（P0-1，CI 内跑，非本地剧本）；batch9（S5 运维收口）与 batch14（S7 收口）为文档/运维层面，无独立剧本。
 P0-4 演示入口：`scripts/demo/_p0_demo.ps1`（不在本索引的剧本口径内，证据 `_p0_demo_out.txt`）。
 
 证据文件：`batch7/_cov_out.txt`（覆盖率门槛）、`batch7/_load_out.txt`（压测+GC 统计）。

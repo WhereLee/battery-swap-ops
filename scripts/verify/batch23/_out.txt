@@ -1,0 +1,33 @@
+批次23 P0-1 集成测试进 CI — 证据摘要
+==================================================
+
+一、本地验证（Windows 无 Docker 约束）
+- mvn -pl swap-server test：371/371 绿（surefire 未触发 IT，容器零启动）
+- mvn -pl swap-server -am clean test：371/371 绿，BUILD SUCCESS（49.8s）
+
+二、CI 首跑（run 35113915369，commit c8b033b）→ success 2m24s
+- failsafe:3.5.6:integration-test 执行 3 条 IT：
+    IT-1 换电主链路    Tests run: 1, Failures: 0（44.12s，含 Spring 上下文 + 容器夹具）
+    IT-2 日终对账检出  Tests run: 1, Failures: 0（0.352s）
+    IT-3 并发零超卖    Tests run: 1, Failures: 0（0.109s）
+- IT 汇总：Tests run: 3, Failures: 0 → failsafe:3.5.6:verify 通过 → BUILD SUCCESS
+- 明细摘录：_ci_green_first.log
+
+三、门禁红验证（roadmap 验收："IT 失败能红 CI，故意造一条失败验证一次"）
+- 探针 commit 6218699：AllocationOversellIT:91 加 CI-RED-PROBE 必然失败断言
+- run 35114318706 → failure（1m45s）：
+    [ERROR] Tests run: 1, Failures: 1 -- in IT-3 并发零超卖
+    [ERROR] AllocationOversellIT.concurrentAllocationNeverOversells:91 [CI-RED-PROBE 故意失败...]
+    [ERROR] Tests run: 3, Failures: 1
+  → 门禁生效：IT 失败精确红 CI（失败行直指探针断言）
+- 明细摘录：_ci_red_probe.log
+
+四、回滚复绿
+- revert commit 972e1f3（Revert "test(probe): CI-RED-PROBE ..."）
+- run 35114891453 → success（1m57s），Maven verify + Coverage summary 全过，3 条 IT 复绿
+- 明细摘录：_ci_revert_green.log
+
+五、结论
+P0-1 完成：换电主链路 / 对账检出 / 并发零超卖 三条最强结论进 CI 门禁（mvn verify 自动跑）；
+本地无 Docker 约束不破坏（371/371 仍绿）；IT 失败可红 CI 已实证
+（探针 → CI 红 → 回滚 → CI 绿，全链留档）。CI 时长增量约 +1 分钟（容器与上下文复用）。

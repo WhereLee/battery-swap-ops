@@ -48,6 +48,7 @@
 - block-records/批次20-P1-6可观测性.md（Prometheus 6 业务指标 + 401 鉴权 + traceId 日志 pattern + Grafana 面板 JSON；_c24 9/9 PASS、单测 349/349）
 - block-records/批次21-P1-7参数校验与P1-11告警webhook.md（校验统一 400 + 出站 webhook 签名/重试/熔断/隔离；_c25 13/13、_c26 12/12 PASS、单测 356/356）
 - block-records/批次22-P1-8数据权限.md（DataFilter：按站点隔离的管理端数据范围——六类列表过滤 + 资源级 403 + fail-closed + 自检切面；_c27 24/24 PASS、单测 371/371）
+- block-records/批次23-P0-1集成测试进CI.md（Testcontainers 容器基座 + IT×3 换电主链路/对账检出/并发零超卖 + failsafe；CI 首跑绿、门禁红探针实证、本地无 Docker 371/371 不受影响）
 - block-records/2026-09-16-1856-写路径容量模块-交接文档.md（模块暂停交接书；其 §7 执行序已由批次17 收口）
 
 ### knowledge（节选：入口性文档）
