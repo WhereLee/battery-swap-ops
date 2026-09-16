@@ -199,3 +199,16 @@ swap:
 logging:
   level:
     com.swapops: info
+  pattern:
+    # P1-6：日志 pattern 引入 traceId 占位（此前 TraceIdFilter 写入 MDC 但默认 pattern 不落文本）
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%X{traceId:-}] --- [%15.15t] %-40.40logger{39} : %m%n"
+
+management:
+  # P1-6 可观测性：Prometheus 指标暴露（/api/actuator/prometheus，admin 静态 token 保护；health/info 公开）
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: never

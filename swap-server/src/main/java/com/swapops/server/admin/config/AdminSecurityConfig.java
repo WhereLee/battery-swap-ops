@@ -19,7 +19,8 @@ import java.io.IOException;
 
 /**
  * 管理面安全链（S7 WP-A，参照壳子 SecurityConfig 的 @EnableMethodSecurity + @PreAuthorize 模型）：
- * securityMatcher 收敛为 /admin/**——设备/用户/dev/actuator 路径完全不经此链（零影响）。
+ * securityMatcher 收敛为 /admin/** 与 /actuator/**（P1-6：actuator 除 health/info 外与 admin 同级鉴权，
+ * prometheus 抓取携 X-Admin-Token）；设备/用户/dev 路径完全不经此链（零影响）。
  * 认证：AdminAuthFilter（会话 token / break-glass 静态 token）；授权：@PreAuthorize 权限码。
  */
 @Configuration
@@ -33,12 +34,13 @@ public class AdminSecurityConfig {
     public SecurityFilterChain adminSecurityFilterChain(HttpSecurity http, AdminAuthFilter adminAuthFilter)
             throws Exception {
         http
-                .securityMatcher("/admin/**")
+                .securityMatcher("/admin/**", "/actuator/**")
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/admin/auth/login").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(e -> e
                         .authenticationEntryPoint((request, response, ex) -> writeJson(response, 401, "管理端未认证"))
