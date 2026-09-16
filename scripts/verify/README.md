@@ -41,8 +41,9 @@
 | batch16 | `_p03_read_capacity.ps1` | 读路径容量方法论复测（预热+稳态 20/50/100，P0-3） | PASS |
 | batch17 | `_p03_write_capacity.ps1` | 写路径容量（TAKE+RETURN 循环：零超卖/计费恰一次/0 错，P0-3） | PASS |
 | batch17 | `_p03e_jvm_story.ps1` | JVM 排障对比驱动（96m vs 512m，GC 暂停/吞吐，P0-3） | 手工执行 |
+| batch18 | `_b18_reset_convergence.ps1` | dev reset 收敛防回归（交错引用图 → 零残留：逐仓双向核验 + 对账 0 + 幂等） | PASS |
 
-合计 29 个剧本（`_g1`-`_g8` + `_c0`-`_c20`）+ 容量工程脚本（batch16 读路径复测 / batch17 写路径 + JVM 对比驱动）+ 1 个第三方契约验证脚本；batch9（S5 运维收口）与 batch14（S7 收口）为文档/运维层面，无独立剧本。
+合计 29 个剧本（`_g1`-`_g8` + `_c0`-`_c20`）+ 容量工程脚本（batch16 读路径复测 / batch17 写路径 + JVM 对比驱动）+ 1 个第三方契约验证脚本 + batch18 防回归脚本（dev reset 收敛）；batch9（S5 运维收口）与 batch14（S7 收口）为文档/运维层面，无独立剧本。
 P0-4 演示入口：`scripts/demo/_p0_demo.ps1`（不在本索引的剧本口径内，证据 `_p0_demo_out.txt`）。
 
 证据文件：`batch7/_cov_out.txt`（覆盖率门槛）、`batch7/_load_out.txt`（压测+GC 统计）。

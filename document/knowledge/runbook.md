@@ -9,9 +9,10 @@
 |---|---|---|
 | MySQL 8 | Windows 服务（root/root，库 `swap_ops`） | `mysql -uroot -proot -e "select 1"` |
 | Redis | `redis-server F:\Redis\redis.windows.conf --dir F:\Redis`（**--dir 必须**：默认 CWD 下 RDB 不可写会启动失败） | `redis-cli ping` |
-| RocketMQ | namesrv 9876 → broker 10911 → **proxy 8081**（`.local/start-broker.bat` + `start-broker-proxy.bat`） | `netstat -ano | findstr "9876 10911 8081"` |
+| RocketMQ | namesrv 9876 → broker 10911 → **proxy 8081**（store 在 `F:\RocketMQ\store`；启动方式/topic 清单/40014 坑见 `pitfalls/mq-store-rebuild-topic-recovery.md`） | `netstat -ano | findstr "9876 10911 8081"` |
 
 > 坑：只起 broker 不起 proxy（8081），MQ 收发静默失败——先查 proxy。
+> 坑：store 重建/切换后必须重建业务 topic（`swap-device-event` / `swap-alarm`，`+message.type=NORMAL`），否则 40402。
 
 ## 2. 启动器矩阵（`.local/`）
 

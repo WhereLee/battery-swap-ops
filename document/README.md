@@ -43,6 +43,7 @@
 - block-records/批次15-P0-4演示入口与复现门槛.md（OpenAPI/一键演示/compose/第三方契约客户端/sim 重置端点）
 - block-records/批次16-P0-3a-b-c读路径容量与方法论.md（读路径复测 3230~3526/s、资源画像、量级换算）
 - block-records/批次17-P0-3d-e写路径容量与JVM故事.md（写路径零超卖/计费恰一次、JVM 96m vs 512m；台账孤占根因复核）
+- block-records/批次18-dev复位收敛与台账孤占归零.md（两阶段 reset 收敛修复/T2 孤儿柜退役/batch18 防回归剧本/MQ 环境整备；对账 18→0、全量 378/378）
 - block-records/2026-09-16-1856-写路径容量模块-交接文档.md（模块暂停交接书；其 §7 执行序已由批次17 收口）
 
 ### knowledge（节选：入口性文档）
@@ -67,7 +68,8 @@
 - pitfalls/mp-updatebyid-ignores-null.md
 - pitfalls/ps-utf8-bom-and-mojibake.md
 - pitfalls/spring-wiring-traps-not-covered-by-unit-tests.md
-- pitfalls/dev-reset-nonconvergent-orphans.md（dev reset 不收敛 + 孤儿柜种子缺失 → 台账孤占残留；已定位·未修）
+- pitfalls/dev-reset-nonconvergent-orphans.md（dev reset 不收敛 + 孤儿柜种子缺失 → 台账孤占残留；**已修复·已归零**，批次18）
+- pitfalls/mq-store-rebuild-topic-recovery.md（RocketMQ store 重建后 topic 丢失 + proxy 40014 消息类型校验；已处置·dev 口径）
 
 ### 外部关联（工作区根，不入本仓库）
 - `项目一-换电运营平台-设计备忘.md`（项目定位/架构/分期）
