@@ -88,6 +88,25 @@ class MqEventReporterTest {
         assertThat(body).contains("\"cabinetNo\":\"SWAP-C-001\"")
                 .contains("BATTERY_OUT")
                 .contains("\"eventSeq\":42");
+        assertThat(sent.getMessageGroup()).as("P0-2 分片保序：默认按柜设 FIFO message group")
+                .contains("SWAP-C-001");
+    }
+
+    @Test
+    @DisplayName("P0-2 回退开关：fifo-group=false 时不设 message group（回到单队列全局序形态）")
+    void 关闭分片不设组() throws Exception {
+        properties = properties("0123456789abcdef0123456789abcdef");
+        properties.getMq().setFifoGroup(false);
+        reporter = new MqEventReporter(properties, producer);
+        when(producer.sendAsync(any(Message.class)))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        reporter.report(message());
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() ->
+                verify(producer, atLeastOnce()).sendAsync(captor.capture()));
+        assertThat(captor.getValue().getMessageGroup()).as("关闭分片即不设组").isEmpty();
     }
 
     @Test

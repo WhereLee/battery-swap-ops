@@ -126,4 +126,30 @@ class DeviceEventMqConsumerTest {
 
         assertThat(consumer.process(messageView)).isEqualTo(DeviceEventMqConsumer.Outcome.RETRY);
     }
+
+    @Test
+    @DisplayName("P0-2 分片：同柜必落同一 worker（柜内串行）；多柜分散（跨柜并行）；hash 溢出不越界")
+    void 分片按柜稳定() {
+        int workers = 4;
+        int first = DeviceEventMqConsumer.workerIndexFor("SWAP-C-001", workers);
+        assertThat(first).isBetween(0, workers - 1);
+        for (int i = 0; i < 20; i++) {
+            assertThat(DeviceEventMqConsumer.workerIndexFor("SWAP-C-001", workers))
+                    .as("同柜恒定同 worker（柜内串行的前提）").isEqualTo(first);
+        }
+
+        java.util.Set<Integer> used = new java.util.HashSet<>();
+        for (int c = 1; c <= 12; c++) {
+            int idx = DeviceEventMqConsumer.workerIndexFor(String.format("SWAP-C-%03d", c), workers);
+            assertThat(idx).isBetween(0, workers - 1);
+            used.add(idx);
+        }
+        assertThat(used).as("12 柜应分散到多个 worker（跨柜并行）").hasSizeGreaterThan(1);
+
+        // 长键 hash 溢出（含负值）时 index 仍合法：floorMod 语义（用 % 会返回负数 → 数组越界）
+        for (int len = 1; len <= 800; len += 37) {
+            String key = "SWAP-C-" + "x".repeat(len);
+            assertThat(DeviceEventMqConsumer.workerIndexFor(key, workers)).isBetween(0, workers - 1);
+        }
+    }
 }

@@ -49,5 +49,11 @@ public class DeviceChannelProperties {
         private String endpoint = "127.0.0.1:8081";
         private String topic = "swap-device-event";
         private String consumerGroup = "platform-device-event";
+        /** 消费并行度（P0-2 分片保序）：按柜 hash 到固定 worker——同柜串行、跨柜并行 */
+        private int consumerThreads = 4;
+        /** 单次 receive 批量条数（P0-2） */
+        private int batchSize = 16;
+        /** 消息不可见秒数（处理窗口，含同柜排队余量；超时未 ack 由 broker 重投） */
+        private int invisibleSeconds = 30;
     }
 }

@@ -1,0 +1,21 @@
+﻿batch24 P0-2 sharded ordering drill -- RocketMQ 5 FIFO message group per cabinet
+run at      : 2026-09-16 23:56:08
+sender form : message group = cabinetNo (fifo-group=true)
+consumer    : shard by cabinet onto 4 workers, batch=16, invisible=30s
+invariant   : ordering narrowed from global to per-cabinet; seq guard keys on (cabinetNo, bootId)
+result      : PASS 15 / 15
+PASS  prereq.platform-dev-ledger  --  dev ledger endpoint reachable on 8400
+PASS  prereq.rocketmq-proxy  --  proxy port 8081 open
+PASS  prereq.sim-stopped  --  sim stopped so the HTTP channel cannot move ledgers mid-drill
+PASS  prereq.signing-secret  --  SWAP_DEV_SECRET available (32 hex, env only)
+PASS  prereq.consumer-sharded-form  --  consumer started sharded (workers=4 batch=16)
+PASS  injector.s1-out-of-order  --  same-cabinet old seq rejected, ledger did not regress
+PASS  injector.s2-cross-boot-replay  --  replayed old bootId rejected even with a larger seq
+PASS  injector.s3-multi-cabinet  --  2 cabinets x 20 interleaved events all accepted, no cross-talk
+PASS  injector.junit-green  --  injector JUnit 3/3 green
+PASS  log.cross-cabinet-parallel  --  distinct worker threads processed events: 0,3
+PASS  log.seq-guard-rejected-old  --  seq guard rejection line for the injected old seq
+PASS  log.generation-guard-rejected-replay  --  generation guard rejection line for the replayed bootId
+PASS  ledger.c003-advanced  --  C-003 lastEventSeq=203093
+PASS  ledger.c004-advanced  --  C-004 lastEventSeq=203093
+PASS  ledger.generations-distinct  --  C-003=spike-s3-a-0101bbdf / C-004=spike-s3-b-8342814d

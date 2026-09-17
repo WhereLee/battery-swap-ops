@@ -1,0 +1,24 @@
+﻿batch24 P0-2 dual-instance drill -- analysis
+run at     : 2026-09-17 00:38:03
+window from: 2026-09-16 23:57:22  (30 minutes, 6 traffic rounds)
+topology   : node1 :8400 (workerId=0) + node2 :8401 (workerId=1), same MySQL + same Redis, both consuming MQ
+jobs       : 11 scheduled entries behind JobLockService lease + delay queue ZREM claim + watchdog
+result     : PASS 18 / 18
+PASS  nodes.both-up-after-drill  --  node1=UP node2=UP (no crash, no OOM)
+PASS  ids.distinct-worker-leases  --  node1 workerId=0 node2 workerId=1 (Redis lease, owner=ip:port)
+PASS  ids.no-lease-renewal-failure  --  no WorkerIdRegistry ERROR in window
+PASS  traffic.rounds-complete  --  rounds seen=6 (6 x 300s = 30 min)
+PASS  traffic.both-nodes-served  --  successful calls: node1=15 node2=15
+PASS  traffic.no-unreachable  --  no unreachable/failed call in the whole window
+PASS  traffic.reconcile-zero-every-round  --  reconcile totals: 0,0,0,0,0,0
+PASS  delay.orders-created  --  un-picked orders created during drill: 6
+PASS  delay.all-closed-by-timeout-task  --  closed=6/6 reasons: PICKUP_TIMEOUTx4 PREEMPT_TIMEOUTx2
+PASS  delay.no-foreign-close-reason  --  unexpected: 
+PASS  delay.executed-exactly-once-across-nodes  --  no order closed twice anywhere; offenders: 
+PASS  delay.both-nodes-participated  --  timeout tasks ran on both nodes without overlap: node1=1 node2=5
+PASS  mq.consumed-by-both-nodes  --  event lines: node1=2 node2=3 (broker-side load balancing across the group)
+PASS  mq.sharded-workers-active-both-nodes  --  node1 workers=1 node2 workers=1
+PASS  locks.no-degradation-line  --  JobLockService emitted no warn/error (no Redis lock failure, no avalanche)
+PASS  errors.bounded  --  ERROR lines in window: node1=0 node2=1 (poison-message/SLA notices expected, avalanche is not)
+PASS  errors.no-connection-storm  --  no connection-refused storm (thread pools never saturated)
+PASS  reconcile.final-zero  --  14 invariants total=0 after 30 min of dual-node traffic (duplicate execution would break conservation)

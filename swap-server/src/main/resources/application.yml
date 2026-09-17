@@ -100,11 +100,17 @@ swap:
     reconcile-interval-ms: 15000
     reconcile-batch: 100
     mq:
-      # 平台 MQ 消费（S3.5；HTTP 通道保留为降级）：并发度=1 保序
+      # 平台 MQ 消费（S3.5；HTTP 通道保留为降级）；P0-2 分片保序：
+      # 发送端按 cabinetNo 设 FIFO message group（同柜同队列、柜内严格 FIFO 投递），
+      # 消费端按柜 hash 到固定 worker——同柜串行、跨柜并行；
+      # 保序不变量从"全局"降为"每柜"（序守卫本就按 (cabinetNo,bootId) 判定，业务语义不变）
       enabled: true
       endpoint: 127.0.0.1:8081
       topic: swap-device-event
       consumer-group: platform-device-event
+      consumer-threads: 4      # 跨柜并行度（同柜恒串行）
+      batch-size: 16           # 单次 receive 批量条数
+      invisible-seconds: 30    # 处理窗口（含同柜排队余量；超时未 ack 由 broker 重投）
   admin:
     # 管理端静态 token：仅环境变量注入（仓库零明文）；未配置启动即失败
     token: ${SWAP_ADMIN_TOKEN:}

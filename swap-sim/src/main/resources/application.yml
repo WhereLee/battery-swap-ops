@@ -22,6 +22,9 @@ swap:
       endpoint: 127.0.0.1:8081
       topic: swap-device-event
       buffer-size: 500
+      # P0-2 分片保序：按 cabinetNo 设 FIFO message group（同柜同队列、柜内严格 FIFO 投递）；
+      # 置 false 即回退到"单队列全局序"形态
+      fifo-group: true
     cabinets:
       - cabinetNo: SWAP-C-001
         secret: ${SWAP_DEV_SECRET:}

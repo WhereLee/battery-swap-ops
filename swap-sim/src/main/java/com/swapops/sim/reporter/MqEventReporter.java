@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.client.apis.ClientConfiguration;
 import org.apache.rocketmq.client.apis.ClientServiceProvider;
 import org.apache.rocketmq.client.apis.message.Message;
+import org.apache.rocketmq.client.apis.message.MessageBuilder;
 import org.apache.rocketmq.client.apis.producer.Producer;
 import org.apache.rocketmq.client.apis.producer.SendReceipt;
 import org.slf4j.MDC;
@@ -30,8 +31,9 @@ import java.util.concurrent.TimeoutException;
  * MQ 事件上报（S3.5，契约 §7）：
  * <ul>
  *   <li>信封：body=与 HTTP 完全同构的事件 JSON；签名/柜号/traceId 置 message property；keys={cabinetNo}-{eventSeq}；</li>
- *   <li>保序铁律：单发送线程 + 单队列 topic——失败事件**队首持留**（绝不跳过重排，否则后续更大 seq 先到
- *       会被平台序守卫当旧序拒=真丢数据），按 5s 节拍等 broker 恢复；</li>
+ *   <li>保序铁律：单发送线程 + FIFO message group（P0-2：按 cabinetNo 设组，同柜同队列、柜内严格 FIFO 投递；
+ *       保序不变量从"全局"降为"每柜"，平台序守卫本就按 (cabinetNo,bootId) 判定）——失败事件**队首持留**
+ *       （绝不跳过重排，否则同柜后续更大 seq 先到会被平台序守卫当旧序拒=真丢数据），按 5s 节拍等 broker 恢复；</li>
  *   <li>快速退避 1~5s ×5 → 转"待恢复"持续重试；仅队列满时丢最旧（QUERY_STATE/对账兜底）；</li>
  *   <li>producer 懒重建：broker 未就绪/晚间启动不炸应用，首次发送时才构建。</li>
  * </ul>
@@ -161,7 +163,7 @@ public class MqEventReporter implements EventReporter {
         body.put("bootId", event.bootId());
         body.put("eventSeq", event.eventSeq());
         try {
-            return provider.newMessageBuilder()
+            MessageBuilder builder = provider.newMessageBuilder()
                     .setTopic(properties.getMq().getTopic())
                     .setBody(objectMapper.writeValueAsBytes(body))
                     .addProperty("X-Device-No", event.cabinetNo())
@@ -169,8 +171,12 @@ public class MqEventReporter implements EventReporter {
                             event.cabinetNo(), event.eventType(), event.cellNo(), event.batteryNo(),
                             event.bootId(), event.eventSeq())))
                     .addProperty(TraceIds.MQ_PROPERTY, event.traceId())
-                    .setKeys(event.cabinetNo() + "-" + event.eventSeq())
-                    .build();
+                    .setKeys(event.cabinetNo() + "-" + event.eventSeq());
+            if (properties.getMq().isFifoGroup()) {
+                // P0-2 分片保序：同柜同 message group → 服务端按组路由同队列、柜内严格 FIFO 投递
+                builder.setMessageGroup(event.cabinetNo());
+            }
+            return builder.build();
         } catch (Exception e) {
             log.error("[MQ上报取消] 信封构造失败 cabinetNo={} eventSeq={}", event.cabinetNo(), event.eventSeq(), e);
             return null;

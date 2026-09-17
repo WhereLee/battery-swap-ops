@@ -73,6 +73,9 @@ public class SimProperties {
         private int bufferSize = 500;
         /** 单条发送超时毫秒（超时回收 producer 重建；防 send 阻塞队首） */
         private long sendTimeoutMillis = 3000;
+        /** FIFO message group（P0-2 分片保序）：按 cabinetNo 设组 → 同柜同队列、柜内严格 FIFO 投递；
+         *  关闭即回到"单队列全局序"形态（回退开关） */
+        private boolean fifoGroup = true;
     }
 
     /** 本进程安装的柜（编号须与平台台账一致） */

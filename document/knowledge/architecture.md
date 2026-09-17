@@ -84,13 +84,21 @@ flowchart TB
 
 - 密钥零明文：环境变量注入，响应脱敏（含柜密钥分页脱敏），日志无密钥；管理接口会话 token + break-glass。
 - 身份分层：**三面隔离**——设备面（per-柜 HMAC）/ 用户面（X-User-Token 会话）/ 管理面（会话 + RBAC 权限码）；
-  **管理员内部分层（RBAC）已落地**（S7 WP-A）；数据权限（按网点过滤，DataFilter 模式）仍未做，声明后置。
+  **管理员内部分层（RBAC）已落地**（S7 WP-A）；**数据权限（DataFilter 按网点隔离）已落地**（P1-8，批次22：六类列表过滤 + 资源级 403 + fail-closed）。
 - 资金链路：无缓存、无 Agent 直连路径；改动唯一入口是流水+状态机；
   **计费硬失败不改写设备事实**（欠费化，G1 韧性补丁）。
 
 ## 7. 部署形态
 
 - 本地：Windows 单机全栈（MySQL/Redis/RocketMQ + server/sim 各一进程，详见 runbook）。
+- **多实例形态（P0-2，2026-09-17 已演练）**：同库同 Redis 多 server 实例——定时任务由 `JobLockService`
+  租约互斥；延迟任务由 ZREM 原子领取；Snowflake workerId 走 Redis 租约（owner=ip:port，启动期领取）；
+  MQ 消费同一 consumer group 由 broker 侧负载均衡。30 分钟双实例演练：零重复执行（每笔订单只在
+  一个实例关闭一次）、终局对账 total=0、无锁雪崩（`scripts/verify/batch24/_c29_out.txt`）。
+- **MQ 事件通道（P0-2 终态）**：`swap-device-event` 为 FIFO topic，发送端按 `messageGroup=cabinetNo`
+  设组（同柜同队列、严格投递序）；**服务端只保投递序、不 hold 未 ack 的同柜后续**（spike 实测）——
+  柜内串行由消费端分片保证（`receive(batch=16, invisible=30s)` 按柜 hash 到 4 workers：同柜串行、跨柜并行），
+  保序不变量为"每柜单调"（序守卫本就按柜判定，业务语义不变）；HTTP 通道保留为降级形态。
 - 云端（2026-09-14 起）：`/opt/swap` jar + systemd 双服务（swap-server :8400 / swap-sim :8500），
   HTTP 事件通道（未装 RocketMQ），密钥在 `/opt/swap/config/swap.env`（600），每日备份 cron + 恢复演练；
   暴露面仅 SSH（ufw 仅 22）。见《服务器连接文档》§九与 runbook §9。

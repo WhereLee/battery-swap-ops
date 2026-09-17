@@ -26,16 +26,24 @@ import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 
 /**
- * 设备事件 MQ 消费者（S3.5，契约 §7）：
+ * 设备事件 MQ 消费者（S3.5，契约 §7；P0-2 分片保序）：
  * <ul>
  *   <li>复用：验签调 {@link DeviceChannelAuthenticator#authenticateEvent}、编排调
  *       {@link DeviceEventService#handle}——消费路径不绕开、不重写既有逻辑；</li>
- *   <li>并发度=1：单消费线程逐条 receive→处理→ack；单队列 topic 全局有序（序守卫要求 eventSeq 单调到达）；</li>
+ *   <li><b>分片保序（P0-2）</b>：发送端按 cabinetNo 设 FIFO message group（同柜同队列、柜内严格 FIFO 投递）；
+ *       消费端按柜 hash 到固定 worker——<b>同柜串行、跨柜并行</b>。spike 实测
+ *       （`scripts/verify/batch24/_spike_fifo_out.txt`）：服务端只保证"同柜投递序"，
+ *       未 ack 的同柜后续仍会投递 → 柜内串行必须由消费端保证；
+ *       保序不变量从"全局"降为"每柜"（序守卫本就按 (cabinetNo,bootId) 判定，业务语义不变）；</li>
+ *   <li>在途限流：Semaphore（≤2×batch）控制未 ack 数量，防拉取远快于处理造成 invisible 到期重投风暴；</li>
  *   <li>失败分级：验签失败/未登记/协议垃圾/信封不一致 = 毒消息 **ack 丢弃**（防无限重投）；
  *       瞬时异常（DB 抖动等）**不 ack** 等 broker 重投，重投耗尽进死信；重复投递由业务幂等吸收；</li>
- *   <li>broker 韧性：consumer 懒构建 + 5s 节拍重建（broker 重启不炸平台）。</li>
+ *   <li>broker 韧性：consumer 懒构建 + 5s 节拍重建（broker 重启不炸平台）；空轮 receive 返回空集不抛，不触发重建。</li>
  * </ul>
  */
 @Slf4j
@@ -47,9 +55,6 @@ public class DeviceEventMqConsumer {
     enum Outcome {
         ACK, RETRY
     }
-
-    /** 消息不可见时长（处理窗口；超时未 ack broker 自动重投） */
-    private static final Duration INVISIBLE_DURATION = Duration.ofSeconds(15);
 
     /** 长轮询等待时长（空队列阻塞上限，也是停机信号最长感知延迟） */
     private static final Duration AWAIT_DURATION = Duration.ofSeconds(5);
@@ -66,6 +71,10 @@ public class DeviceEventMqConsumer {
     private volatile boolean running = true;
     private SimpleConsumer consumer;
     private Thread consumerThread;
+    /** 按柜串行的 worker 池（P0-2）：同柜 hash 到同一 worker，跨柜并行 */
+    private ExecutorService[] workers;
+    /** 在途未 ack 限流（防重投风暴） */
+    private Semaphore inFlight;
 
     public DeviceEventMqConsumer(DeviceChannelProperties properties, DeviceChannelAuthenticator authenticator,
                                  DeviceEventService deviceEventService) {
@@ -76,11 +85,24 @@ public class DeviceEventMqConsumer {
 
     @PostConstruct
     public void start() {
+        int threads = Math.max(1, properties.getMq().getConsumerThreads());
+        int batch = Math.max(1, properties.getMq().getBatchSize());
+        workers = new ExecutorService[threads];
+        for (int i = 0; i < threads; i++) {
+            final int idx = i;
+            workers[i] = Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "platform-mq-worker-" + idx);
+                t.setDaemon(true);
+                return t;
+            });
+        }
+        inFlight = new Semaphore(batch * 2);
         consumerThread = new Thread(this::consumeLoop, "platform-mq-consumer");
         consumerThread.setDaemon(true);
         consumerThread.start();
-        log.info("[MQ事件消费] 消费线程已启动 endpoint={} topic={} group={}（并发度=1 保序）",
-                properties.getMq().getEndpoint(), properties.getMq().getTopic(), properties.getMq().getConsumerGroup());
+        log.info("[MQ事件消费] 已启动 endpoint={} topic={} group={} workers={} batch={}（P0-2 分片保序：同柜串行、跨柜并行）",
+                properties.getMq().getEndpoint(), properties.getMq().getTopic(),
+                properties.getMq().getConsumerGroup(), threads, batch);
     }
 
     @PreDestroy
@@ -88,6 +110,11 @@ public class DeviceEventMqConsumer {
         running = false;
         if (consumerThread != null) {
             consumerThread.interrupt();
+        }
+        if (workers != null) {
+            for (ExecutorService worker : workers) {
+                worker.shutdown(); // 在途消息处理完（未 ack 的由 broker 重投）
+            }
         }
         closeConsumerQuietly();
     }
@@ -100,13 +127,22 @@ public class DeviceEventMqConsumer {
                     sleep(REBUILD_INTERVAL_MILLIS);
                     continue;
                 }
-                List<MessageView> messages = c.receive(1, INVISIBLE_DURATION);
+                List<MessageView> messages = c.receive(properties.getMq().getBatchSize(), invisibleDuration());
                 for (MessageView message : messages) {
                     if (!running) {
                         return; // 停机窗口未 ack 消息由 broker 重投（重启窗口零丢失）
                     }
-                    handleOne(c, message);
+                    inFlight.acquire();
+                    try {
+                        dispatch(c, message);
+                    } catch (RuntimeException e) {
+                        inFlight.release(); // 分发失败（worker 已关闭等）不占用在途额度
+                        throw e;
+                    }
                 }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
             } catch (ClientException e) {
                 if (running) {
                     log.error("[MQ事件消费] receive 异常，{}ms 后重建 consumer: {}", REBUILD_INTERVAL_MILLIS, e.getMessage());
@@ -120,6 +156,38 @@ public class DeviceEventMqConsumer {
                 sleep(REBUILD_INTERVAL_MILLIS);
             }
         }
+    }
+
+    /** 按柜分发（P0-2）：同柜 → 同一 worker 串行执行；worker 处理完 ack 并释放在途额度 */
+    private void dispatch(SimpleConsumer c, MessageView message) {
+        int idx = workerIndexFor(shardKey(message), workers.length);
+        workers[idx].submit(() -> {
+            try {
+                handleOne(c, message);
+            } finally {
+                inFlight.release();
+            }
+        });
+    }
+
+    /** 分片键：优先 FIFO message group（发送端按柜设组），回退 property 柜号 */
+    private String shardKey(MessageView message) {
+        String group = message.getMessageGroup().orElse(null);
+        if (group != null && !group.isEmpty()) {
+            return group;
+        }
+        String cabinetNo = message.getProperties().get("X-Device-No");
+        return cabinetNo == null ? "" : cabinetNo;
+    }
+
+    /** 同柜必落同一 worker（柜内串行）；包内可见供单测钉住分片稳定性 */
+    static int workerIndexFor(String shardKey, int workerCount) {
+        return Math.floorMod(shardKey.hashCode(), workerCount);
+    }
+
+    /** 消息不可见时长（处理窗口，含同柜排队余量；超时未 ack broker 自动重投） */
+    private Duration invisibleDuration() {
+        return Duration.ofSeconds(Math.max(5, properties.getMq().getInvisibleSeconds()));
     }
 
     private void handleOne(SimpleConsumer c, MessageView message) {
