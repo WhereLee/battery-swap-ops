@@ -19,15 +19,17 @@ jobs:
           java-version: '17'
           cache: maven
 
-      # 三模块同父聚合：契约 + 平台 + 模拟器；双端契约向量测试同 job 跑（改动即红）
+      # 四模块同父聚合：契约 + 平台 + 模拟器 + 运维 Agent（S6）；双端契约向量测试同 job 跑（改动即红）
       - name: Maven verify
         run: mvn -B -ntp verify
 
       - name: Coverage summary
         if: always()
         run: |
-          if [ -f swap-server/target/site/jacoco/jacoco.csv ]; then
-            awk -F, 'NR>1 {lm+=$8; lc+=$9} END {printf "LINE coverage: %.1f%% (%d/%d)\n", 100*lc/(lm+lc), lc, lm+lc}' swap-server/target/site/jacoco/jacoco.csv
-          else
-            echo "jacoco.csv not found"
-          fi
+          for m in swap-contract swap-server swap-sim swap-agent; do
+            if [ -f $m/target/site/jacoco/jacoco.csv ]; then
+              awk -F, -v m=$m 'NR>1 {lm+=$8; lc+=$9} END {printf "%s LINE coverage: %.1f%% (%d/%d)\n", m, 100*lc/(lm+lc), lc, lm+lc}' $m/target/site/jacoco/jacoco.csv
+            else
+              echo "$m: jacoco.csv not found"
+            fi
+          done

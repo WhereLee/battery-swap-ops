@@ -52,6 +52,7 @@
 - block-records/批次24-P0-2分片保序与双实例演练.md（FIFO message group spike：含"服务端不 hold 未 ack 同柜后续"反直觉结论；两端分片改造；`_c28` 15/15；双实例 30 分钟 `_c29` 18/18 零重复执行；保序口径"每柜单调"）
 - block-records/批次25-题库-ADR-故事卡.md（P0-5/P1-9/P2-12 三份访谈就绪文档；纯文档）
 - block-records/批次26-P2-13静态检查与异构设备端.md（SpotBugs 门禁首跑抓真 bug；Python 异构设备端 `_c30` 25/25；下行 chunked / 设备会话关联 / PS 管道三坑）
+- block-records/批次27-S6运维Agent最小版.md（swap-agent 模块（零依赖外部消费者）+ 规则引擎 14 类型映射/克制原则 + 评测集 20/20 + `_c31` 31/31（含反向断言：杀 Agent 平台无恙）；P2-11）
 - block-records/2026-09-16-1856-写路径容量模块-交接文档.md（模块暂停交接书；其 §7 执行序已由批次17 收口）
 
 ### knowledge（节选：入口性文档）
@@ -64,12 +65,13 @@
 - knowledge/agent-settlement.md（代理分润结算：基数口径/冲正/结算单/守恒，S7 WP-B）
 - knowledge/decision-records.md（ADR 10 条 + 15 分钟白板讲述顺序；P1-9，批次25）
 - knowledge/story-cards.md（6 张缺陷故事卡 + 边界与未做清单 12 项；P2-12，批次25）
+- knowledge/agent-seam.md（Agent 接缝：两段式动作/MCP 工具清单 + S6 最小版落地（swap-agent 模块/规则表/评测集/剧本）；S4.6 + 批次27）
 - fixes/resilience-patch.md（韧性补丁 G1-G5：计费欠费化/报障复核/对账互斥，S7）
 - knowledge/s5-quality-delivery.md（S5 质量线：压测/GC/覆盖率设计与结论）
 - 其余为专题档（outbox/支付仲裁/熔断/缓存/策略/调拨/Agent 接缝等），见目录。
 
 ### 剧本证据
-- `scripts/verify/README.md`（29 剧本总索引 + 前置 + 命名约定；`_out.txt` 为统计证据，原件归档 diag-archive/）
+- `scripts/verify/README.md`（35 剧本总索引 + 前置 + 命名约定；`_out.txt` 为统计证据，原件归档 diag-archive/）
 
 ### pitfalls
 - pitfalls/gbk-source-encoding.md

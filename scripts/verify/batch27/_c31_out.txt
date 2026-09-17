@@ -1,0 +1,33 @@
+﻿== S6 gate: ops agent loop ==
+12:06:13 PASS platform health UP
+12:06:17 PASS agent jar built
+12:06:17 probe alarms: A=3941 (CABINET_FAULT->workorder) B=3942 (RECONCILE_ERROR->reconcile) C=3943 (ORDER_ARREARS->restraint)
+12:06:17 PASS 3 probe alarms planted
+12:06:21 PASS agent health UP (bounded wait)
+12:06:21 scan1: alarms=166 suggestions=16 submitted=16 errors=0
+12:06:21 PASS scan1 zero submit errors
+12:06:21 PASS scan1 produced suggestions for probes
+12:06:21 PASS A proposed once (work order)
+12:06:21 PASS B proposed once (reconcile)
+12:06:21 PASS C got no proposal (funds red line)
+12:06:21 PASS proposal reason tagged [agent-auto]
+12:06:22 PASS rescan keeps single row for A
+12:06:22 PASS rescan keeps single row for B
+12:06:22 PASS status: platformUp=true
+12:06:22 PASS status: submittedTotal>=2
+12:06:22 diagnose: SWAP-C-031 æªå¤ç 1 æ¡ï¼CABINET_FAULT x1ï¼ï¼é¦ç° just now åãè¯æ­ï¼å½ä¸­ 1 æ¡è¿ç»´å»ºè®®ãå»ºè®®ï¼CREATE_WORK_ORDER_FROM_ALARMï¼severity=HIGHï¼æºåè­¦ id=3941ï¼ã
+12:06:22 PASS diagnose suggests work order
+12:06:22 PASS summary window covers probe cabinet
+12:06:22 confirmed: no=AA93920454921814016 status=2 confirmer=bootstrap result={"workOrderId":15,"woNo":"WO93920459044814848","status":1}
+12:06:22 PASS A confirmed & executed (status=2)
+12:06:22 PASS work order created from alarm A
+12:06:22 PASS double confirm refused (CAS guard)
+12:06:22 PASS still exactly one work order
+12:06:22 PASS audit: SUGGESTION_CONFIRM logged
+12:06:22 PASS B rejected (status=3)
+12:06:28 PASS agent process is down
+12:06:28 PASS platform health UP with agent down
+12:06:28 PASS signed heartbeat accepted with agent down
+12:06:28 PASS new alarm visible with agent down
+12:06:29 PASS probe alarms closed (handled=1)
+12:06:29 GATE-OPS-AGENT PASS

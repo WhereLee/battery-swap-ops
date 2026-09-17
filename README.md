@@ -7,14 +7,15 @@
 > 运行详见 `document/knowledge/runbook.md`；剧本索引 `scripts/verify/README.md`。
 > 阶段计划见工作区 `项目一-阶段计划.md`；参考基准见工作区 `项目一-参考基准.md`。
 
-## 现状（2026-09-16）
+## 现状（2026-09-17）
 
 - 阶段：S0 设计冻结 ✅ / S1 指令闭环 ✅ / S2 换电闭环 ✅ / S3 可靠性深水 ✅ / S4 运营调度 ✅ /
-  S5 质量与云交付 ✅ / **S7 运营纵深 ✅**（管理端 RBAC+审计 / 渠道对账 T+1 / 用户服务与营销 / 代理分润结算 / 韧性补丁）
-- 测试：**376/376**（契约 4 + 平台 343 + 模拟器 29）；JaCoCo 门槛 server 65% / sim 55% / contract 70%，CI `mvn verify` 强制
+  S5 质量与云交付 ✅ / S7 运营纵深 ✅（管理端 RBAC+审计 / 渠道对账 T+1 / 用户服务与营销 / 代理分润结算 / 韧性补丁）/
+  **S6 运维 Agent 最小版 ✅**（独立 `swap-agent`：只读诊断 + 建议单闭环 + 评测集 20 题 + 反向断言）
+- 测试：**436/436**（契约 4 + 平台 372 + 模拟器 31 + Agent 29）；JaCoCo 门槛 server 65% / sim 55% / contract 70% / agent 65%，CI `mvn verify` 强制
 - 对账不变量 **14 组**（含分账守恒/结算单一致/完成单必分账/欠费/券状态）；任务看护 9 项
 - 容量（读路径方法论复测，512m 堆，限流关，同机）：**3,230/s @20 线程 / 3,526/s @100 线程，0 错误，p99 16ms/84ms**（预热+稳态窗口；旧 465.5/s 为压测端端口耗尽假象，见 `document/knowledge/capacity-model.md`）
-- 实机剧本 29 个（`_g1`-`_g8` + `_c0`-`_c20`，batch1-13 全 PASS，含 S7 五条新剧本 `_c16`-`_c20`）
+- 实机剧本 35 个（`scripts/verify/README.md` 总索引；batch1-27 全 PASS，含双实例 `_c29`、异构设备端 `_c30`、运维 Agent `_c31`）
 
 ## 架构
 
@@ -25,7 +26,7 @@ flowchart LR
     SERVER[swap-server 平台 :8400/api] -->|指令 commandSeq 幂等| SIM
     USER[骑手小程序端] --> SERVER
     ADMIN[运营后台<br/>RBAC: SUPER/OPS/FINANCE/SUPPORT] --> SERVER
-    AGENT[电柜 Agent 建议单] --> SERVER
+    AGENT[swap-agent 运维 Agent<br/>只读+建议单 :8700] --> SERVER
     PAY[支付网关-模拟] --> SERVER
     SERVER --> DB[(MySQL 8 流水+状态机+分账)]
     SERVER --> RD[(Redis 缓存/限流/锁/雪花)]
@@ -45,6 +46,7 @@ flowchart LR
 | `swap-contract` | 双端契约：枚举 / HMAC canonical / 契约向量测试 | — |
 | `swap-server` | 换电运营平台（设备接入 + 业务，context-path `/api`） | 8400 |
 | `swap-sim` | 换电柜模拟器（N 柜 × M 仓，心跳/事件/故障注入） | 8500 |
+| `swap-agent` | 运维 Agent（只读诊断 + 建议单；零依赖外部消费者） | 8700 |
 
 技术栈：Java 17 / Spring Boot 3.5 / MyBatis-Plus / MySQL 8 / Redis / RocketMQ / JMeter（容量）。
 
@@ -101,7 +103,7 @@ mvn -B -ntp test "-Dsurefire.runOrder=random"       # push 前随机顺序复跑
 mvn -B -ntp clean verify                            # 覆盖率门槛（CI 同款）
 ```
 
-- 实机剧本 29 个（`scripts/verify/`，全 PASS）；容量与 GC 证据在 `batch7/`（jtl/GC 原件归档 `diag-archive/`，不入 git）
+- 实机剧本 35 个（`scripts/verify/`，全 PASS）；容量与 GC 证据在 `batch7/`（jtl/GC 原件归档 `diag-archive/`，不入 git）
 - CI：`.github/workflows/ci.yml`（build → test → coverage summary，每 push 收口）
 
 ## 文档地图
@@ -109,7 +111,7 @@ mvn -B -ntp clean verify                            # 覆盖率门槛（CI 同�
 | 位置 | 内容 |
 |---|---|
 | `document/plans/` | S0 设计冻结 + S3 可靠性方案 |
-| `document/block-records/` | 批次 1-14 实施记录（做了什么/取舍/验证证据） |
+| `document/block-records/` | 批次 1-27 实施记录（做了什么/取舍/验证证据） |
 | `document/pitfalls/` `fixes/` | 踩坑与修复（环境/编码/并发/JVM） |
 | `document/knowledge/` | 领域知识（含 architecture / runbook / s5-quality-delivery） |
 | `scripts/verify/` | 剧本与证据（README 为总索引） |

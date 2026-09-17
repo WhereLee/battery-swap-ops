@@ -1,0 +1,134 @@
+{
+  "now": 1700000000000,
+  "comment": "S6 运维 Agent 评测集（20 题）：suggest=规则引擎（期望动作含类型/源告警/严重度，空数组=克制不动手）；diagnose=设备问答（期望 answer 包含子串）；summary=事故摘要（窗口聚合与渲染）。now 固定保证评测确定性。",
+  "cases": [
+    {
+      "id": "E01", "desc": "柜级故障 → 建工单(HIGH)", "kind": "suggest",
+      "alarms": [{"id":101,"deviceType":"CABINET","deviceNo":"SWAP-C-101","alarmType":"CABINET_FAULT","content":"cabinet fault","handled":0,"createTime":1699999400000}],
+      "expect": {"actions": [{"actionType":"CREATE_WORK_ORDER_FROM_ALARM","alarmId":101,"severity":"HIGH"}]}
+    },
+    {
+      "id": "E02", "desc": "仓位故障 → 建工单(HIGH)", "kind": "suggest",
+      "alarms": [{"id":102,"deviceType":"CABINET","deviceNo":"SWAP-C-102","alarmType":"CELL_FAULT","content":"cell fault","handled":0,"createTime":1699999400000}],
+      "expect": {"actions": [{"actionType":"CREATE_WORK_ORDER_FROM_ALARM","alarmId":102,"severity":"HIGH"}]}
+    },
+    {
+      "id": "E03", "desc": "健康度低 → 建工单(MEDIUM)", "kind": "suggest",
+      "alarms": [{"id":103,"deviceType":"CELL","deviceNo":"BAT-0103","alarmType":"BATTERY_HEALTH_LOW","content":"health low","handled":0,"createTime":1699999400000}],
+      "expect": {"actions": [{"actionType":"CREATE_WORK_ORDER_FROM_ALARM","alarmId":103,"severity":"MEDIUM"}]}
+    },
+    {
+      "id": "E04", "desc": "指令重试超限 → 建工单(MEDIUM)", "kind": "suggest",
+      "alarms": [{"id":104,"deviceType":"CABINET","deviceNo":"SWAP-C-104","alarmType":"RETRY_EXCEEDED","content":"retry exceeded","handled":0,"createTime":1699999400000}],
+      "expect": {"actions": [{"actionType":"CREATE_WORK_ORDER_FROM_ALARM","alarmId":104,"severity":"MEDIUM"}]}
+    },
+    {
+      "id": "E05", "desc": "工单 SLA 超时 → 建工单升级(HIGH)", "kind": "suggest",
+      "alarms": [{"id":105,"deviceType":"ORDER","deviceNo":"WO-105","alarmType":"WORK_ORDER_SLA_BREACH","content":"sla breach","handled":0,"createTime":1699999400000}],
+      "expect": {"actions": [{"actionType":"CREATE_WORK_ORDER_FROM_ALARM","alarmId":105,"severity":"HIGH"}]}
+    },
+    {
+      "id": "E06", "desc": "批量离线（站点级） → 建工单(HIGH)", "kind": "suggest",
+      "alarms": [{"id":106,"deviceType":"CABINET","deviceNo":"SITE-A","alarmType":"BATCH_OFFLINE","content":"5 cabinets offline","handled":0,"createTime":1699999400000}],
+      "expect": {"actions": [{"actionType":"CREATE_WORK_ORDER_FROM_ALARM","alarmId":106,"severity":"HIGH"}]}
+    },
+    {
+      "id": "E07", "desc": "日终对账差异 → 触发对账(MEDIUM)", "kind": "suggest",
+      "alarms": [{"id":107,"deviceType":"SYSTEM","deviceNo":"reconcile","alarmType":"RECONCILE_ERROR","content":"diff found","handled":0,"createTime":1699999400000}],
+      "expect": {"actions": [{"actionType":"RUN_RECONCILE","alarmId":107,"severity":"MEDIUM"}]}
+    },
+    {
+      "id": "E08", "desc": "渠道对账差异 → 触发对账(HIGH)", "kind": "suggest",
+      "alarms": [{"id":108,"deviceType":"SYSTEM","deviceNo":"payrecon","alarmType":"CHANNEL_RECON_DIFF","content":"channel diff","handled":0,"createTime":1699999400000}],
+      "expect": {"actions": [{"actionType":"RUN_RECONCILE","alarmId":108,"severity":"HIGH"}]}
+    },
+    {
+      "id": "E09", "desc": "单柜离线 → 观察不动手（防网络抖动噪音）", "kind": "suggest",
+      "alarms": [{"id":109,"deviceType":"CABINET","deviceNo":"SWAP-C-109","alarmType":"OFFLINE","content":"offline","handled":0,"createTime":1699999400000}],
+      "expect": {"actions": []}
+    },
+    {
+      "id": "E10", "desc": "订单归还超期 → 人工催收，不动手", "kind": "suggest",
+      "alarms": [{"id":110,"deviceType":"ORDER","deviceNo":"SW-110","alarmType":"ORDER_OVERDUE","content":"overdue","handled":0,"createTime":1699999400000}],
+      "expect": {"actions": []}
+    },
+    {
+      "id": "E11", "desc": "用户欠费 → 资金类红线，不动手", "kind": "suggest",
+      "alarms": [{"id":111,"deviceType":"USER","deviceNo":"U-111","alarmType":"ORDER_ARREARS","content":"arrears","handled":0,"createTime":1699999400000}],
+      "expect": {"actions": []}
+    },
+    {
+      "id": "E12", "desc": "任务停摆 → 系统类需人排查，不动手", "kind": "suggest",
+      "alarms": [{"id":112,"deviceType":"JOB","deviceNo":"job-x","alarmType":"JOB_STALLED","content":"stalled","handled":0,"createTime":1699999400000}],
+      "expect": {"actions": []}
+    },
+    {
+      "id": "E13", "desc": "outbox/延迟死信 → 系统类，不动手", "kind": "suggest",
+      "alarms": [
+        {"id":113,"deviceType":"SYSTEM","deviceNo":"outbox","alarmType":"OUTBOX_DEAD","content":"dead","handled":0,"createTime":1699999400000},
+        {"id":114,"deviceType":"SYSTEM","deviceNo":"delay","alarmType":"DELAY_DEAD","content":"dead","handled":0,"createTime":1699999400000}
+      ],
+      "expect": {"actions": []}
+    },
+    {
+      "id": "E14", "desc": "未知告警类型 → fail-safe 不动手", "kind": "suggest",
+      "alarms": [{"id":115,"deviceType":"CABINET","deviceNo":"SWAP-C-115","alarmType":"SOME_FUTURE_TYPE","content":"new","handled":0,"createTime":1699999400000}],
+      "expect": {"actions": []}
+    },
+    {
+      "id": "E15", "desc": "已处理告警 → 忽略", "kind": "suggest",
+      "alarms": [{"id":116,"deviceType":"CABINET","deviceNo":"SWAP-C-116","alarmType":"CABINET_FAULT","content":"handled","handled":1,"createTime":1699999400000}],
+      "expect": {"actions": []}
+    },
+    {
+      "id": "E16", "desc": "同设备同类型 ×3 → 合并一条，源=最早", "kind": "suggest",
+      "alarms": [
+        {"id":119,"deviceType":"CABINET","deviceNo":"SWAP-C-117","alarmType":"CABINET_FAULT","content":"f3","handled":0,"createTime":1699999980000},
+        {"id":117,"deviceType":"CABINET","deviceNo":"SWAP-C-117","alarmType":"CABINET_FAULT","content":"f1","handled":0,"createTime":1699999900000},
+        {"id":118,"deviceType":"CABINET","deviceNo":"SWAP-C-117","alarmType":"CABINET_FAULT","content":"f2","handled":0,"createTime":1699999950000}
+      ],
+      "expect": {"actions": [{"actionType":"CREATE_WORK_ORDER_FROM_ALARM","alarmId":117,"severity":"HIGH"}]}
+    },
+    {
+      "id": "E17", "desc": "混合批：只对可动手的两类出建议", "kind": "suggest",
+      "alarms": [
+        {"id":120,"deviceType":"CABINET","deviceNo":"SWAP-C-120","alarmType":"CABINET_FAULT","content":"fault","handled":0,"createTime":1699999400000},
+        {"id":121,"deviceType":"SYSTEM","deviceNo":"reconcile","alarmType":"RECONCILE_ERROR","content":"diff","handled":0,"createTime":1699999400000},
+        {"id":122,"deviceType":"CABINET","deviceNo":"SWAP-C-120","alarmType":"OFFLINE","content":"offline","handled":0,"createTime":1699999400000},
+        {"id":123,"deviceType":"USER","deviceNo":"U-123","alarmType":"ORDER_ARREARS","content":"arrears","handled":0,"createTime":1699999400000}
+      ],
+      "expect": {"actions": [
+        {"actionType":"CREATE_WORK_ORDER_FROM_ALARM","alarmId":120,"severity":"HIGH"},
+        {"actionType":"RUN_RECONCILE","alarmId":121,"severity":"MEDIUM"}
+      ]}
+    },
+    {
+      "id": "E18", "desc": "设备问答：故障柜 → 摘要+工单建议", "kind": "diagnose", "deviceNo": "SWAP-C-201",
+      "alarms": [
+        {"id":201,"deviceType":"CABINET","deviceNo":"SWAP-C-201","alarmType":"CABINET_FAULT","content":"fault","handled":0,"createTime":1699997600000},
+        {"id":202,"deviceType":"CABINET","deviceNo":"SWAP-C-201","alarmType":"OFFLINE","content":"offline","handled":0,"createTime":1699999400000}
+      ],
+      "expect": {"answerContains": ["未处理 2 条", "CREATE_WORK_ORDER_FROM_ALARM", "建议"]}
+    },
+    {
+      "id": "E19", "desc": "设备问答：仅观察类 → 克制声明", "kind": "diagnose", "deviceNo": "SWAP-C-202",
+      "alarms": [
+        {"id":203,"deviceType":"CABINET","deviceNo":"SWAP-C-202","alarmType":"OFFLINE","content":"offline","handled":0,"createTime":1699999400000}
+      ],
+      "expect": {"answerContains": ["克制", "暂无需"]}
+    },
+    {
+      "id": "E20", "desc": "事故摘要：窗口过滤 + 计数排序 + 人话渲染", "kind": "summary", "windowMinutes": 60,
+      "alarms": [
+        {"id":901,"deviceType":"CABINET","deviceNo":"SWAP-C-901","alarmType":"CABINET_FAULT","content":"a","handled":0,"createTime":1699999400000},
+        {"id":902,"deviceType":"CABINET","deviceNo":"SWAP-C-901","alarmType":"CELL_FAULT","content":"b","handled":0,"createTime":1699998800000},
+        {"id":903,"deviceType":"CABINET","deviceNo":"SWAP-C-901","alarmType":"OFFLINE","content":"c","handled":0,"createTime":1699999700000},
+        {"id":904,"deviceType":"CABINET","deviceNo":"SWAP-C-902","alarmType":"CHANNEL_RECON_DIFF","content":"d","handled":0,"createTime":1699998200000},
+        {"id":905,"deviceType":"CABINET","deviceNo":"SWAP-C-902","alarmType":"RECONCILE_ERROR","content":"stale","handled":0,"createTime":1699989200000},
+        {"id":906,"deviceType":"CABINET","deviceNo":"SWAP-C-903","alarmType":"OFFLINE","content":"e","handled":0,"createTime":1699997000000},
+        {"id":907,"deviceType":"CABINET","deviceNo":"SWAP-C-903","alarmType":"RETRY_EXCEEDED","content":"f","handled":0,"createTime":1699997600000}
+      ],
+      "expect": {"deviceCount": 3, "firstDevice": "SWAP-C-901", "textContains": ["未处理 3 条（"]}
+    }
+  ]
+}

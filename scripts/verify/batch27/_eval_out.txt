@@ -1,0 +1,21 @@
+EVAL RESULT: 20/20 passed
+PASS E01 柜级故障 → 建工单(HIGH)
+PASS E02 仓位故障 → 建工单(HIGH)
+PASS E03 健康度低 → 建工单(MEDIUM)
+PASS E04 指令重试超限 → 建工单(MEDIUM)
+PASS E05 工单 SLA 超时 → 建工单升级(HIGH)
+PASS E06 批量离线（站点级） → 建工单(HIGH)
+PASS E07 日终对账差异 → 触发对账(MEDIUM)
+PASS E08 渠道对账差异 → 触发对账(HIGH)
+PASS E09 单柜离线 → 观察不动手（防网络抖动噪音）
+PASS E10 订单归还超期 → 人工催收，不动手
+PASS E11 用户欠费 → 资金类红线，不动手
+PASS E12 任务停摆 → 系统类需人排查，不动手
+PASS E13 outbox/延迟死信 → 系统类，不动手
+PASS E14 未知告警类型 → fail-safe 不动手
+PASS E15 已处理告警 → 忽略
+PASS E16 同设备同类型 ×3 → 合并一条，源=最早
+PASS E17 混合批：只对可动手的两类出建议
+PASS E18 设备问答：故障柜 → 摘要+工单建议
+PASS E19 设备问答：仅观察类 → 克制声明
+PASS E20 事故摘要：窗口过滤 + 计数排序 + 人话渲染

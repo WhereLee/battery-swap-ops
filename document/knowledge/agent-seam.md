@@ -41,3 +41,13 @@ MCP（Model Context Protocol）是 LLM Agent 发现/调用工具的通用协议�
 - 无自动执行（没有"Agent 直接执行"的通道）；无多级审批（单级 confirm）；
 - 动作结果 JSON 落库，但不重放（失败需重新建议）；
 - Agent 身份仅以 `proposer` 字符串标识（无 Agent 侧认证体系；管理端点仍由 AdminTokenFilter 保护——**当前建议入口也是管理端令牌**，生产形态应给 Agent 独立凭证与更细白名单，roadmap）。
+
+## 5. S6 最小版落地（批次27，2026-09-17）
+
+- **消费方**：独立模块 `swap-agent`（:8700，零编译依赖——纯 HTTP JSON 客户端；平台侧对 Agent 零依赖，杀进程反向断言三连实证）；
+- **引擎**：确定性规则表（14 类告警 → 动作/严重度；资金类/系统类/单柜离线**明确不建议**——克制原则；未知类型 fail-safe）；
+  接口 `SuggestionEngine` 隔离，将来挂 LLM 只换实现，骨架（扫描/幂等/审计链路）不动；
+- **幂等**：建议键 `agent-<alarmId>-<type>`（平台 `idem_key` 唯一键兜底）；reason 前缀 `[agent-auto]`；
+- **评测**：20 题（suggest/diagnose/summary 三类），回归基线 20/20（`scripts/verify/batch27/_eval_out.txt`）；
+- **闭环证据**：`_c31` 31/31（扫描→建议单→人工确认→工单+审计；含杀 Agent 反向断言）；
+- proposer 记录为 `bootstrap`（break-glass 令牌）——生产独立凭证的边界声明（§4）不变。

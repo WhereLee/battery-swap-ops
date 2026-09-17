@@ -1,0 +1,19 @@
+server:
+  port: 8700
+
+spring:
+  application:
+    name: swap-agent
+
+swap:
+  agent:
+    enabled: ${SWAP_AGENT_ENABLED:false}
+    platform-base-url: ${SWAP_AGENT_PLATFORM_URL:http://127.0.0.1:8400/api}
+    admin-token: ${SWAP_AGENT_ADMIN_TOKEN:}
+    poll-interval-ms: ${SWAP_AGENT_POLL_MS:30000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

@@ -22,6 +22,7 @@
         <module>swap-contract</module>
         <module>swap-server</module>
         <module>swap-sim</module>
+        <module>swap-agent</module>
     </modules>
 
     <properties>

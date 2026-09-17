@@ -10,7 +10,7 @@ flowchart TB
     subgraph 客户端
         USER[骑手小程序端]
         ADMIN[运营后台]
-        AGENT[电柜 Agent]
+        AGENT[swap-agent 运维 Agent<br/>只读+建议单]
     end
     subgraph 设备侧
         SIM[swap-sim 模拟器<br/>N柜×M仓 心跳/事件/故障注入/充电模拟]
@@ -102,3 +102,6 @@ flowchart TB
 - 云端（2026-09-14 起）：`/opt/swap` jar + systemd 双服务（swap-server :8400 / swap-sim :8500），
   HTTP 事件通道（未装 RocketMQ），密钥在 `/opt/swap/config/swap.env`（600），每日备份 cron + 恢复演练；
   暴露面仅 SSH（ufw 仅 22）。见《服务器连接文档》§九与 runbook §9。
+- **运维 Agent（S6，2026-09-17）**：`swap-agent` 独立进程 :8700（本地 `.local/start-agent.ps1`）——只读消费管理端接口 +
+  仅"建议单"写入（propose 零副作用，人工 confirm 才执行）；平台对 Agent 零依赖（杀进程后平台健康/设备心跳/告警记录
+  三路实证不受影响，`scripts/verify/batch27/_c31_out.txt`）。云端可按需追加 systemd 服务。
