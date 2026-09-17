@@ -52,6 +52,8 @@ class CommandDispatchServiceTest {
     private HttpServer server;
     private final AtomicReference<String> lastSign = new AtomicReference<>();
     private final AtomicReference<String> lastBody = new AtomicReference<>();
+    private final AtomicReference<String> lastContentLength = new AtomicReference<>();
+    private final AtomicReference<String> lastTransferEncoding = new AtomicReference<>();
     private volatile String responseBody = "{\"code\":0,\"msg\":\"已受理\"}";
 
     @BeforeEach
@@ -59,6 +61,8 @@ class CommandDispatchServiceTest {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> {
             lastSign.set(exchange.getRequestHeaders().getFirst("X-Device-Sign"));
+            lastContentLength.set(exchange.getRequestHeaders().getFirst("Content-Length"));
+            lastTransferEncoding.set(exchange.getRequestHeaders().getFirst("Transfer-Encoding"));
             lastBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
@@ -111,6 +115,11 @@ class CommandDispatchServiceTest {
         assertThat(lastSign.get()).isEqualTo(
                 DeviceSignature.sign(SECRET, DeviceSignature.canonicalCommand(CABINET_NO, 3, 7L)));
         assertThat(lastBody.get()).contains("\"cellNo\":3").contains("\"commandSeq\":7");
+        // 报文形态回归门禁（batch26 异构对接实测）：定长 body + 无 chunked——最保守设备栈（脚本/嵌入式）可解析。
+        // 曾用 JdkClientHttpRequestFactory 默认行为发 chunked，被 Python 标准库设备端读成空 body。
+        assertThat(lastContentLength.get())
+                .isEqualTo(String.valueOf(lastBody.get().getBytes(StandardCharsets.UTF_8).length));
+        assertThat(lastTransferEncoding.get()).isNull();
     }
 
     @Test

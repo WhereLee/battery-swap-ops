@@ -1,0 +1,30 @@
+﻿batch26 P2-13 heterogeneous device drill (non-Java endpoint, stdlib Python)
+run at   : 2026-09-17 11:19:11
+device   : scripts/verify/batch26/hetero_device.py cabinet=SWAP-C-005 downlink=:8600 bootId=7f568ce2c3e34e5cb21618dc603e50b2
+platform : :8400 HTTP channel, sim-base-url=http://127.0.0.1:8600 (sim stopped for the drill)
+result   : PASS 25 / 25
+PASS  setup.platform-up-http-channel  --  platform :8400 UP with downlink base http://127.0.0.1:8600
+PASS  setup.dev-reset-ok  --  leftover orders cancelled=0 batteries homed=61 cells occupied=60; device state file cleared (fresh seed)
+PASS  setup.hetero-device-up  --  python device listening on :8600 (independent implementation)
+PASS  heartbeat.accepted  --  platform sees SWAP-C-005 online (HMAC heartbeat from Python device)
+PASS  device.bootid-exposed  --  device bootId=7f568ce2c3e34e5cb21618dc603e50b2 (32 hex)
+PASS  downlink.forged-signature-401  --  forged signature -> HTTP 401
+PASS  downlink.valid-signature-accepted  --  first delivery: accepted
+PASS  downlink.replay-idempotent  --  replay: duplicate ignored seq=777002
+PASS  take.order-opened-via-hetero  --  order SW93908578766815232 reached OPENED (platform downlink -> device DOOR_OPENED uplink)
+PASS  take.downlink-targeted-hetero-cabinet  --  order cabinet=SWAP-C-005 cell=1
+PASS  take.order-completed  --  BATTERY_OUT from python device completed the order
+PASS  take.paytype-plan  --  payType=PLAN
+PASS  take.battery-bound  --  rider holds BAT-0049
+PASS  return.order-opened-via-hetero  --  order SW93908583229554688 reached OPENED
+PASS  return.order-completed  --  BATTERY_IN from python device completed the return
+PASS  return.fee-zero  --  feeFen=0
+PASS  return.battery-recorded  --  returned=BAT-0049 held=BAT-0049
+PASS  return.deposit-refunded  --  depositFen=0 after return
+PASS  ledger.bootid-owned-by-hetero  --  platform lastBootId=7f568ce2c3e34e5cb21618dc603e50b2
+PASS  ledger.seq-advanced  --  lastEventSeq=5 (door/out/door/in at minimum)
+PASS  device.counters-consistent  --  cmd_accepted=3 cmd_duplicate=1 sent=6 bad_sign=1 retried=0
+PASS  device.seq-monotonic-persisted  --  device eventSeq=5 >= platform ledger
+PASS  log.door-open-reported  --  device reported DOOR_OPENED with commandSeq
+PASS  log.battery-events-reported  --  device reported both battery events
+PASS  log.invalid-signature-401  --  device rejected the forged downlink

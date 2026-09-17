@@ -49,6 +49,9 @@
 - block-records/批次21-P1-7参数校验与P1-11告警webhook.md（校验统一 400 + 出站 webhook 签名/重试/熔断/隔离；_c25 13/13、_c26 12/12 PASS、单测 356/356）
 - block-records/批次22-P1-8数据权限.md（DataFilter：按站点隔离的管理端数据范围——六类列表过滤 + 资源级 403 + fail-closed + 自检切面；_c27 24/24 PASS、单测 371/371）
 - block-records/批次23-P0-1集成测试进CI.md（Testcontainers 容器基座 + IT×3 换电主链路/对账检出/并发零超卖 + failsafe；CI 首跑绿、门禁红探针实证、本地无 Docker 371/371 不受影响）
+- block-records/批次24-P0-2分片保序与双实例演练.md（FIFO message group spike：含"服务端不 hold 未 ack 同柜后续"反直觉结论；两端分片改造；`_c28` 15/15；双实例 30 分钟 `_c29` 18/18 零重复执行；保序口径"每柜单调"）
+- block-records/批次25-题库-ADR-故事卡.md（P0-5/P1-9/P2-12 三份访谈就绪文档；纯文档）
+- block-records/批次26-P2-13静态检查与异构设备端.md（SpotBugs 门禁首跑抓真 bug；Python 异构设备端 `_c30` 25/25；下行 chunked / 设备会话关联 / PS 管道三坑）
 - block-records/2026-09-16-1856-写路径容量模块-交接文档.md（模块暂停交接书；其 §7 执行序已由批次17 收口）
 
 ### knowledge（节选：入口性文档）
@@ -59,6 +62,8 @@
 - knowledge/channel-recon.md（渠道对账 T+1：模型/流程/差异分类/证据/边界，S7 WP-C）
 - knowledge/user-service-and-coupon.md（报障/欠费/券/站内信：状态机、分账口径、证据，S7 WP-D）
 - knowledge/agent-settlement.md（代理分润结算：基数口径/冲正/结算单/守恒，S7 WP-B）
+- knowledge/decision-records.md（ADR 10 条 + 15 分钟白板讲述顺序；P1-9，批次25）
+- knowledge/story-cards.md（6 张缺陷故事卡 + 边界与未做清单 12 项；P2-12，批次25）
 - fixes/resilience-patch.md（韧性补丁 G1-G5：计费欠费化/报障复核/对账互斥，S7）
 - knowledge/s5-quality-delivery.md（S5 质量线：压测/GC/覆盖率设计与结论）
 - 其余为专题档（outbox/支付仲裁/熔断/缓存/策略/调拨/Agent 接缝等），见目录。
@@ -79,6 +84,13 @@
 - pitfalls/redis-data-loss-runtime-consistency.md（Redis 数据回退的运行时一致性三连坑 + 恢复清单；已修复，批次19）
 - pitfalls/micrometer-gauge-weak-ref-flaky.md（Gauge 弱引用 + 测试无强引用 → 全量偶发 NaN；已修复，批次21）
 - pitfalls/ps-function-return-unroll-count.md（PS 函数返回展开：`.Count` 0/1/N 三态假 FAIL/假 PASS；批次21 收敛、批次22 剧本再现并改为调用处 `@()` 全量覆盖）
+- pitfalls/downlink-chunked-empty-body-minimal-stack.md（JDK 客户端默认 chunked+h2c → 最小设备栈读空 body；已修复+单测门禁，批次26）
+- pitfalls/device-session-seq-missing.md（事件未回带开门会话 commandSeq → 事件到达但订单不推进；已修复，批次26）
+- pitfalls/ps-pipe-blocks-on-spawned-jvm.md（PS 管道接壳长活 JVM → `| Out-Null` 永不返回；已修复，批次26）
+
+### roadmap
+- roadmap/P0-P2-面试就绪补强计划.md（P0-P2 全部条目状态与执行顺序、变更记录）
+- roadmap/面试自测-题库.md（30 题/8 类 + 自测协议；P0-5，批次25）
 
 ### 外部关联（工作区根，不入本仓库）
 - `项目一-换电运营平台-设计备忘.md`（项目定位/架构/分期）

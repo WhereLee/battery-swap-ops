@@ -1,6 +1,9 @@
 package com.swapops.server.device.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.swapops.contract.CommandAction;
 import com.swapops.contract.DeviceSignature;
 import com.swapops.server.common.RRException;
@@ -11,15 +14,22 @@ import com.swapops.server.device.dao.CabinetDao;
 import com.swapops.server.device.entity.CabinetEntity;
 import com.swapops.server.device.entity.CommandLogEntity;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestTemplate;
 
+import java.io.IOException;
+import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -44,8 +54,10 @@ public class CommandDispatchService {
     private final CabinetDao cabinetDao;
     private final DeviceChannelProperties properties;
     private final CommandLogService commandLogService;
-    private final RestTemplate restTemplate;
+    /** 下行 HTTP 客户端（显式 HTTP/1.1 + 定长 body，报文形态策略见 {@link #postJson}） */
+    private final HttpClient httpClient;
     private final DeviceDownlinkGuard downlinkGuard;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public CommandDispatchService(CabinetDao cabinetDao, DeviceChannelProperties properties,
                                   CommandLogService commandLogService, DeviceDownlinkGuard downlinkGuard) {
@@ -53,12 +65,11 @@ public class CommandDispatchService {
         this.properties = properties;
         this.commandLogService = commandLogService;
         this.downlinkGuard = downlinkGuard;
-        HttpClient httpClient = HttpClient.newBuilder()
+        this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(properties.getConnectTimeoutMillis()))
+                // 设备通道面向最保守设备栈：显式 HTTP/1.1，不发起 h2c upgrade 协商
+                .version(HttpClient.Version.HTTP_1_1)
                 .build();
-        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
-        factory.setReadTimeout(Duration.ofMillis(properties.getReadTimeoutMillis()));
-        this.restTemplate = new RestTemplate(factory);
     }
 
     /** 准备一次开仓指令：校验柜/密钥 → seq → 流水 PENDING（未发包） */
@@ -249,10 +260,48 @@ public class CommandDispatchService {
         }
     }
 
-    /** 统一 HTTP POST（json 响应体）；异常原样抛出交由护栏计数与调用方分级处理 */
-    @SuppressWarnings("unchecked")
+    /**
+     * 统一 HTTP POST（json 响应体）；异常映射保持 {@link RestClientException} /
+     * {@link HttpStatusCodeException} 语义（护栏计数与调用方分级处理不变）。
+     *
+     * <p>报文形态显式化：HTTP/1.1 + {@code ofString}（自带 Content-Length），不发 h2c-upgrade、
+     * 不用 chunked——设备通道须向"最保守设备栈"兼容（脚本/嵌入式设备多只认定长 body）。
+     * 曾用 JdkClientHttpRequestFactory 默认行为发 chunked，被 Python 标准库 http.server
+     * 设备端读成空 body（batch26 异构对接实测发现，证据见 _c30）。
+     */
     private Map<String, Object> postJson(String url, Map<String, Object> payload, HttpHeaders headers) {
-        return restTemplate.postForObject(url, new HttpEntity<>(payload, headers), Map.class);
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            throw new ResourceAccessException("请求体序列化失败: " + e.getMessage(), e);
+        }
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofMillis(properties.getReadTimeoutMillis()))
+                .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8));
+        // JDK builder.header 不接受 null 值（traceId 可能缺失）——跳过而非传入
+        headers.forEach((name, values) -> values.stream()
+                .filter(v -> v != null && !v.isEmpty())
+                .forEach(v -> builder.header(name, v)));
+        try {
+            HttpResponse<String> resp = httpClient.send(builder.build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (resp.statusCode() >= 400) {
+                HttpStatusCode status = HttpStatusCode.valueOf(resp.statusCode());
+                byte[] body = resp.body().getBytes(StandardCharsets.UTF_8);
+                if (resp.statusCode() < 500) {
+                    throw new HttpClientErrorException(status, "", body, StandardCharsets.UTF_8);
+                }
+                throw new HttpServerErrorException(status, "", body, StandardCharsets.UTF_8);
+            }
+            return objectMapper.readValue(resp.body(), new TypeReference<>() { });
+        } catch (IOException e) {
+            throw new ResourceAccessException("I/O error: " + e.getMessage(), e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ResourceAccessException("interrupted");
+        }
     }
 
     private CabinetEntity requireDispatchable(String cabinetNo) {

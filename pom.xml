@@ -77,6 +77,30 @@
                     </execution>
                 </executions>
             </plugin>
+            <!-- P2-13：静态检查门禁（SpotBugs 高优先级起步；Checkstyle 全量格式化成本高，本轮不上）。
+                 绑 verify：本地 `mvn test` 不受影响；本地准 CI 验证用 `mvn verify -DskipITs`（无 Docker 跳 IT），
+                 CI `mvn -B -ntp verify` 自动带上（含 IT）。只查主代码（includeTests=false）。 -->
+            <plugin>
+                <groupId>com.github.spotbugs</groupId>
+                <artifactId>spotbugs-maven-plugin</artifactId>
+                <version>4.8.6.2</version>
+                <configuration>
+                    <threshold>High</threshold>
+                    <effort>Max</effort>
+                    <failOnError>true</failOnError>
+                    <xmlOutput>true</xmlOutput>
+                    <includeTests>false</includeTests>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>spotbugs-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 

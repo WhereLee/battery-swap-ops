@@ -9,3 +9,5 @@ diag-archive/
 **/dev-secrets.properties
 **/batch-secrets.properties
 .DS_Store
+__pycache__/
+*.pyc

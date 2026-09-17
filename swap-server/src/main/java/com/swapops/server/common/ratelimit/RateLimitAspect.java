@@ -152,8 +152,13 @@ public class RateLimitAspect {
             return "";
         }
         MethodSignature signature = (MethodSignature) pjp.getSignature();
+        // P2-13 SpotBugs 门禁首跑捕获（NP_NONNULL_PARAM_VIOLATION）：rootObject 原传 null，
+        // 一旦表达式引用根对象（#root.xxx / 裸属性）即 NPE。改为切点目标对象（Spring 自身切面口径），
+        // 目标缺失时回退到连接点本身（仍非 null，且 SpEL 可取其属性）。
+        Object root = pjp.getTarget();
         StandardEvaluationContext context = new MethodBasedEvaluationContext(
-                null, signature.getMethod(), pjp.getArgs(), new DefaultParameterNameDiscoverer());
+                root != null ? root : pjp, signature.getMethod(), pjp.getArgs(),
+                new DefaultParameterNameDiscoverer());
         Object value = expressionParser.parseExpression(expression).getValue(context);
         return value == null ? "" : value.toString();
     }
