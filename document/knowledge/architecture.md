@@ -103,5 +103,13 @@ flowchart TB
   HTTP 事件通道（未装 RocketMQ），密钥在 `/opt/swap/config/swap.env`（600），每日备份 cron + 恢复演练；
   暴露面仅 SSH（ufw 仅 22）。见《服务器连接文档》§九与 runbook §9。
 - **运维 Agent（S6，2026-09-17）**：`swap-agent` 独立进程 :8700（本地 `.local/start-agent.ps1`）——只读消费管理端接口 +
-  仅"建议单"写入（propose 零副作用，人工 confirm 才执行）；平台对 Agent 零依赖（杀进程后平台健康/设备心跳/告警记录
+  仅“建议单”写入（propose 零副作用，人工 confirm 才执行）；平台对 Agent 零依赖（杀进程后平台健康/设备心跳/告警记录
   三路实证不受影响，`scripts/verify/batch27/_c31_out.txt`）。云端可按需追加 systemd 服务。
+- **前端接入层（S8，2026-09-19）**：BFF 视图层 `com.swapops.server.web.view`（**同进程，不独立成服务**——
+  单消费方场景下独立 BFF 的收益不兑现，取舍已申报见 `plans/S8-前端管理台与BFF视图层-方案.md` §4.1）：
+  `/admin/view/**` 7 个只读聚合端点（一页一请求，批量查询防 N+1）+ `allowedActions` 能力位
+  （`common/action/ActionsSupport` 纯函数，前端不复制状态机）+ VO 化（不出 Entity；柜 VO 无 `secret`；
+  可退金额取服务端资金口径）；`GET /admin/auth/me` 下发角色/37 权限码/数据范围；权限码前后端一致性由
+  `PermissionCodeContractTest` 在 CI 把关。工单新增 `station_id`（db/17，创建时由 `DeviceOwnershipService` 按设备解析）
+  使工单纳入站点数据范围；`alarm`/`agent_action` 无站点归属列，为全局口径资源（有意不挂 `@DataFilter`）。
+  前端工程 `swap-web`（Vue 3 + Vite + TS + Element Plus，批次30）；开发期 Vite proxy、生产 nginx 同源反代 `/api`（后端不开 CORS）。

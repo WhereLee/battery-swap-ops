@@ -1,0 +1,59 @@
+﻿=== C32 S8 batch29: BFF view layer ===
+PASS  A00 platform health UP
+PASS  A01 me code=0
+PASS  A02 me role=SUPER (break-glass)
+PASS  A03 me bootstrap=true
+PASS  A04 me codes count = 37
+PASS  A05 me dataScoped=false for break-glass
+PASS  A06 me without token -> 401
+PASS  B01 dashboard code=0
+PASS  B02 dashboard typed fields present
+PASS  B03 dashboard dataScoped flag present
+PASS  B04 dashboard without token -> 401
+PASS  C01 alarm page code=0
+PASS  C02 alarm page has rows
+PASS  C03 alarm row carries allowedActions
+PASS  C04 unhandled alarm allows handle
+PASS  C05 alarm without work order offers create-work-order
+PASS  C06 alarm with work order does NOT offer create-work-order
+PASS  D01 suggestion page code=0
+PASS  D02 suggestion page has rows
+PASS  D03 PROPOSED suggestion allows confirm+reject
+PASS  D04 suggestion resolves source alarm type
+PASS  H01 fixture: in-scope cabinet resolved
+PASS  H02 fixture: out-of-scope cabinet resolved
+PASS  H03 scoped operator created
+PASS  H04 scoped operator login ok
+PASS  H05 scoped me: dataScoped=true
+PASS  H06 scoped me: station range downloaded
+PASS  H07 scoped me: OPS codes exclude settlement manage
+PASS  E01 work order created from alarm
+PASS  E02 OPEN -> [triage]
+PASS  E03 TRIAGED -> [assign]
+PASS  E04 ASSIGNED -> [start]
+PASS  E05 HANDLING -> [verify]
+PASS  E06 VERIFIED -> [close]
+PASS  E07 CLOSED -> [] (terminal, no action)
+PASS  E08 detail carries full transition log (>=6)
+PASS  E09 detail carries source alarm brief
+PASS  F01 cabinet detail code=0
+PASS  F02 cabinet detail aggregates cells
+PASS  F03 cabinet detail aggregates nested lists
+PASS  F04 cabinet detail NEVER leaks secret
+PASS  F05 heartbeat age computed server-side
+PASS  G01 order detail code=0
+PASS  G02 order detail statusDesc resolved
+PASS  G03 order detail exposes server-side refundableFen
+PASS  G04 order detail carries payment ledger array
+PASS  H08 in-scope cabinet readable by scoped operator
+PASS  H09 out-of-scope cabinet -> 403
+PASS  H10 scoped work order list contains no foreign station rows
+PASS  H11 scoped work order list only own-station rows
+SKIP  H12 foreign work order detail (no foreign-station work order available)
+PASS  H13 unowned work order -> 403 for scoped identity (fail-closed)
+PASS  H14 unowned work order still readable by unrestricted identity
+PASS  I01 db/17 re-apply is idempotent (exit 0)
+PASS  Z01 temporary operator password file removed
+
+RESULT pass=54 fail=0 skip=1
+GATE-ADMIN-VIEW PASS

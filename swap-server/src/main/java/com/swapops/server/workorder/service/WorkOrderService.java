@@ -4,10 +4,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.swapops.server.admin.data.DataScopeSupport;
 import com.swapops.server.alarm.AlarmType;
 import com.swapops.server.alarm.dao.AlarmDao;
 import com.swapops.server.alarm.entity.AlarmEntity;
 import com.swapops.server.alarm.service.AlarmService;
+import com.swapops.server.asset.service.DeviceOwnershipService;
 import com.swapops.server.common.RRException;
 import com.swapops.server.common.delay.DelayQueueService;
 import com.swapops.server.common.id.SnowflakeIdGenerator;
@@ -48,11 +50,13 @@ public class WorkOrderService {
     private final SnowflakeIdGenerator idGenerator;
     private final WorkOrderProperties properties;
     private final com.swapops.server.user.service.UserMessageService messageService;
+    private final DeviceOwnershipService ownershipService;
 
     public WorkOrderService(WorkOrderDao workOrderDao, WorkOrderLogDao workOrderLogDao, AlarmDao alarmDao,
                             AlarmService alarmService, DelayQueueService delayQueueService,
                             SnowflakeIdGenerator idGenerator, WorkOrderProperties properties,
-                            com.swapops.server.user.service.UserMessageService messageService) {
+                            com.swapops.server.user.service.UserMessageService messageService,
+                            DeviceOwnershipService ownershipService) {
         this.workOrderDao = workOrderDao;
         this.workOrderLogDao = workOrderLogDao;
         this.alarmDao = alarmDao;
@@ -61,6 +65,7 @@ public class WorkOrderService {
         this.idGenerator = idGenerator;
         this.properties = properties;
         this.messageService = messageService;
+        this.ownershipService = ownershipService;
     }
 
     /** 告警转工单（alarm_id 唯一：重复转换幂等返回既有工单） */
@@ -83,6 +88,7 @@ public class WorkOrderService {
         order.setAlarmId(alarmId);
         order.setDeviceType(alarm.getDeviceType());
         order.setDeviceNo(alarm.getDeviceNo());
+        order.setStationId(ownershipService.resolveStationId(alarm.getDeviceNo()));
         order.setTitle("[" + alarm.getAlarmType() + "] " + alarm.getDeviceNo());
         order.setSeverity(level);
         order.setSource("ALARM");
@@ -133,6 +139,7 @@ public class WorkOrderService {
                 : (description.length() <= 255 ? description : description.substring(0, 255)));
         order.setDeviceType(deviceType);
         order.setDeviceNo(deviceNo);
+        order.setStationId(ownershipService.resolveStationId(deviceNo));
         order.setTitle("[用户报障] " + reportType + " " + deviceNo);
         order.setSeverity(level);
         order.setStatus(WorkOrderStatus.OPEN.getCode());
@@ -239,6 +246,8 @@ public class WorkOrderService {
         if (order == null) {
             throw new RRException("工单不存在: " + id);
         }
+        // S8：所有动作入口与详情均经本方法 → 资源级越域 403（无 AdminContext 的调度线程不受限）
+        DataScopeSupport.requireStationAccess(order.getStationId());
         return order;
     }
 
@@ -267,12 +276,29 @@ public class WorkOrderService {
                 .orderByAsc(WorkOrderLogEntity::getId));
     }
 
+    /**
+     * 批量：告警 id → 工单 id（S8 告警页需标“是否已有工单”，一次 in 查询避免逐条 N+1）。
+     * 无归属告警不进入结果集；alarm_id 唯一键保证一告警最多一单。
+     */
+    public Map<Long, Long> workOrderIdsByAlarmIds(java.util.Collection<Long> alarmIds) {
+        if (alarmIds == null || alarmIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Long> mapping = new LinkedHashMap<>();
+        for (WorkOrderEntity order : workOrderDao.selectList(new LambdaQueryWrapper<WorkOrderEntity>()
+                .in(WorkOrderEntity::getAlarmId, alarmIds))) {
+            mapping.putIfAbsent(order.getAlarmId(), order.getId());
+        }
+        return mapping;
+    }
+
     public PageResult<WorkOrderEntity> page(Integer page, Integer limit, Integer status) {
+        LambdaQueryWrapper<WorkOrderEntity> wrapper = new LambdaQueryWrapper<WorkOrderEntity>()
+                .eq(status != null, WorkOrderEntity::getStatus, status)
+                .orderByDesc(WorkOrderEntity::getCreateTime);
+        DataScopeSupport.applyStation(wrapper, WorkOrderEntity::getStationId); // S8：站点范围过滤
         IPage<WorkOrderEntity> result = workOrderDao.selectPage(
-                new Page<>(PageParams.page(page), PageParams.limit(limit)),
-                new LambdaQueryWrapper<WorkOrderEntity>()
-                        .eq(status != null, WorkOrderEntity::getStatus, status)
-                        .orderByDesc(WorkOrderEntity::getCreateTime));
+                new Page<>(PageParams.page(page), PageParams.limit(limit)), wrapper);
         return PageResult.of(result);
     }
 

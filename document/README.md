@@ -23,6 +23,7 @@
 - plans/S0-自查优化记录.md
 - plans/S3-可靠性深水-方案.md（基于 S2 后代码盘点的 S3 实施定稿）
 - plans/S7-运营纵深-方案.md（S7 A/B/C/D + WP-0 实施方案 v2；含子 agent 审查修订与拍板口径）
+- plans/S8-前端管理台与BFF视图层-方案.md（设计冻结：“多接口顺序调用要不要编排”定论 / BFF 同进程取舍 / VO 与能力位 / 权限方案 / 页面×数据依赖矩阵 / 批次29-31）
 
 ### block-records
 - block-records/批次1-骨架与指令闭环.md
@@ -53,6 +54,7 @@
 - block-records/批次25-题库-ADR-故事卡.md（P0-5/P1-9/P2-12 三份访谈就绪文档；纯文档）
 - block-records/批次26-P2-13静态检查与异构设备端.md（SpotBugs 门禁首跑抓真 bug；Python 异构设备端 `_c30` 25/25；下行 chunked / 设备会话关联 / PS 管道三坑）
 - block-records/批次27-S6运维Agent最小版.md（swap-agent 模块（零依赖外部消费者）+ 规则引擎 14 类型映射/克制原则 + 评测集 20/20 + `_c31` 31/31（含反向断言：杀 Agent 平台无恙）；P2-11）
+- block-records/批次29-S8前端地基与BFF视图层.md（S8 第1批：`auth/me` + `ActionsSupport` 能力位 + db/17 工单站点归属 + 7 个 `/admin/view/**` BFF 聚合 + 权限码前后端契约门禁；`_c32` 54/54、单测 473/473）
 - block-records/2026-09-16-1856-写路径容量模块-交接文档.md（模块暂停交接书；其 §7 执行序已由批次17 收口）
 
 ### knowledge（节选：入口性文档）
@@ -71,7 +73,7 @@
 - 其余为专题档（outbox/支付仲裁/熔断/缓存/策略/调拨/Agent 接缝等），见目录。
 
 ### 剧本证据
-- `scripts/verify/README.md`（35 剧本总索引 + 前置 + 命名约定；`_out.txt` 为统计证据，原件归档 diag-archive/）
+- `scripts/verify/README.md`（36 剧本总索引 + 前置 + 命名约定；`_out.txt` 为统计证据，原件归档 diag-archive/）
 
 ### pitfalls
 - pitfalls/gbk-source-encoding.md

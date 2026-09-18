@@ -32,6 +32,12 @@ public class WorkOrderEntity {
 
     private String deviceNo;
 
+    /**
+     * 归属站点（S8 批次29）：创建时由 device_no 解析一次落库（与 swap_order.station_id 同思路），
+     * 供数据权限按站点过滤。NULL=无站点归属（系统级/跨站级），受限身份 fail-closed 不可见。
+     */
+    private Long stationId;
+
     private String title;
 
     /** HIGH/MEDIUM/LOW */

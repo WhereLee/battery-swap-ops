@@ -1,16 +1,20 @@
 package com.swapops.server.admin.controller;
 
 import com.swapops.server.admin.service.AdminAuthService;
+import com.swapops.server.admin.security.AdminContext;
 import com.swapops.server.common.RRException;
 import com.swapops.server.common.Result;
 import com.swapops.server.common.ratelimit.RateLimit;
 import com.swapops.server.common.ratelimit.RateLimitDimension;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -45,6 +49,30 @@ public class AdminAuthController {
     public Result<Void> logout(@RequestHeader(value = TOKEN_HEADER, required = false) String token) {
         adminAuthService.logout(token);
         return Result.ok();
+    }
+
+    /**
+     * 当前身份（S8 前端接入）：登录只回 token，无法支撑前端刷新后恢复权限上下文，
+     * 故回角色 + 权限码集合 + 数据范围。前端路由按 {@code codes} 过滤、按钮按 {@code codes} 显隐；
+     * 并由 {@code PermissionCodeContractTest} 校验"前端声明的码 ⊆ 后端码集"，防两侧漂移。
+     */
+    @GetMapping("/me")
+    public Result<Map<String, Object>> me() {
+        AdminContext.Principal principal = AdminContext.current();
+        if (principal == null) {
+            throw new RRException(401, "管理端未认证");
+        }
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("adminId", principal.adminId());
+        view.put("username", principal.username());
+        view.put("role", principal.role().name());
+        view.put("bootstrap", principal.bootstrap());
+        view.put("dataScope", principal.dataScope());
+        view.put("dataScoped", principal.dataScoped());
+        view.put("scopeStationIds", principal.scopeStationIds() == null
+                ? List.of() : principal.scopeStationIds().stream().sorted().toList());
+        view.put("codes", principal.role().permissions().stream().sorted().toList());
+        return Result.ok(view);
     }
 
     /** 登录表单（仅本控制器使用） */

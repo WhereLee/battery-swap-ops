@@ -62,6 +62,9 @@ class WorkOrderServiceTest {
     @Mock
     private com.swapops.server.user.service.UserMessageService messageService;
 
+    @Mock
+    private com.swapops.server.asset.service.DeviceOwnershipService ownershipService;
+
     private WorkOrderService service;
 
     @BeforeAll
@@ -76,7 +79,7 @@ class WorkOrderServiceTest {
     void setUp() {
         when(idGenerator.nextIdString()).thenReturn("123");
         service = new WorkOrderService(workOrderDao, workOrderLogDao, alarmDao, alarmService,
-                delayQueueService, idGenerator, new WorkOrderProperties(), messageService);
+                delayQueueService, idGenerator, new WorkOrderProperties(), messageService, ownershipService);
     }
 
     private AlarmEntity alarm() {

@@ -1,6 +1,7 @@
 package com.swapops.server.workorder.controller;
 
 import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.annotation.DataFilter;
 import com.swapops.server.admin.enums.AdminRole;
 import com.swapops.server.admin.security.AdminContext;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -33,6 +34,7 @@ public class AdminWorkOrderController {
 
     @GetMapping
         @PreAuthorize("hasAuthority('admin:work-order:read')")
+    @DataFilter("work-order-list")
     public Result<PageResult<WorkOrderEntity>> page(@RequestParam(required = false) Integer page,
                                                     @RequestParam(required = false) Integer limit,
                                                     @RequestParam(required = false) Integer status) {
@@ -41,6 +43,7 @@ public class AdminWorkOrderController {
 
     @GetMapping("/{id}")
         @PreAuthorize("hasAuthority('admin:work-order:read')")
+    @DataFilter("work-order-detail")
     public Result<Map<String, Object>> detail(@PathVariable Long id) {
         return Result.ok(workOrderService.detail(id));
     }
