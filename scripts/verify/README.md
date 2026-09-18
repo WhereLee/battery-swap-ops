@@ -55,8 +55,9 @@
 | batch26 | `_c30_hetero_device.ps1` | 异构设备端（Python 标准库）全链换电：下行验签/幂等/TAKE/RETURN/押金退还/台账归属（P2-13） | PASS 25/25 |
 | batch27 | `_c31_agent_loop.ps1` | 运维 Agent 闭环：告警→建议单幂等（agent-<id>-<type>）→人工确认→工单+审计 + 反向断言（杀 Agent：平台健康/心跳/告警记录三路无恙；S6/P2-11） | PASS 31/31 |
 | batch29 | `_c32_admin_view.ps1` | S8 前端地基：`/admin/auth/me` 身份与 37 权限码 / BFF 视图聚合（看板·告警·建议单·工单·柜·订单）/ 能力位逐态断言（工单五步链）/ 柜详情不泄露 secret / 受限身份本域可读·越域 403·无归属工单 fail-closed / db17 幂等 | PASS 54/54（SKIP 1，由单测覆盖） |
+| batch30 | `_c33_paging.ps1` | 分页回归网（S8）：openapi 中全部 **13 个分页端点** × 5 类断言——`limit` 生效 / `total>=rows` / **不出现“有行但 total=0”的静默特征** / 第2页首行≠第1页 / `limit=100000` 封顶 200；另含前端权限码文件存在·数量·无重复 3 项（防止 `PaginationInnerInterceptor` 被误删后静默退化为全表查询） | PASS 81/81（SKIP 1：transfer 表为空） |
 
-合计 36 个剧本（`_g1`-`_g8` + `_c0`-`_c28` + `_c30` + `_c31` + `_c32`；`_c29` 为双实例演练分析脚本）+ 容量工程脚本（batch16 读路径复测 / batch17 写路径 + JVM 对比驱动）+ 1 个第三方契约验证脚本 + batch18 防回归脚本（dev reset 收敛）+ batch19 混沌三剧本（Redis/MySQL/broker 停机）+ batch20 指标监控剧本（P1-6）+ batch21 校验/webhook 剧本（P1-7/P1-11）+ batch22 数据权限剧本（P1-8）+ batch23 集成测试门禁证据（P0-1，CI 内跑，非本地剧本）+ batch24 分片保序/双实例剧本（P0-2）+ batch26 异构设备端剧本（P2-13）+ batch27 运维 Agent 剧本（S6/P2-11）+ batch29 BFF 视图层与数据权限剧本（S8）；batch9（S5 运维收口）与 batch14（S7 收口）为文档/运维层面，无独立剧本。
+合计 37 个剧本（`_g1`-`_g8` + `_c0`-`_c28` + `_c30`-`_c33`；`_c29` 为双实例演练分析脚本）+ 容量工程脚本（batch16 读路径复测 / batch17 写路径 + JVM 对比驱动）+ 1 个第三方契约验证脚本 + batch18 防回归脚本（dev reset 收敛）+ batch19 混沌三剧本（Redis/MySQL/broker 停机）+ batch20 指标监控剧本（P1-6）+ batch21 校验/webhook 剧本（P1-7/P1-11）+ batch22 数据权限剧本（P1-8）+ batch23 集成测试门禁证据（P0-1，CI 内跑，非本地剧本）+ batch24 分片保序/双实例剧本（P0-2）+ batch26 异构设备端剧本（P2-13）+ batch27 运维 Agent 剧本（S6/P2-11）+ batch29 BFF 视图层与数据权限剧本（S8）+ batch30 分页回归网（S8）；batch9（S5 运维收口）与 batch14（S7 收口）为文档/运维层面，无独立剧本。
 P0-4 演示入口：`scripts/demo/_p0_demo.ps1`（不在本索引的剧本口径内，证据 `_p0_demo_out.txt`）。
 
 证据文件：`batch7/_cov_out.txt`（覆盖率门槛）、`batch7/_load_out.txt`（压测+GC 统计）、`batch27/_eval_out.txt`（Agent 评测集 20/20）。

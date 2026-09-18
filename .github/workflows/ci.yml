@@ -33,3 +33,37 @@ jobs:
               echo "$m: jacoco.csv not found"
             fi
           done
+
+  # S8 批次30：前端门禁。type-check 与 build 都是硬门禁——vue-tsc 失败即红。
+  # 注意 build job 里的 PermissionCodeContractTest 会读 swap-web/src/api/permissions.ts，
+  # 断言前端所用权限码 ⊆ AdminRole.ALL_CODES，故前后端权限码漂移会在 build job 变红。
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: swap-web
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: swap-web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check (vue-tsc --noEmit)
+        run: npm run type-check
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: swap-web-dist
+          path: swap-web/dist
+          retention-days: 7

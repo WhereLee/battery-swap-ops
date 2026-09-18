@@ -1,0 +1,28 @@
+{
+  "name": "swap-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Swap-ops admin console (S8). Vue 3 + Vite + TS + Element Plus. Reads the platform BFF view layer (/admin/view/**) and enforces permission codes downloaded from /admin/auth/me.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "type-check": "vue-tsc --noEmit",
+    "gen:api": "openapi-typescript ../document/api/openapi.json -o src/api/schema.d.ts"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "element-plus": "^2.9.1",
+    "pinia": "^2.3.0",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "openapi-typescript": "^7.4.4",
+    "typescript": "~5.7.2",
+    "vite": "^6.0.5",
+    "vue-tsc": "^2.2.0"
+  }
+}

@@ -1,6 +1,7 @@
 # S8 前端管理台与 BFF 视图层 — 方案（设计冻结）
 
-> 日期：2026-09-19 ｜ 状态：**批次29（后端地基）已完成** —— 473/473 单测、`_c32` 54 PASS/0 FAIL/1 SKIP、`mvn clean verify -DskipITs` BUILD SUCCESS（证据：`document/block-records/批次29-S8前端地基与BFF视图层.md`）；批次30/31 待做 ｜ 编号说明：S6 已用于运维 Agent，本阶段为 **S8**
+> 日期：2026-09-19 ｜ 状态：**批次29（后端地基）+ 批次30（前端骨架）已完成** —— 后端 480/480 单测（Skipped 0）、`mvn clean verify -DskipITs` BUILD SUCCESS、剧本 `_c32` 54 PASS + `_c33` 81 PASS、前端 `type-check`/`build` 双绿 + 浏览器实机联调通过；批次31 待做 ｜ 编号说明：S6 已用于运维 Agent，本阶段为 **S8**
+> ❗ 批次30 实机联调抓出一个**存量严重缺陷**（缺分页拦截器 → 13 端点假分页），已修 + 建两层回归网，见批次30 记录 §三与 `pitfalls/mp-pagination-interceptor-missing.md`。
 > 前置事实来源：本方案所有"现状"均来自代码/SQL/文档实证（附文件位置），推断项已标注。
 > 目标函数（用户定）：**中小厂面试口径下"后端 + 前端"的全栈交付能力自证**，不是产品化前端工程。
 
@@ -52,7 +53,7 @@
 
 ### 4.3 权限：前端静态路由表 + 后端下发权限码（业界方案②）
 - 后端新增 `GET /admin/auth/me`：`{username, role, dataScope, scopeStationNos[], bootstrap, codes[]}`；
-- 前端路由 `meta.codes: ['admin:asset:read']`，登录后 `addRoute` 过滤；按钮级 `v-access="'admin:suggestion:manage'"`；
+- 前端路由 `meta.codes: ['admin:asset:read']`，登录后由全局守卫校验（**实现备注**：未用 `addRoute` 动态注入——路由表本就静态，`addRoute` 只增加首跳时序复杂度而不增加安全性，已在批次30 记录 §四.1 申报）；按钮级 `v-access="'admin:suggestion:manage'"`；菜单由路由表派生（`menuEntries()`）；
 - **不做 sys_menu 动态菜单表**（与 `AdminRole` 既有决策一致：菜单结构随代码演进，37 码静态可枚举）。
 
 ### 4.4 能力位：`ActionsSupport` 集中计算，后端返回 `allowedActions`
@@ -85,9 +86,9 @@
 | 登录 | 账密 | ✅ `/admin/auth/login` | — |
 | 框架/菜单 | 身份+权限码 | ❌ 完全没有 | `GET /admin/auth/me` |
 | 运营看板 | 满电率/站点可用率/周转 | ✅ `/admin/dashboard/overview`（Map 弱类型） | `GET /admin/view/dashboard`（VO 化，含口径说明字段） |
-| 告警中心 | 告警列表 + 是否有工单 + 可执行动作 | ⚠️ 只有裸列表，前端要串 3 个接口 | `GET /admin/view/alarm-page` |
-| 建议单（Agent 闭环） | 列表 + confirm/reject 可用性 | ⚠️ 需自己判状态 | `GET /admin/view/agent-action-page`（带 `allowedActions`） |
-| 工单列表 | 分页 + 动作可用性 | ⚠️ 无范围过滤 + 状态判断在前端 | `GET /admin/view/work-order-page` |
+| 告警中心 | 告警列表 + 是否有工单 + 可执行动作 | ⚠️ 只有裸列表，前端要串 3 个接口 | `GET /admin/view/alarm` |
+| 建议单（Agent 闭环） | 列表 + confirm/reject 可用性 | ⚠️ 需自己判状态 | `GET /admin/view/agent-action`（带 `allowedActions`） |
+| 工单列表 | 分页 + 动作可用性 | ⚠️ 无范围过滤 + 状态判断在前端 | `GET /admin/view/work-order` |
 | 工单详情 | 工单 + 流转日志 + 告警 + 设备 | ❌ 要串 4 个 | `GET /admin/view/work-order/{id}` |
 | 柜详情 | 柜 + 实况 + 仓 + 电池 + 未完单 + 最近指令 | ❌ 要串 5~6 个 | `GET /admin/view/cabinet/{cabinetNo}` |
 | 订单查询/详情 | 列表 + 费用/支付/指令明细 | ⚠️ 详情要串 | `GET /admin/view/order/{orderNo}` |
@@ -100,8 +101,8 @@
 | 批次 | 内容 | 验收 |
 |---|---|---|
 | **29 后端地基** ✅ | `/admin/auth/me`；`ActionsSupport` + 覆盖性单测；工单数据范围修复（db/17 `station_id` + `DeviceOwnershipService` 解析 + `require()` 越域 403）；**7 个** `/admin/view/**`（VO + `@Operation`）；`PermissionCodeContractTest`；剧本 `_c32` | **已达成**：单测 473/473（+37）、`_c32` **54 PASS / 0 FAIL / 1 SKIP**（SKIP=外域工单详情，由 `WorkOrderScopeTest` 覆盖）、`clean verify` 绿（server 行覆盖 70.0%→**71.5%**）、OpenAPI **101→109 paths** |
-| **30 前端骨架** | `swap-web`（Vue 3 + Vite + TS + Element Plus + Pinia + Router + Axios）；Axios 拦截器/token/401/403/429；路由 `meta.codes` 过滤 + `v-access`；布局；页面：登录、看板、告警中心（含建议单确认闭环）；`gen:api` + `type-check` + `build`；CI 新增 frontend job | `npm run type-check`/`build` 绿；CI frontend job 绿；剧本断言"前端所用码 ⊆ 后端码" |
-| **31 业务页与部署** | 工单列表+详情（五步动作链）、柜详情、订单查询/详情、结算详情；nginx 部署（dist 静态 + `/api` 反代）+ 云上验收；`_c33` 页面级契约剧本 | 页面可用 + 云上映证 + 文档 + CI 绿 |
+| **30 前端骨架** ✅ | `swap-web`（Vue 3 + Vite + TS + Element Plus + Pinia + Router + Axios）；Axios 拦截器/token/401/403/429；路由 `meta.codes` 校验 + `v-access`；布局；页面：登录、看板、告警中心（含建议单确认闭环）；`gen:api` + `type-check` + `build`；CI 新增 frontend job；**+ 分页存量缺陷修复（计划外）** | **已达成**：`type-check` 0 error、`build` EXIT=0（主入口 1117→**64 kB**）、`gen:api` 5884 行；后端 **480/480（Skipped 1→0**，`PermissionCodeContractTest` 转实跑）、server 行覆盖 **71.5% (5408/7560)**、`clean verify` BUILD SUCCESS；`_c33` **81 PASS / 0 FAIL / 1 SKIP**；浏览器实机（1440×900）登录→看板→告警翻页/改页长→建议单驳回→404→登出→守卫拦截，**控制台 error 0 条**。证据：`document/block-records/批次30-S8前端骨架与分页缺陷修复.md` |
+| **31 业务页与部署** | 工单列表+详情（五步动作链）、柜详情、订单查询/详情、结算详情；nginx 部署（dist 静态 + `/api` 反代）+ 云上验收（含 `db/17` 云上迁移）；`_c34` 页面级契约剧本 | 页面可用 + 云上映证 + 文档 + CI 绿 |
 
 ## 7. 边界与不做（主动声明）
 

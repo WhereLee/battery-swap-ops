@@ -12,11 +12,12 @@
 - 阶段：S0 设计冻结 ✅ / S1 指令闭环 ✅ / S2 换电闭环 ✅ / S3 可靠性深水 ✅ / S4 运营调度 ✅ /
   S5 质量与云交付 ✅ / S7 运营纵深 ✅（管理端 RBAC+审计 / 渠道对账 T+1 / 用户服务与营销 / 代理分润结算 / 韧性补丁）/
   **S6 运维 Agent 最小版 ✅**（独立 `swap-agent`：只读诊断 + 建议单闭环 + 评测集 20 题 + 反向断言）/
-  **S8 前端管理台与 BFF 视图层 🔄**（批次29 后端地基已完成：`auth/me` + 能力位 + 7 个 `/admin/view/**` 聚合 + 工单站点归属；前端工程 `swap-web` 批次30 开工）
-- 测试：**473/473**（契约 4 + 平台 409 + 模拟器 31 + Agent 29）；JaCoCo 门槛 server 65% / sim 55% / contract 70% / agent 65%，CI `mvn verify` 强制（实测 server 71.5% / agent 86.2%）
+  **S8 前端管理台与 BFF 视图层 🔄**（批次29 后端地基 + 批次30 前端骨架已完成：`auth/me` + 能力位 + 7 个 `/admin/view/**` 聚合 +
+  `swap-web`（登录/看板/告警与建议单 + 路由守卫 + `v-access`）；**前端实机联调抓出并修复存量缺陷：缺分页拦截器导致 13 端点假分页**；批次31 业务页与 nginx 部署待做）
+- 测试：**480/480**（契约 4 + 平台 416 + 模拟器 31 + Agent 29，Skipped 0）；JaCoCo 门槛 server 65% / sim 55% / contract 70% / agent 65%，CI `mvn verify` 强制（实测 server 71.5% / agent 86.2%）；前端门禁 `vue-tsc --noEmit` + `vite build`（CI `frontend` job）
 - 对账不变量 **14 组**（含分账守恒/结算单一致/完成单必分账/欠费/券状态）；任务看护 9 项
 - 容量（读路径方法论复测，512m 堆，限流关，同机）：**3,230/s @20 线程 / 3,526/s @100 线程，0 错误，p99 16ms/84ms**（预热+稳态窗口；旧 465.5/s 为压测端端口耗尽假象，见 `document/knowledge/capacity-model.md`）
-- 实机剧本 36 个（`scripts/verify/README.md` 总索引；batch1-29 全 PASS，含双实例 `_c29`、异构设备端 `_c30`、运维 Agent `_c31`、BFF 视图与数据权限 `_c32`）
+- 实机剧本 37 个（`scripts/verify/README.md` 总索引；batch1-30 全 PASS，含双实例 `_c29`、异构设备端 `_c30`、运维 Agent `_c31`、BFF 视图与数据权限 `_c32`、分页回归网 `_c33`）
 
 ## 架构
 
@@ -38,8 +39,10 @@ flowchart LR
 限流 / 熔断舱壁 / 两级缓存 / 支付终态仲裁 / **计费硬失败欠费化（事件不回滚）**。
 经营组件：**代理分润结算（append-only 分账+退款冲正）** / **渠道对账 T+1（四类差异+处置）** /
 **用户服务（报障→工单 / 欠费闭环 / 优惠券 / 站内信）** / 工单 SLA / 看板 / 调拨 / 充电策略 / Agent 接缝。
-前端接入层（S8）：**BFF 视图层 `web/view`**（一页一请求的只读聚合 + `allowedActions` 能力位 + VO 不出 Entity/不泄密钥）、
+前端接入层（S8）：**管理台 `swap-web`**（Vue 3 + Vite + TS + Element Plus；路由 `meta.codes` + `v-access` 双层权限、按钮由后端能力位驱动）、
+**BFF 视图层 `web/view`**（一页一请求的只读聚合 + `allowedActions` 能力位 + VO 不出 Entity/不泄密钥）、
 `GET /admin/auth/me`（角色+37 权限码+数据范围）、权限码前后端一致性门禁（`PermissionCodeContractTest`）。
+同源部署（dev Vite proxy / prod nginx 反代 `/api`），**后端不开 CORS**。
 详见 `document/knowledge/architecture.md`。
 
 ## 模块
@@ -50,7 +53,7 @@ flowchart LR
 | `swap-server` | 换电运营平台（设备接入 + 业务，context-path `/api`） | 8400 |
 | `swap-sim` | 换电柜模拟器（N 柜 × M 仓，心跳/事件/故障注入） | 8500 |
 | `swap-agent` | 运维 Agent（只读诊断 + 建议单；零依赖外部消费者） | 8700 |
-| `swap-web` | 前端管理台（Vue 3 + Vite + TS + Element Plus；批次30 开工，见 `document/plans/S8-*.md`） | dev 5173 |
+| `swap-web` | 前端管理台（Vue 3 + Vite + TS + Element Plus + Pinia；登录/看板/告警与建议单已落地，详见 `swap-web/README.md`） | dev 5173 |
 
 技术栈：Java 17 / Spring Boot 3.5 / MyBatis-Plus / MySQL 8 / Redis / RocketMQ / JMeter（容量）。
 
@@ -104,18 +107,19 @@ python scripts/verify/batch15/_py_contract_client.py   # 运行后建议重启 s
 ```powershell
 mvn -B -ntp clean test                              # 全量单测（本地全绿基线，clean 必须）
 mvn -B -ntp test "-Dsurefire.runOrder=random"       # push 前随机顺序复跑（防 MP lambda 静态缓存假绿）
-mvn -B -ntp clean verify                            # 覆盖率门槛（CI 同款）
+mvn -B -ntp clean verify                            # 覆盖率门槛 + SpotBugs（CI 同款）
+cd swap-web; npm run type-check; npm run build      # 前端门禁（CI frontend job 同款）
 ```
 
-- 实机剧本 36 个（`scripts/verify/`，全 PASS）；容量与 GC 证据在 `batch7/`（jtl/GC 原件归档 `diag-archive/`，不入 git）
-- CI：`.github/workflows/ci.yml`（build → test → coverage summary，每 push 收口）
+- 实机剧本 37 个（`scripts/verify/`，全 PASS）；容量与 GC 证据在 `batch7/`（jtl/GC 原件归档 `diag-archive/`，不入 git）
+- CI：`.github/workflows/ci.yml`（`build` job：verify + coverage summary；`frontend` job：npm ci + type-check + build + dist artifact）
 
 ## 文档地图
 
 | 位置 | 内容 |
 |---|---|
 | `document/plans/` | S0 设计冻结 + S3 可靠性方案 + S7 运营纵深 + S8 前端与 BFF 视图层 |
-| `document/block-records/` | 批次 1-27、29 实施记录（做了什么/取舍/验证证据；28 为 Agent 智能化设计，未开工） |
+| `document/block-records/` | 批次 1-27、29-30 实施记录（做了什么/取舍/验证证据；28 为 Agent 智能化设计，未开工） |
 | `document/pitfalls/` `fixes/` | 踩坑与修复（环境/编码/并发/JVM） |
 | `document/knowledge/` | 领域知识（含 architecture / runbook / s5-quality-delivery） |
 | `scripts/verify/` | 剧本与证据（README 为总索引） |

@@ -112,4 +112,14 @@ flowchart TB
   可退金额取服务端资金口径）；`GET /admin/auth/me` 下发角色/37 权限码/数据范围；权限码前后端一致性由
   `PermissionCodeContractTest` 在 CI 把关。工单新增 `station_id`（db/17，创建时由 `DeviceOwnershipService` 按设备解析）
   使工单纳入站点数据范围；`alarm`/`agent_action` 无站点归属列，为全局口径资源（有意不挂 `@DataFilter`）。
-  前端工程 `swap-web`（Vue 3 + Vite + TS + Element Plus，批次30）；开发期 Vite proxy、生产 nginx 同源反代 `/api`（后端不开 CORS）。
+  前端工程 `swap-web`（Vue 3 + Vite + TS + Element Plus + Pinia，**批次30 已落地**：登录/看板/告警与建议单 +
+  路由 `meta.codes` 守卫 + `v-access` 按钮级；菜单由路由表派生；门禁 `vue-tsc --noEmit` + `vite build`，CI `frontend` job）；
+  开发期 Vite proxy :5173→:8400、生产 nginx 同源反代 `/api`（后端不开 CORS）。
+- **持久层拦截器（S8 批次30 补，2026-09-19）**：`config/MybatisPlusConfig` 注册 `PaginationInnerInterceptor`
+  （MySQL 方言、`maxLimit = PageParams.MAX_LIMIT = 200`、`overflow=false` 使页码越界返回空而非静默回首页）
+  + `BlockAttackInnerInterceptor`（已核实全仓 update/delete 均带 where，只拦事故不拦业务）。
+  **此前该配置类不存在**，导致全部 13 个分页端点的 `selectPage` 静默退化为全表查询且 `total` 恒为 0
+  （`admin_op_log` 单次请求序列化 21491 行、`swap_order` 5842 行），且不抛异常、HTTP 照常 200——
+  单测（mock `selectPage`）、剧本（只断言 `code=0` 与业务值）、SpotBugs、jacoco **四层防线全部抓不到**，
+  最终由前端浏览器实机联调暴露。回归网两层：`MybatisPlusConfigTest`（不依赖 DB，CI 内可挡回归）
+  + `scripts/verify/batch30/_c33_paging.ps1`（13 端点 × 5 类断言）。详见 `pitfalls/mp-pagination-interceptor-missing.md`。

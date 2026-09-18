@@ -11,3 +11,6 @@ diag-archive/
 .DS_Store
 __pycache__/
 *.pyc
+node_modules/
+swap-web/dist/
+swap-web/src/api/schema.d.ts

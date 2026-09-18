@@ -55,6 +55,7 @@
 - block-records/批次26-P2-13静态检查与异构设备端.md（SpotBugs 门禁首跑抓真 bug；Python 异构设备端 `_c30` 25/25；下行 chunked / 设备会话关联 / PS 管道三坑）
 - block-records/批次27-S6运维Agent最小版.md（swap-agent 模块（零依赖外部消费者）+ 规则引擎 14 类型映射/克制原则 + 评测集 20/20 + `_c31` 31/31（含反向断言：杀 Agent 平台无恙）；P2-11）
 - block-records/批次29-S8前端地基与BFF视图层.md（S8 第1批：`auth/me` + `ActionsSupport` 能力位 + db/17 工单站点归属 + 7 个 `/admin/view/**` BFF 聚合 + 权限码前后端契约门禁；`_c32` 54/54、单测 473/473）
+- block-records/批次30-S8前端骨架与分页缺陷修复.md（S8 第2批：`swap-web` 入仓 24 文件（路由守卫/`v-access`/登录·看板·告警与建议单）+ CI frontend job + `_c33` 81/81；**实机联调抓出存量缺陷：缺分页拦截器导致 13 端点假分页（op-log 单次返回 21491 行）**；单测 480/480 Skipped 0）
 - block-records/2026-09-16-1856-写路径容量模块-交接文档.md（模块暂停交接书；其 §7 执行序已由批次17 收口）
 
 ### knowledge（节选：入口性文档）
@@ -73,7 +74,7 @@
 - 其余为专题档（outbox/支付仲裁/熔断/缓存/策略/调拨/Agent 接缝等），见目录。
 
 ### 剧本证据
-- `scripts/verify/README.md`（36 剧本总索引 + 前置 + 命名约定；`_out.txt` 为统计证据，原件归档 diag-archive/）
+- `scripts/verify/README.md`（37 剧本总索引 + 前置 + 命名约定；`_out.txt` 为统计证据，原件归档 diag-archive/）
 
 ### pitfalls
 - pitfalls/gbk-source-encoding.md
@@ -91,6 +92,7 @@
 - pitfalls/downlink-chunked-empty-body-minimal-stack.md（JDK 客户端默认 chunked+h2c → 最小设备栈读空 body；已修复+单测门禁，批次26）
 - pitfalls/device-session-seq-missing.md（事件未回带开门会话 commandSeq → 事件到达但订单不推进；已修复，批次26）
 - pitfalls/ps-pipe-blocks-on-spawned-jvm.md（PS 管道接壳长活 JVM → `| Out-Null` 永不返回；已修复，批次26）
+- pitfalls/mp-pagination-interceptor-missing.md（**缺 `PaginationInnerInterceptor` → `selectPage` 静默退化为全表查询且 `total` 恒为 0**；13 端点受影响、四层防线（单测 mock/剧本断言口径/SpotBugs/jacoco）全部抓不到；由前端实机联调暴露，已修复 + 两层回归网，批次30）
 
 ### roadmap
 - roadmap/P0-P2-面试就绪补强计划.md（P0-P2 全部条目状态与执行顺序、变更记录）
