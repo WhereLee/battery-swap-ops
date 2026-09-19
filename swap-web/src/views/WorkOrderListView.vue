@@ -41,14 +41,14 @@
           <div class="text-muted">{{ row.deviceType }}</div>
         </template>
       </el-table-column>
-      <el-table-column label="来源" width="90">
+      <el-table-column label="来源" width="130">
         <template #default="{ row }">
-          <el-tag size="small" effect="plain" type="info">{{ sourceLabel(row.source) }}</el-tag>
+          <el-tag size="small" effect="plain" type="info">{{ workOrderSourceLabel(row.source) }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="严重级" width="90">
         <template #default="{ row }">
-          <el-tag size="small" :type="severityTag(row.severity)">{{ row.severity }}</el-tag>
+          <el-tag size="small" :type="severityTag(row.severity)">{{ severityLabel(row.severity) }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="状态" width="100">
@@ -114,6 +114,7 @@ import { useRouter } from "vue-router";
 import { fetchWorkOrderPage } from "../api/views";
 import { WORK_ORDER_ACTION_LABEL, WORK_ORDER_STATUS, type WorkOrderVO } from "../api/types";
 import { formatTime } from "../utils/format";
+import { severityLabel, workOrderSourceLabel } from "../utils/labels";
 
 const router = useRouter();
 
@@ -153,10 +154,6 @@ function openDetail(id: number): void {
 
 function rowClass({ row }: { row: WorkOrderVO }): string {
   return row.slaBreached === 1 && row.status !== 6 ? "row-breached" : "";
-}
-
-function sourceLabel(source: string): string {
-  return source === "ALARM" ? "告警派生" : source === "REPORT" ? "用户报障" : source;
 }
 
 function severityTag(severity: string): "danger" | "warning" | "info" {

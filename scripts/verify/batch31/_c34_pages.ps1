@@ -32,20 +32,37 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repo = Resolve-Path (Join-Path $scriptDir "..\..\..")
 $local = Join-Path $repo ".local"
 $tokenFile = Join-Path $local "admin-token.txt"
-if (-not (Test-Path -LiteralPath $tokenFile)) { Write-Output "FATAL admin token file missing"; exit 1 }
+if (-not (Test-Path -LiteralPath $tokenFile)) { Emit "FATAL admin token file missing"; exit 1 }
 $adminToken = (Get-Content -LiteralPath $tokenFile -Raw).Trim()
 $H = @{ "X-Admin-Token" = $adminToken }
+
+# ---------------------------------------------------------------------------
+# Evidence: this gate records itself. The batch38 review found _c35_out.txt sitting in the
+# repo asserting 31/31 while the committed script only ran 25 checks - output had been
+# tee'd by hand one time and never regenerated. Every printed line therefore goes through
+# Emit, which both prints it and appends it to the list flushed into _c34_out.txt at each
+# exit path. Running the script is now the only way to produce the record.
+# ---------------------------------------------------------------------------
+$script:evidence = New-Object System.Collections.Generic.List[string]
+$script:outFile = Join-Path $scriptDir "_c34_out.txt"
+function Emit([string]$line) {
+    $script:evidence.Add($line)
+    Write-Output $line
+}
+function Save-Evidence {
+    [System.IO.File]::WriteAllLines($script:outFile, $script:evidence, (New-Object System.Text.UTF8Encoding($false)))
+}
 
 $script:pass = 0
 $script:fail = 0
 $script:skip = 0
 
 function Check([string]$name, [bool]$cond) {
-    if ($cond) { $script:pass++; Write-Output "PASS  $name" }
-    else { $script:fail++; Write-Output "FAIL  $name" }
+    if ($cond) { $script:pass++; Emit "PASS  $name" }
+    else { $script:fail++; Emit "FAIL  $name" }
 }
 function Skip([string]$name, [string]$why) {
-    $script:skip++; Write-Output "SKIP  $name ($why)"
+    $script:skip++; Emit "SKIP  $name ($why)"
 }
 function Get-Json([string]$path) {
     $r = Invoke-WebRequest "$base$path" -Headers $H -UseBasicParsing -TimeoutSec 30
@@ -107,12 +124,12 @@ function Assert-TsFields([string]$iface, [string[]]$fields, [string]$tag) {
     Check "$tag $iface mirrors $($fields.Count) backend fields (missing: $($missing -join ','))" ($missing.Count -eq 0)
 }
 
-Write-Output "=== C34 batch31: page-level contract (console endpoints + frontend type parity) ==="
+Emit "=== C34 batch31: page-level contract (console endpoints + frontend type parity) ==="
 
 # ---------- P00 preflight ----------
 $health = Get-Status "/actuator/health"
 Check "P00 platform health UP" ($health -eq 200)
-if ($health -ne 200) { Write-Output "GATE-PAGES FAIL (platform down)"; exit 1 }
+if ($health -ne 200) { Emit "GATE-PAGES FAIL (platform down)"; Save-Evidence; exit 1 }
 
 # ---------- P01 setup: make sure the settlement page has something to render ----------
 $statements = Get-Json "/admin/view/settlement?page=1&limit=1"
@@ -126,23 +143,23 @@ if ($statementTotal -eq 0) {
         try {
             $r = Post-Json ("/admin/settlement/generate?agentId={0}&periodStart=1700000000000&periodEnd=1800000000000" -f $agent.id) ""
             if ($r.code -eq 0) {
-                Write-Output "SETUP generated settlement statement $($r.data.statementNo) for agentId=$($agent.id) (period 2023-11~2027-01)"
+                Emit "SETUP generated settlement statement $($r.data.statementNo) for agentId=$($agent.id) (period 2023-11~2027-01)"
                 $generated = $true
             }
         } catch {
-            Write-Output "SETUP agentId=$($agent.id) has no claimable ledger lines (expected for a settled agent)"
+            Emit "SETUP agentId=$($agent.id) has no claimable ledger lines (expected for a settled agent)"
         }
     }
-    if (-not $generated) { Write-Output "SETUP no statement generated (no unclaimed ledger lines) - settlement row checks will SKIP" }
+    if (-not $generated) { Emit "SETUP no statement generated (no unclaimed ledger lines) - settlement row checks will SKIP" }
 } else {
-    Write-Output "SETUP $statementTotal settlement statement(s) already exist - setup skipped"
+    Emit "SETUP $statementTotal settlement statement(s) already exist - setup skipped"
 }
 
 # =============================================================================
 # Page 1: work-order list  -> GET /admin/view/work-order
 # =============================================================================
-Write-Output ""
-Write-Output "--- page 1: work-order list ---"
+Emit ""
+Emit "--- page 1: work-order list ---"
 $wo = Get-Json "/admin/view/work-order?page=1&limit=3"
 Check "P01 work-order list code=0" ($wo.code -eq 0)
 Check "P02 work-order list honours limit=3 (rows=$(@($wo.data.list).Count))" (@($wo.data.list).Count -le 3)
@@ -161,13 +178,13 @@ foreach ($row in @($wo.data.list)) {
     }
 }
 Check "P05 work-order capability bits match the 5-step chain on every row ($($woBitProblems.Count) mismatches)" ($woBitProblems.Count -eq 0)
-if ($woBitProblems.Count -gt 0) { $woBitProblems | ForEach-Object { Write-Output "      $_" } }
+if ($woBitProblems.Count -gt 0) { $woBitProblems | ForEach-Object { Emit "      $_" } }
 
 # =============================================================================
 # Page 2: work-order detail -> GET /admin/view/work-order/{id}
 # =============================================================================
-Write-Output ""
-Write-Output "--- page 2: work-order detail ---"
+Emit ""
+Emit "--- page 2: work-order detail ---"
 if ($null -ne $woRow) {
     $woDetail = Get-Json ("/admin/view/work-order/{0}" -f $woRow.id)
     Check "P06 work-order detail code=0" ($woDetail.code -eq 0)
@@ -192,8 +209,8 @@ if ($null -ne $woRow) {
 # =============================================================================
 # Page 3: order list -> GET /admin/view/order
 # =============================================================================
-Write-Output ""
-Write-Output "--- page 3: order list ---"
+Emit ""
+Emit "--- page 3: order list ---"
 $orders = Get-Json "/admin/view/order?page=1&limit=5"
 Check "P11 order list code=0" ($orders.code -eq 0)
 Check "P12 order list honours limit=5 (rows=$(@($orders.data.list).Count))" (@($orders.data.list).Count -le 5)
@@ -220,13 +237,13 @@ foreach ($row in @($orders.data.list)) {
     }
 }
 Check "P15 order money-path bits consistent with status/refundableFen ($($refundBitProblems.Count) problems)" ($refundBitProblems.Count -eq 0)
-if ($refundBitProblems.Count -gt 0) { $refundBitProblems | ForEach-Object { Write-Output "      $_" } }
+if ($refundBitProblems.Count -gt 0) { $refundBitProblems | ForEach-Object { Emit "      $_" } }
 
 # =============================================================================
 # Page 4: order detail -> GET /admin/view/order/{orderNo}
 # =============================================================================
-Write-Output ""
-Write-Output "--- page 4: order detail ---"
+Emit ""
+Emit "--- page 4: order detail ---"
 if ($null -ne $orderRow) {
     $orderDetail = Get-Json ("/admin/view/order/{0}" -f $orderRow.orderNo)
     Check "P16 order detail code=0" ($orderDetail.code -eq 0)
@@ -251,8 +268,8 @@ if ($null -ne $orderRow) {
 # =============================================================================
 # Page 5: cabinet list -> GET /admin/view/cabinet
 # =============================================================================
-Write-Output ""
-Write-Output "--- page 5: cabinet list ---"
+Emit ""
+Emit "--- page 5: cabinet list ---"
 $cabinets = Get-Json "/admin/view/cabinet?page=1&limit=3"
 Check "P21 cabinet list code=0" ($cabinets.code -eq 0)
 Check "P22 cabinet list honours limit=3 (rows=$(@($cabinets.data.list).Count))" (@($cabinets.data.list).Count -le 3)
@@ -265,8 +282,8 @@ Check "P24 cabinet list does not leak the device secret" (($cabinetRaw -notmatch
 # =============================================================================
 # Page 6: cabinet detail -> GET /admin/view/cabinet/{cabinetNo}
 # =============================================================================
-Write-Output ""
-Write-Output "--- page 6: cabinet detail ---"
+Emit ""
+Emit "--- page 6: cabinet detail ---"
 if ($null -ne $cabinetRow) {
     $cabinetDetail = Get-Json ("/admin/view/cabinet/{0}" -f $cabinetRow.cabinetNo)
     Check "P25 cabinet detail code=0" ($cabinetDetail.code -eq 0)
@@ -296,8 +313,8 @@ if ($null -ne $cabinetRow) {
 # =============================================================================
 # Page 7: settlement list -> GET /admin/view/settlement
 # =============================================================================
-Write-Output ""
-Write-Output "--- page 7: settlement list ---"
+Emit ""
+Emit "--- page 7: settlement list ---"
 $settlements = Get-Json "/admin/view/settlement?page=1&limit=5"
 Check "P32 settlement list code=0" ($settlements.code -eq 0)
 Check "P33 settlement list honours limit=5 (rows=$(@($settlements.data.list).Count))" (@($settlements.data.list).Count -le 5)
@@ -317,14 +334,14 @@ if ($null -eq $settlementRow) {
         }
     }
     Check "P35 settlement capability bits match GENERATED->confirm / CONFIRMED->paid / PAID->none" ($settleBitProblems.Count -eq 0)
-    if ($settleBitProblems.Count -gt 0) { $settleBitProblems | ForEach-Object { Write-Output "      $_" } }
+    if ($settleBitProblems.Count -gt 0) { $settleBitProblems | ForEach-Object { Emit "      $_" } }
     Check "P36 settlement split conservation on every row (agent + platform = base)" `
         ((@($settlements.data.list) | Where-Object {
             ([int]$_.agentAmountFen + [int]$_.platformAmountFen) -ne [int]$_.baseAmountFen }).Count -eq 0)
 
     # ---------- page 8: settlement detail ----------
-    Write-Output ""
-    Write-Output "--- page 8: settlement detail ---"
+    Emit ""
+    Emit "--- page 8: settlement detail ---"
     $settlementDetail = Get-Json ("/admin/view/settlement/{0}" -f $settlementRow.id)
     Check "P37 settlement detail code=0" ($settlementDetail.code -eq 0)
     Assert-Fields $settlementDetail.data @("statement","lines") "P38" "settlement detail"
@@ -339,7 +356,7 @@ if ($null -eq $settlementRow) {
     Check "P39 settlement line rows carry orderNo/eventType/baseType/amounts" $lineOk
     Check "P40 settlement statement links to all its ledger lines (lines=$(@($settlementDetail.data.lines).Count), statement lines>=1)" `
         (@($settlementDetail.data.lines).Count -ge 1)
-    Write-Output "INFO  settlement detail contains $negativeLines negative (reversal) line(s)"
+    Emit "INFO  settlement detail contains $negativeLines negative (reversal) line(s)"
     $detailRaw = Get-Raw ("/admin/view/settlement/{0}" -f $settlementRow.id)
     Check "P41 settlement detail does not leak eventKey (internal idempotency key)" ($detailRaw -notmatch "eventKey")
 }
@@ -348,8 +365,8 @@ if ($null -eq $settlementRow) {
 # Frontend parity: every field the pages render must exist in types.ts,
 # and every page must be a real component wired into the router.
 # =============================================================================
-Write-Output ""
-Write-Output "--- frontend parity (swap-web) ---"
+Emit ""
+Emit "--- frontend parity (swap-web) ---"
 Assert-TsFields "WorkOrderVO" @("id","woNo","title","severity","status","deviceType","deviceNo","stationId",
     "handlerId","slaDeadline","slaBreached","allowedActions") "F01"
 Assert-TsFields "WorkOrderDetailVO" @("order","logs","alarm") "F02"
@@ -390,10 +407,14 @@ foreach ($page in $pages) {
     Check "$tag exists and is lazily routed with meta.codes=$($page.code)" ($exists -and $routed -and $coded)
 }
 
-Write-Output ""
-Write-Output "=== C34 summary: PASS=$($script:pass) FAIL=$($script:fail) SKIP=$($script:skip) ==="
+Emit ""
+Emit "=== C34 summary: PASS=$($script:pass) FAIL=$($script:fail) SKIP=$($script:skip) ==="
+Save-Evidence
+Emit "INFO evidence written: scripts/verify/batch31/_c34_out.txt"
 if ($script:fail -gt 0) {
-    Write-Output "GATE-PAGES FAIL"
+    Emit "GATE-PAGES FAIL"
+    Save-Evidence
     exit 1
 }
-Write-Output "GATE-PAGES PASS"
+Emit "GATE-PAGES PASS"
+Save-Evidence

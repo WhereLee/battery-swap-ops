@@ -22,7 +22,7 @@
               <div class="card-header">
                 <span>
                   <span class="mono">{{ detail.orderNo }}</span>
-                  <el-tag size="small" class="gap-left">{{ detail.orderType }}</el-tag>
+                  <el-tag size="small" class="gap-left">{{ orderTypeLabel(detail.orderType) }}</el-tag>
                   <el-tag size="small" class="gap-left" :type="statusTag(detail.status)">
                     {{ ORDER_STATUS[detail.status] ?? detail.statusDesc }}
                   </el-tag>
@@ -216,6 +216,7 @@ import { CODES } from "../api/permissions";
 import { fetchOrderDetail, refundOrder, reversalOrder } from "../api/views";
 import { ORDER_ACTION_LABEL, ORDER_STATUS, REFUND_REASON, type OrderDetailVO } from "../api/types";
 import { formatFen, formatTime } from "../utils/format";
+import { orderTypeLabel } from "../utils/labels";
 
 const route = useRoute();
 const router = useRouter();

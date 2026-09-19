@@ -45,9 +45,9 @@
           <el-link type="primary" class="mono" @click="openDetail(row.orderNo)">{{ row.orderNo }}</el-link>
         </template>
       </el-table-column>
-      <el-table-column label="类型" width="80">
+      <el-table-column label="类型" width="90">
         <template #default="{ row }">
-          <el-tag size="small" effect="plain" type="info">{{ row.orderType }}</el-tag>
+          <el-tag size="small" effect="plain" type="info">{{ orderTypeLabel(row.orderType) }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="用户" width="90">
@@ -170,6 +170,7 @@ import { CODES } from "../api/permissions";
 import { fetchOrderPage, refundOrder, reversalOrder } from "../api/views";
 import { ORDER_ACTION_LABEL, ORDER_STATUS, type OrderListItemVO } from "../api/types";
 import { formatFen, formatTime } from "../utils/format";
+import { orderTypeLabel } from "../utils/labels";
 
 const router = useRouter();
 

@@ -73,3 +73,78 @@ body {
 .text-muted {
   color: #909399;
 }
+
+/*
+ * batch38: Element Plus tag contrast. Measured with scripts/verify/batch31/_c38_ui_probe.mjs,
+ * which reads the rendered foreground/background of every visible .el-tag and computes the
+ * WCAG ratio. Both tag effects ship below the 4.5:1 that 12px normal-size text requires:
+ *
+ *   effect="light"/"plain": text is the BASE colour on the light-9 tint
+ *     success #67c23a on #f0f9eb = 2.08   warning #e6a23c on #fdf6ec = 2.04
+ *     danger  #f56c6c on #fef0f0 = 2.61   info    #909399 on #f4f4f5 = 2.80
+ *   effect="dark": white on the BASE colour
+ *     info #ffffff on #909399 = 3.08 (the role badge in the console header)
+ *
+ * A reviewer described those cells as "an empty coloured box" - the text was rendered, it
+ * just could not be read at that size. Fix: keep each hue, move the text much darker on
+ * tints and the background much darker under white. The same shades serve both roles, so
+ * the palette stays small enough to eyeball:
+ *
+ *   shade on its own tint : 6.00 - 7.78:1      white on that shade : 6.56 - 8.58:1
+ *
+ * SPECIFICITY NOTE: Element Plus declares these as `.el-tag.el-tag--success` and
+ * `.el-tag--dark.el-tag--info`, i.e. (0,2,0). The selectors below match that weight and
+ * global.css is imported after element-plus/dist/index.css in main.ts, so the later
+ * declaration wins. Change that import order and the whole block silently stops applying,
+ * which is exactly what the probe is there to catch.
+ */
+.el-tag:not(.el-tag--dark) {
+  --el-tag-text-color: #303133;
+  font-weight: 500;
+}
+
+.el-tag--primary:not(.el-tag--dark) {
+  --el-tag-text-color: #1c4e80;
+}
+
+.el-tag--success:not(.el-tag--dark) {
+  --el-tag-text-color: #2f6b1c;
+}
+
+.el-tag--warning:not(.el-tag--dark) {
+  --el-tag-text-color: #7a5203;
+}
+
+.el-tag--danger:not(.el-tag--dark) {
+  --el-tag-text-color: #8f2b2b;
+}
+
+.el-tag--info:not(.el-tag--dark) {
+  --el-tag-text-color: #4c4f57;
+}
+
+/* Dark effect: white text stays, the saturated fill becomes the same dark shade. */
+.el-tag--dark.el-tag--primary {
+  --el-tag-bg-color: #1c4e80;
+  --el-tag-border-color: #1c4e80;
+}
+
+.el-tag--dark.el-tag--success {
+  --el-tag-bg-color: #2f6b1c;
+  --el-tag-border-color: #2f6b1c;
+}
+
+.el-tag--dark.el-tag--warning {
+  --el-tag-bg-color: #7a5203;
+  --el-tag-border-color: #7a5203;
+}
+
+.el-tag--dark.el-tag--danger {
+  --el-tag-bg-color: #8f2b2b;
+  --el-tag-border-color: #8f2b2b;
+}
+
+.el-tag--dark.el-tag--info {
+  --el-tag-bg-color: #4c4f57;
+  --el-tag-border-color: #4c4f57;
+}

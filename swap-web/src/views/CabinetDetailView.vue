@@ -82,7 +82,7 @@
                     v-if="row.soc !== null && row.soc !== undefined"
                     :percentage="row.soc"
                     :stroke-width="10"
-                    :status="row.soc >= 90 ? 'success' : undefined"
+                    :color="socColor(row.soc)"
                   />
                   <span v-else class="text-muted">-</span>
                 </template>
@@ -133,7 +133,7 @@
                   </el-table-column>
                   <el-table-column label="类型" width="90">
                     <template #default="{ row }">
-                      <span class="mono">{{ row.orderType }}</span>
+                      <span>{{ orderTypeLabel(row.orderType) }}</span>
                     </template>
                   </el-table-column>
                   <el-table-column label="状态" width="110">
@@ -211,6 +211,7 @@ import {
   type CabinetDetailVO,
 } from "../api/types";
 import { formatAge, formatFen, formatTime } from "../utils/format";
+import { orderTypeLabel } from "../utils/labels";
 
 const route = useRoute();
 const router = useRouter();
@@ -249,6 +250,23 @@ function cabinetStatusTag(value: number): "success" | "warning" | "danger" | "in
     default:
       return "info";
   }
+}
+
+/**
+ * Health colour for the SOC bar - deliberately `color` and NOT `status`.
+ *
+ * Element Plus swaps the percentage label for a status ICON when `status` is set, so the
+ * original `:status="row.soc >= 90 ? 'success' : undefined"` rendered the six occupied cells
+ * as a green bar plus a check mark with the number nowhere on screen. The c38 probe caught
+ * it as "SOC: 12 rows visible-empty, 0 with DOM text, 10 child elements" while
+ * /admin/view/cabinet/SWAP-C-001 returns soc=100 for exactly those six cells - the value
+ * crossed the wire and was then thrown away by the renderer.
+ */
+function socColor(soc: number): string {
+  if (soc >= 90) {
+    return "#2f6b1c";
+  }
+  return soc >= 60 ? "#7a5203" : "#8f2b2b";
 }
 
 function cellStatusTag(value: number): "success" | "info" | "danger" | "warning" {

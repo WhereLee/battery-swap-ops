@@ -18,7 +18,8 @@
 - 测试：**520/520**（契约 4 + 平台 456 + 模拟器 31 + Agent 29，Skipped 0）；JaCoCo 门槛 server 65% / sim 55% / contract 70% / agent 65%，CI `mvn verify` 强制（实测 server 71.5% / agent 86.2%）；前端门禁 `vue-tsc --noEmit` + `vite build`（CI `frontend` job）；集成测试 `*IT` 由 failsafe 在 CI（Docker）跑，本地 `mvn test` 不受影响
 - 对账不变量 **14 组**（含分账守恒/结算单一致/完成单必分账/欠费/券状态）；任务看护 9 项
 - 容量（读路径方法论复测，512m 堆，限流关，同机）：**3,230/s @20 线程 / 3,526/s @100 线程，0 错误，p99 16ms/84ms**（预热+稳态窗口；旧 465.5/s 为压测端端口耗尽假象，见 `document/knowledge/capacity-model.md`）
-- 实机剧本 40 个（`scripts/verify/README.md` 总索引；batch1-33 全 PASS，含双实例 `_c29`、异构设备端 `_c30`、运维 Agent `_c31`、BFF 视图与数据权限 `_c32`、分页回归网 `_c33`、页面级契约 `_c34`、**真实浏览器验收 `_c35`**、限流 XFF 绕过 `_c36`）；另含两处**门禁可红性实证**（CI 集成测试红探针、事务自调用守卫红探针）
+- 实机剧本 53 个（`scripts/verify/README.md` 总索引；batch1-38 全 PASS，含双实例 `_c29`、异构设备端 `_c30`、运维 Agent `_c31`、BFF 视图与数据权限 `_c32`、分页回归网 `_c33`、页面级契约 `_c34`、**真实浏览器验收 `_c35`**、限流 XFF 绕过 `_c36`、**布局/对比度探针 `_c38`**）；另含两处**门禁可红性实证**（CI 集成测试红探针、事务自调用守卫红探针）
+- 管理台可访问性（实机测量，`_c38`）：**10 条路由 270 个标签对比度 6.00–8.57:1**（Element Plus 默认 2.04–3.08:1 不达 WCAG AA，已按色相压深修正）、89 个表头零错列、零裁切、零横向溢出；截图 `.local/b31-shots/`（1440×900…2109 整页）
 
 ## 架构
 
@@ -95,8 +96,9 @@ cd swap-web; npm install; npm run dev                   # 管理台 http://local
 
 # B. 管理台自动化验收（无需人工点：零依赖 CDP + 本机 headless Chrome）
 cd swap-web; npm run build                              # 先用构建产物
-powershell -File scripts/verify/batch31/_c35_console.ps1   # 登录→八页走查→控制台 error 0，31/31
+powershell -File scripts/verify/batch31/_c35_console.ps1   # 登录→八页走查→控制台 error 0，31/31（并出整页截图）
 powershell -File scripts/verify/batch31/_c34_pages.ps1     # 页面级 HTTP 契约 + 前端类型镜像，59/59
+powershell -File scripts/verify/batch31/_c38_ui_probe.ps1  # 布局/对比度探针：10 页零溢出·零裁切·零错列·标签≥4.5:1
 
 # C. 云上（同源 nginx 站点；公网未放行，用隧道）
 ssh -L 80:127.0.0.1:80 ubuntu@124.223.36.154            # 另开一窗保持
@@ -158,8 +160,9 @@ mvn -B -ntp clean verify                            # 覆盖率门槛 + SpotBugs
 cd swap-web; npm run type-check; npm run build      # 前端门禁（CI frontend job 同款）
 ```
 
-- 实机剧本 37 个（`scripts/verify/`，全 PASS）；容量与 GC 证据在 `batch7/`（jtl/GC 原件归档 `diag-archive/`，不入 git）
-- CI：`.github/workflows/ci.yml`（`build` job：verify + coverage summary；`frontend` job：npm ci + type-check + build + dist artifact）
+- 实机剧本 53 个（`scripts/verify/README.md` 为总索引，全 PASS）；容量与 GC 证据在 `batch7/`（jtl/GC 原件归档 `diag-archive/`，不入 git）
+- 前端浏览器门禁（本地，需本机 Chrome + 平台在跑）：`_c34` 契约 59/59、`_c35` 走查 31/31（含整页截图）、`_c38` 布局/对比度 10 页 hardFailures=0
+- CI：`.github/workflows/ci.yml`（`build` job：verify + coverage summary；`frontend` job：npm ci + type-check + build + dist artifact；`docker` job：compose 起中间件 + 镜像构建 + 容器内业务请求冒烟）
 
 ## 文档地图
 

@@ -56,16 +56,23 @@
 | batch27 | `_c31_agent_loop.ps1` | 运维 Agent 闭环：告警→建议单幂等（agent-<id>-<type>）→人工确认→工单+审计 + 反向断言（杀 Agent：平台健康/心跳/告警记录三路无恙；S6/P2-11） | PASS 31/31 |
 | batch29 | `_c32_admin_view.ps1` | S8 前端地基：`/admin/auth/me` 身份与 37 权限码 / BFF 视图聚合（看板·告警·建议单·工单·柜·订单）/ 能力位逐态断言（工单五步链）/ 柜详情不泄露 secret / 受限身份本域可读·越域 403·无归属工单 fail-closed / db17 幂等 | PASS 54/54（SKIP 1，由单测覆盖） |
 | batch30 | `_c33_paging.ps1` | 分页回归网（S8）：openapi 中全部 **13 个分页端点** × 5 类断言——`limit` 生效 / `total>=rows` / **不出现“有行但 total=0”的静默特征** / 第2页首行≠第1页 / `limit=100000` 封顶 200；另含前端权限码文件存在·数量·无重复 3 项（防止 `PaginationInnerInterceptor` 被误删后静默退化为全表查询） | PASS 81/81（SKIP 1：transfer 表为空） |
-| batch31 | `_c34_pages.ps1` | 页面级契约（S8 批次31）：8 个业务页 × 端点形状 + **能力位逐态一致**（工单五步链 / 订单 refund-vs-reversal / 结算 confirm-paid-none）+ **内部列不外泄**（idemKey / 柜 secret / eventKey）+ 结算守恒 + 分页生效 + **前端 types.ts 字段镜像**（8 个 VO）+ 8 个页面已懒加载路由并挂 `meta.codes` | PASS 59/59 |
-| batch31 | `_c35_console.ps1`（+ `_c35_console.mjs`） | 真实浏览器验收（S8 批次31）：**零依赖 CDP 驱动**（Node 22 内置 WebSocket + 本机 headless Chrome，不引入 puppeteer/playwright）——`vite preview` 托管**构建产物 dist/**（等价 nginx 形态）→ 真实登录表单 → 逐页点击走查（列表→详情靠点链接，走应用内路由）→ 路由守卫与 `?redirect=` 回跳 → 1440px 无横向溢出 → `undefined/NaN` 零命中 → **控制台 error 0 / HTTP≥400 0 / 请求失败 0** | PASS 31/31（截图 `.local/b31-shots/`，不入 git） |
+| batch31 | `_c34_pages.ps1` | 页面级契约（S8 批次31）：8 个业务页 × 端点形状 + **能力位逐态一致**（工单五步链 / 订单 refund-vs-reversal / 结算 confirm-paid-none）+ **内部列不外泄**（idemKey / 柜 secret / eventKey）+ 结算守恒 + 分页生效 + **前端 types.ts 字段镜像**（8 个 VO）+ 8 个页面已懒加载路由并挂 `meta.codes`。**批次38 起自写证据**（`Emit`+`Save-Evidence`，每个退出路径落盘 `_c34_out.txt`） | PASS 59/59 |
+| batch31 | `_c35_console.ps1`（+ `_c35_console.mjs`） | 真实浏览器验收（S8 批次31）：**零依赖 CDP 驱动**（Node 22 内置 WebSocket + 本机 headless Chrome，不引入 puppeteer/playwright）——`vite preview` 托管**构建产物 dist/**（等价 nginx 形态）→ 真实登录表单 → 逐页点击走查（列表→详情靠点链接，走应用内路由）→ 路由守卫与 `?redirect=` 回跳 → 1440px 无横向溢出 → `undefined/NaN` 零命中 → **控制台 error 0 / HTTP≥400 0 / 请求失败 0**。**批次38**：证据由 `.ps1` 自写；截图改为扩视口到不动点后再截（满高外壳内容在 `el-main` 内滚动，原先"整页"实为一屏），并把真实捕获尺寸打进记录 | PASS 31/31（截图 `.local/b31-shots/`，1440×900…2109，不入 git） |
+| batch38 | `_c38_ui_probe.ps1`（+ `_c38_ui_probe.mjs`） | **布局/对比度探针**（批次38）：10 条路由（详情页按"点首行链接→读 `location.pathname`"发现，因工单/结算单链接路由参数是 `row.id` 而非可见单号）× 6 条硬门禁——**页面横向溢出 / 非设计性裁切 / 表头与表体错列 / 表头文字截断 / 标签对比度 4.5:1（WCAG 1.4.3，12px 属正常字号）/ 零尺寸标签** + 3 条事实项（内容高与滚动容器 / 整列无可见文字（区分 `innerText` 与 `textContent`，可抓"绑定了值但看不见"）/ 各列空值）。动机：视觉模型复核报出的疑点当时**无法被证伪**，遂逐条落成判据 | PASS 10 页 hardFailures=0（270 标签 6.00–8.57:1 / 89 列零错位；`_c38_report.json`） |
 | batch32 | `_g32_out.txt`（无脚本，门禁探针日志） | 事务自调用守卫**可红性实证**：把 `@Transactional` 加回 `RefundService.applyMoney`（复原 P0 缺陷形状）→ 守卫 `Failures: 1 / BUILD FAILURE`；还原 → `Failures: 0 / BUILD SUCCESS`（批次32） | PASS（探针红→还原绿） |
 | batch33 | `_c36_xff.ps1` | 登录限流不可被 header 绕过：10 次**各带不同伪造 X-Forwarded-For** 的爆破 → 前 5 次 400、后 5 次 **429**（同一个桶）；等 6s 窗口过后恢复（是窗口不是封禁） | PASS 5/5 |
 | batch35 | `_c37_refund_ledger.ps1` | 资金台账幂等键分型（db/18）：旧 `uk_order_type` 已删 / 生成列 `idem_key` 存在；**同订单第二笔 REFUND 行可插入**（修复前 1062）/ 重复 trade_no 仍拒 / **同订单第二笔 BALANCE_FEE 仍拒**（扣费幂等闸未削弱）/ 无订单归属行不受约束 / 探针清理；实机两笔真实部分退款（ADMIN_MANUAL 100 + ADMIN_REVERSAL 200）→ 订单详情 2 条 REFUND 流水、台账合计=退款单合计 | PASS 13/13 |
 
-合计 **52 个剧本与验证脚本**（`_g` 主线 ×8 + `_c` 能力 ×39 + `_p03` 容量 ×3 + `_b18` 防回归 ×1 + Python 契约客户端 ×1），
-另有 3 个辅助脚本（`_c26_mock_receiver.py` webhook 接收端、`hetero_device.py` 异构设备端库、`_c35_console.mjs` CDP 浏览器驱动）；
+合计 **53 个剧本与验证脚本**（`_g` 主线 ×8 + `_c` 能力 ×40 + `_p03` 容量 ×3 + `_b18` 防回归 ×1 + Python 契约客户端 ×1，
+`Get-ChildItem -Recurse -Include _g*.ps1,_c*.ps1,_p*.ps1,_b*.ps1,_py_*.py` 实测计数），
+另有 4 个辅助文件（`_c26_mock_receiver.py` webhook 接收端、`hetero_device.py` 异构设备端库、
+`_cdp.mjs` 共用 CDP 客户端、两个浏览器剧本主体 `_c35_console.mjs` / `_c38_ui_probe.mjs`）；
 batch9（S5 运维收口）与 batch14（S7 收口）为文档/运维层面，无独立剧本。
 P0-4 演示入口：`scripts/demo/_p0_demo.ps1`（不在本索引的剧本口径内，证据 `_p0_demo_out.txt`）。
+
+> **批次38 起证据自写**：`_c34`/`_c35`/`_c38` 三个剧本由自身命令产 `_*_out.txt`（不再人工 tee）。
+> 起因是一次重构让 `_c35` 少跑 6 项检查、又让 9 项检查因 NaN 超时在 0ms 内全红，
+> 而文件仍写着 31/31 —— 详见 `document/pitfalls/check-coverage-lost-in-refactor.md`。
 
 证据文件：`batch7/_cov_out.txt`（覆盖率门槛）、`batch7/_load_out.txt`（压测+GC 统计）、`batch27/_eval_out.txt`（Agent 评测集 20/20）。
 

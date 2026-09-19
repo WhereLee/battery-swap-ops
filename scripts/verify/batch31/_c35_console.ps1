@@ -54,8 +54,16 @@ try {
         exit 1
     }
     Write-Output "INFO preview server serving dist/ on http://127.0.0.1:4173"
-    node (Join-Path $scriptDir "_c35_console.mjs")
+    # The gate writes its own evidence. Previously this script only PRINTED the run and the
+    # operator tee'd stdout by hand, so _c35_out.txt could sit in the repo claiming 31/31
+    # while the committed script ran 25 checks - evidence that no command in the repo could
+    # reproduce. Capturing here means one command regenerates script and record together.
+    $outFile = Join-Path $scriptDir "_c35_out.txt"
+    $lines = & node (Join-Path $scriptDir "_c35_console.mjs") 2>&1
     $code = $LASTEXITCODE
+    $lines | ForEach-Object { $_ }
+    [System.IO.File]::WriteAllLines($outFile, ($lines | ForEach-Object { [string]$_ }), (New-Object System.Text.UTF8Encoding($false)))
+    Write-Output "INFO evidence written: scripts/verify/batch31/_c35_out.txt"
     Write-Output "INFO _c35_console.mjs exit code = $code"
     exit $code
 } finally {
