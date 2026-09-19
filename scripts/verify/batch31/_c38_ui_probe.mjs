@@ -62,8 +62,20 @@ const PAGES = [
   { path: "/settlements/x", title: "结算单详情", clickFrom: "/settlements" },
 ];
 
-/** Runs in the browser: returns raw measurements for one page. */
-const PROBE = `(() => {
+/**
+ * Runs in the browser: returns raw measurements for one scope.
+ *
+ * `scopeExpr` is a JS expression evaluated in the page that must yield the element to measure.
+ * The default is the whole document; the dialog pass passes an expression that resolves the
+ * visible `.el-dialog`, because Element Plus teleports dialogs to <body> and keeps the page
+ * behind them rendered - measuring the document with a dialog open would double-count the
+ * page and hide which numbers came from the dialog.
+ */
+function probeExpression(scopeExpr = "document") {
+  return `(() => {
+  const root = ${scopeExpr};
+  const scopeIsPage = root === document;
+  if (!root) return JSON.stringify({ scopeMissing: true });
   const px = (v) => Math.round(Number.parseFloat(v || '0')) || 0;
   const parseRGB = (c) => {
     const m = String(c).match(/rgba?\\(([^)]+)\\)/);
@@ -94,7 +106,7 @@ const PROBE = `(() => {
 
   const clipped = [];
   const intentionalEllipsis = [];
-  document.querySelectorAll('.el-table .cell').forEach((cell) => {
+  root.querySelectorAll('.el-table .cell').forEach((cell) => {
     const text = (cell.innerText || '').trim();
     if (!text) return;
     if (cell.scrollWidth <= cell.clientWidth + 1) return;
@@ -109,7 +121,7 @@ const PROBE = `(() => {
     }
   });
 
-  const tables = Array.from(document.querySelectorAll('.el-table')).map((table, index) => {
+  const tables = Array.from(root.querySelectorAll('.el-table')).map((table, index) => {
     const wrapper = table.querySelector('.el-table__body-wrapper') || table;
     return {
       index,
@@ -130,7 +142,7 @@ const PROBE = `(() => {
   // content missing from the image. Measure the real scroller so the capture logic, and the
   // record, are both held to the true content height instead of to documentElement.
   const scrollers = [];
-  document.querySelectorAll('*').forEach((el) => {
+  root.querySelectorAll('*').forEach((el) => {
     if (el.clientHeight < 100 || el.scrollHeight <= el.clientHeight + 4) return;
     const overflowY = getComputedStyle(el).overflowY;
     if (overflowY !== 'auto' && overflowY !== 'scroll') return;
@@ -157,7 +169,7 @@ const PROBE = `(() => {
   // and can look displaced in a captured image even when the DOM is perfectly aligned - the
   // kind of claim that has to be settled with numbers, not with another look at the picture.
   const alignment = [];
-  document.querySelectorAll('.el-table').forEach((table, tableIndex) => {
+  root.querySelectorAll('.el-table').forEach((table, tableIndex) => {
     const headers = Array.from(table.querySelectorAll('.el-table__header th'));
     const firstRow = table.querySelector('.el-table__body tbody tr');
     const bodyCells = firstRow ? Array.from(firstRow.children) : [];
@@ -189,7 +201,7 @@ const PROBE = `(() => {
   // SOC column is empty" while a source-code reading would call it correct. Reporting both,
   // plus the child-element count, keeps "no data" and "data that cannot be seen" apart.
   const dashColumns = [];
-  document.querySelectorAll('.el-table').forEach((table, tableIndex) => {
+  root.querySelectorAll('.el-table').forEach((table, tableIndex) => {
     const rows = Array.from(table.querySelectorAll('.el-table__body tbody tr'));
     if (rows.length === 0) return;
     Array.from(table.querySelectorAll('.el-table__header th')).forEach((th, index) => {
@@ -233,7 +245,11 @@ const PROBE = `(() => {
   const textSamples = [];
   let textScanned = 0;
   const textSeen = new Set();
-  for (const el of document.querySelectorAll('body *')) {
+  // Use 'body *' for the page (skips <head>) and '*' when the scope IS an element: a dialog
+  // has no <body> descendant, so querying 'body *' inside one silently returns nothing.
+  // NOTE: never write backticks in this comment block - the whole probe is a template literal.
+  const textRoot = scopeIsPage ? document.body : root;
+  for (const el of textRoot.querySelectorAll('*')) {
     if (textSamples.length >= TEXT_LIMIT) break;
     if (el.closest('.is-disabled, [disabled], [aria-hidden="true"]')) continue;
     if (el.getClientRects().length === 0) continue;
@@ -273,10 +289,49 @@ const PROBE = `(() => {
     textSeen.add(key);
     textSamples.push(sample);
   }
+  // ---- placeholder text -----------------------------------------------------------------
+  // Element Plus renders a select's placeholder as a real element (.el-select__placeholder,
+  // already covered by the walk above) but an input's as a ::placeholder pseudo-element, which
+  // querySelectorAll can never return. Both are text under WCAG 1.4.3, so measure the pseudo
+  // explicitly via getComputedStyle(el, '::placeholder'). Batch39 fixed
+  // --el-text-color-secondary but left --el-text-color-placeholder alone; this is where that
+  // gap shows up, and it only showed up at all once the probe started opening dialogs (a form
+  // is where placeholders live).
+  //
+  // These samples must be pushed BEFORE lowContrastText is computed: the first version added
+  // them after, so page-level placeholder failures were measured, reported as their own field,
+  // and then silently left out of the gate. A measurement that does not reach the gate is a
+  // comment, not a check.
+  const placeholderSamples = [];
+  root.querySelectorAll('input[placeholder], textarea[placeholder]').forEach((el) => {
+    if (el.getClientRects().length === 0) return;
+    const pseudo = getComputedStyle(el, '::placeholder');
+    const fg = parseRGB(pseudo.color);
+    const bg = effectiveBg(el);
+    const ratio = contrast(fg, bg);
+    if (ratio === null) return;
+    const key = '::placeholder|' + pseudo.color;
+    if (textSeen.has(key)) return;
+    textSeen.add(key);
+    const sample = {
+      text: '::placeholder "' + String(el.getAttribute('placeholder') || '').slice(0, 16) + '"',
+      sel: el.tagName.toLowerCase() + '::placeholder',
+      fontSize: pseudo.fontSize,
+      color: pseudo.color,
+      background: 'rgb(' + bg.r + ',' + bg.g + ',' + bg.b + ')',
+      ratio,
+      need: 4.5,
+    };
+    textSamples.push(sample);
+    placeholderSamples.push(sample);
+  });
+
   const lowContrastText = textSamples.filter((t) => t.ratio < t.need);
+  const isPlaceholder = (t) => t.sel.endsWith('::placeholder') || t.sel.includes('select__placeholder');
+  const lowContrastPlaceholders = lowContrastText.filter(isPlaceholder);
 
   const tags = [];
-  document.querySelectorAll('.el-tag').forEach((tag) => {
+  root.querySelectorAll('.el-tag').forEach((tag) => {
     // Inactive el-tabs panes are still in the DOM with display:none; measuring them yields
     // 0x0 boxes that are not rendering defects at all.
     if (tag.getClientRects().length === 0) return;
@@ -297,18 +352,59 @@ const PROBE = `(() => {
     });
   });
 
+  // ---- non-text contrast (WCAG 1.4.11) - reported, NOT gated --------------------------
+  // A UI component's boundary must reach 3:1 against the adjacent colour. Whether the rule
+  // applies to an Element Plus text input is a judgement call - the input is also identified
+  // by its label and its placement, and the stock border (--el-border-color #dcdfe6 on white
+  // is ~1.4:1) is a deliberate design choice across the whole component library. Fixing it
+  // means restyling every form control, which is a visual-design decision rather than a
+  // defect fix, so this section measures and reports the worst offenders and does NOT fail
+  // the gate. Recorded as a declared boundary in the block record instead.
+  const nonText = [];
+  const seenNonText = new Set();
+  root.querySelectorAll('.el-button, .el-input__wrapper, .el-textarea__inner, .el-select__wrapper, .el-checkbox__inner, .el-radio__inner, .el-table__cell, .el-card').forEach((el) => {
+    if (el.closest('.is-disabled, [disabled], [aria-hidden="true"]')) return;
+    if (el.getClientRects().length === 0) return;
+    const style = getComputedStyle(el);
+    const sides = ['borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor'];
+    const border = sides.map((s) => parseRGB(style[s])).find((c) => c && c.a > 0.01);
+    if (!border) return;
+    const widths = [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth];
+    if (!widths.some((w) => (Number.parseFloat(w) || 0) > 0)) return;
+    // Compare the boundary against what is OUTSIDE the component, which is what the eye uses.
+    const outside = el.parentElement ? effectiveBg(el.parentElement) : effectiveBg(el);
+    const ratio = contrast(border, outside);
+    if (ratio === null) return;
+    const cls = typeof el.className === 'string' ? el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
+    const key = el.tagName.toLowerCase() + '.' + cls + '|' + style.borderTopColor;
+    if (seenNonText.has(key)) return;
+    seenNonText.add(key);
+    nonText.push({
+      sel: el.tagName.toLowerCase() + '.' + cls,
+      text: (el.innerText || '').trim().slice(0, 20),
+      border: style.borderTopColor,
+      outside: 'rgb(' + outside.r + ',' + outside.g + ',' + outside.b + ')',
+      ratio,
+    });
+  });
+
   return JSON.stringify({
     viewport: { w: window.innerWidth, h: window.innerHeight },
+    scopeIsPage,
     document: {
       scrollWidth: document.documentElement.scrollWidth,
       clientWidth: document.documentElement.clientWidth,
       scrollHeight: document.documentElement.scrollHeight,
     },
-    pageHorizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+    // Page-level criteria are only meaningful when the whole document is the scope; the
+    // dialog pass must not re-count the page's own overflow as a dialog defect.
+    pageHorizontalOverflow: scopeIsPage
+      && document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
     contentHeight,
     scrollers,
     alignment,
     dashColumns,
+    nonText,
     tables,
     clippedCount: clipped.length,
     clipped: clipped.slice(0, 20),
@@ -317,12 +413,13 @@ const PROBE = `(() => {
     textScanned,
     textSamples: textSamples.length,
     lowContrastText,
+    lowContrastPlaceholders,
     lowContrastTags: tags.filter((t) => t.contrast !== null && t.contrast < ${TAG_CONTRAST_MIN}),
     zeroWidthTags: tags.filter((t) => t.width < 12 || t.height < 12),
     sampleTags: tags.slice(0, 6),
   });
 })()`;
-
+}
 async function main() {
   if (!ADMIN_PASS) {
     console.log("FATAL ADMIN_PASS is empty (read .local/admin-pass.txt)");
@@ -358,7 +455,7 @@ async function main() {
         ready = await session.goto(`${APP_URL}${path}`, "!!document.querySelector('.page-title')");
       }
       await sleep(1200);
-      const raw = JSON.parse(await session.evaluate(PROBE));
+      const raw = JSON.parse(await session.evaluate(probeExpression("document")));
       raw.path = path;
       raw.title = title;
       raw.clickFrom = page.clickFrom ?? null;
@@ -394,6 +491,77 @@ async function main() {
       if (raw.sampleTags.length > 0) {
         console.log(`      sample tag: "${raw.sampleTags[0].text}" ${raw.sampleTags[0].width}x${raw.sampleTags[0].height} contrast=${raw.sampleTags[0].contrast} font=${raw.sampleTags[0].fontSize}`);
       }
+      const weakBorders = raw.nonText.filter((n) => n.ratio < 3);
+      console.log(`INFO  non-text boundaries measured=${raw.nonText.length} below 3:1=${weakBorders.length} (WCAG 1.4.11, reported not gated - see the block record)`);
+      weakBorders.slice(0, 4).forEach((n) => console.log(`      weak boundary ${n.ratio}:1 ${n.sel} border=${n.border} outside=${n.outside}`));
+    }
+
+    // ---------------------------------------------------------------------------
+    // Dialog pass (batch40 补): the first version of this probe only measured pages, and a
+    // dialog is where a reviewer actually clicks (the reject/refund/action forms). Element
+    // Plus teleports dialogs to <body> and leaves the page behind them rendered, so each
+    // dialog is measured with an element scope instead of the document - otherwise the page
+    // numbers would be counted twice and nothing would say which numbers came from the form.
+    //
+    // Openers are found by button text and a missing opener is a SKIP with the reason, not a
+    // FAIL: whether a 驳回/退款 button exists depends on the row's allowedActions, which is
+    // data-dependent by design.
+    // ---------------------------------------------------------------------------
+    const DIALOGS = [
+      { path: "/alarm", opener: "建工单", title: "从告警创建工单" },
+      { path: "/alarm", opener: "驳回", title: "驳回建议单" },
+      { path: "/orders", opener: "退款", title: "退款" },
+      { path: "/work-orders", opener: "分诊", title: "工单动作" },
+    ];
+    const dialogScope = "([...document.querySelectorAll('.el-dialog')].find((d) => d.getClientRects().length > 0) || null)";
+
+    for (const d of DIALOGS) {
+      await session.goto(`${APP_URL}${d.path}`, "!!document.querySelector('.page-title')");
+      await sleep(700);
+      const opened = await session.evaluate(`(() => {
+        const btn = [...document.querySelectorAll('.el-button')]
+          .find((b) => b.getClientRects().length > 0 && (b.innerText || '').trim().startsWith(${JSON.stringify(d.opener)}));
+        if (!btn) return false;
+        btn.click();
+        return true;
+      })()`);
+      if (!opened) {
+        console.log("");
+        console.log(`SKIP  dialog "${d.title}" on ${d.path}: no visible button starting with "${d.opener}" (allowedActions-driven, may be absent for this data)`);
+        report.dialogSkips = (report.dialogSkips ?? 0) + 1;
+        continue;
+      }
+      const visible = await session.waitFor(`!!${dialogScope}`, 8000);
+      if (!visible) {
+        console.log("");
+        console.log(`FAIL  dialog "${d.title}" on ${d.path}: button clicked but no visible .el-dialog appeared`);
+        report.dialogs = report.dialogs ?? [];
+        report.dialogs.push({ path: d.path, title: d.title, ready: false });
+        continue;
+      }
+      await sleep(400);
+      const raw = JSON.parse(await session.evaluate(probeExpression(dialogScope)));
+      raw.path = d.path;
+      raw.title = d.title;
+      raw.ready = true;
+      report.dialogs = report.dialogs ?? [];
+      report.dialogs.push(raw);
+
+      const misaligned = raw.alignment.filter((c) => c.deltaLeft !== null && Math.abs(c.deltaLeft) > 2);
+      const headerClipped = raw.alignment.filter((c) => c.headerTextClipped);
+      console.log("");
+      console.log(`--- dialog: ${d.title} (${d.path}) ---`);
+      console.log(`PASS  opened and visible`);
+      console.log(`${raw.clippedCount === 0 ? "PASS" : "FAIL"}  dialog cells clipped NOT by design: ${raw.clippedCount}`);
+      raw.clipped.slice(0, 4).forEach((c) => console.log(`      clipped: "${c.text}" (${c.clientWidth}<${c.scrollWidth}px)`));
+      console.log(`${misaligned.length === 0 ? "PASS" : "FAIL"}  dialog tables aligned: ${raw.alignment.length} columns, ${misaligned.length} misaligned`);
+      console.log(`INFO  dialog tags=${raw.tagCount} lowContrast=${raw.lowContrastTags.length} zeroSize=${raw.zeroWidthTags.length}`);
+      console.log(`INFO  dialog text elements=${raw.textScanned} below threshold=${raw.lowContrastText.length}`);
+      raw.lowContrastText.slice(0, 6).forEach((t) => console.log(`      low text ${t.ratio}:1 (need ${t.need}) "${t.text}" ${t.sel} color=${t.color} bg=${t.background} font=${t.fontSize}`));
+      raw.lowContrastTags.slice(0, 4).forEach((t) => console.log(`      low tag ${t.contrast}:1 "${t.text}" color=${t.color} bg=${t.background}`));
+      // Close via the header X so the next iteration starts from a clean page.
+      await session.evaluate("(() => { const b = document.querySelector('.el-dialog__headerbtn'); if (b) b.click(); return true; })()");
+      await sleep(400);
     }
 
     // Hard criteria (batch38): these are the three things the vision review flagged that
@@ -428,6 +596,19 @@ async function main() {
       (sum, p) => sum + p.alignment.filter((c) => c.headerTextClipped).length,
       0,
     );
+    // Dialog results are aggregated separately so a regression says which surface broke.
+    const dialogs = report.dialogs ?? [];
+    const dialogReady = dialogs.filter((d) => d.ready !== false);
+    const dialogClipped = dialogReady.reduce((sum, d) => sum + d.clippedCount, 0);
+    const dialogLowText = dialogReady.reduce((sum, d) => sum + d.lowContrastText.length, 0);
+    const dialogLowTag = dialogReady.reduce((sum, d) => sum + d.lowContrastTags.length, 0);
+    const dialogMisaligned = dialogReady.reduce(
+      (sum, d) => sum + d.alignment.filter((c) => c.deltaLeft !== null && Math.abs(c.deltaLeft) > 2).length,
+      0,
+    );
+    const dialogNotReady = dialogs.filter((d) => d.ready === false).length;
+    const nonTextWeak = report.pages.reduce((sum, p) => sum + p.nonText.filter((n) => n.ratio < 3).length, 0);
+    const nonTextMeasured = report.pages.reduce((sum, p) => sum + p.nonText.length, 0);
     console.log("");
     console.log(`${overflow.length === 0 ? "PASS" : "FAIL"}  no page overflows horizontally at ${VIEWPORT_WIDTH}px`);
     console.log(`${clipped === 0 ? "PASS" : "FAIL"}  no non-intentional cell clipping (${clipped} cells)`);
@@ -436,6 +617,8 @@ async function main() {
     console.log(`${lowContrast === 0 ? "PASS" : "FAIL"}  every visible tag reaches ${TAG_CONTRAST_MIN}:1 contrast (${lowContrast} below)`);
     console.log(`${lowText === 0 ? "PASS" : "FAIL"}  every text element reaches its WCAG threshold (${lowText} below, ${textScanned} elements scanned)`);
     console.log(`${zeroSize === 0 ? "PASS" : "FAIL"}  no zero-sized visible tag (${zeroSize})`);
+    console.log(`${dialogNotReady === 0 && dialogClipped + dialogLowText + dialogLowTag + dialogMisaligned === 0 ? "PASS" : "FAIL"}  dialogs: ${dialogReady.length} measured (${report.dialogSkips ?? 0} skipped - opener absent), ${dialogNotReady} failed to open, ${dialogClipped} clipped, ${dialogMisaligned} misaligned, ${dialogLowTag} low-contrast tags, ${dialogLowText} low-contrast text`);
+    console.log(`INFO  non-text boundaries (WCAG 1.4.11): ${nonTextMeasured} measured, ${nonTextWeak} below 3:1 - reported, deliberately NOT a gate condition`);
     console.log(`${errors.consoleErrors.length === 0 ? "PASS" : "FAIL"}  console errors during probe: ${errors.consoleErrors.length}`);
     console.log(`${errors.httpErrors.length === 0 ? "PASS" : "FAIL"}  HTTP >= 400 during probe: ${errors.httpErrors.length}`);
     if (errors.consoleErrors.length > 0) {
@@ -443,13 +626,18 @@ async function main() {
     }
     report.consoleErrors = errors.consoleErrors;
     report.httpErrors = errors.httpErrors;
-    report.totals = { clipped, lowContrast, lowText, textScanned, zeroSize, overflowPages: overflow.length, misaligned, headerClipped };
+    report.totals = {
+      clipped, lowContrast, lowText, textScanned, zeroSize, overflowPages: overflow.length, misaligned, headerClipped,
+      dialogsMeasured: dialogReady.length, dialogSkips: report.dialogSkips ?? 0, dialogClipped, dialogLowText, dialogLowTag,
+      dialogMisaligned, dialogNotReady, nonTextMeasured, nonTextWeak,
+    };
 
     const hardFailures = report.pages.filter((p) => !p.ready).length + failures
       + overflow.length + clipped + lowContrast + lowText + zeroSize + misaligned + headerClipped
+      + dialogNotReady + dialogClipped + dialogLowText + dialogLowTag + dialogMisaligned
       + errors.consoleErrors.length + errors.httpErrors.length;
     console.log("");
-    console.log(`=== C38 summary: pages=${report.pages.length} hardFailures=${hardFailures} ===`);
+    console.log(`=== C38 summary: pages=${report.pages.length} dialogs=${dialogReady.length} hardFailures=${hardFailures} ===`);
     console.log("JSON-BEGIN");
     console.log(JSON.stringify(report));
     console.log("JSON-END");

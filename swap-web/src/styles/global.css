@@ -98,6 +98,20 @@ body {
  */
 :root {
   --el-text-color-secondary: #5d6269;
+  /*
+   * Placeholder text is text: WCAG 1.4.3 applies to it, and the stock
+   * --el-text-color-placeholder (#a8abb2) measures 2.30:1 on white - it was invisible to the
+   * batch38/39 probes because a page has no placeholders until a form opens, and the probe
+   * only started opening dialogs in batch40.
+   *
+   * The window is narrow and worth writing down: the placeholder must stay LIGHTER than the
+   * value colour (--el-text-color-regular #606266 = 6.11:1) so a filled field still looks
+   * filled, while clearing 4.5:1 itself. That caps it at luminance <= 0.1833, and #6f747c
+   * (4.70:1) is about as light as a grey can be and still pass. The distinction between
+   * "empty with hint" and "filled" is therefore carried mainly by the hint disappearing on
+   * input rather than by a big colour gap - the honest trade-off of meeting AA on white.
+   */
+  --el-text-color-placeholder: #6f747c;
   --el-color-primary: #1668c1;
   --el-color-primary-light-3: #5c95d4;
   --el-color-primary-light-5: #8bb4e0;
