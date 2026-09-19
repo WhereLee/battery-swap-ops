@@ -1,6 +1,7 @@
 package com.swapops.server.order.service.pay;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.swapops.server.common.delay.DelayQueueService;
 import com.swapops.server.common.id.SnowflakeIdGenerator;
 import com.swapops.server.common.retry.DeadlockRetryExecutor;
@@ -14,7 +15,6 @@ import com.swapops.server.user.service.WalletService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -22,8 +22,13 @@ import java.util.Set;
 
 /**
  * 退款服务（S3.4）：幂等闸 = unique(order_id, reason) + CAS WAIT→SUCCESS。
- * 执行失败留 WAIT 并延迟重投（refund-apply），超限进死信（S3.6 告警）。
+ * 执行失败留 WAIT 并延迟重投（refund-apply），超限进死信（S3.6 告警）；
+ * <b>WAIT 不是终局</b>——再次发起（管理端/补偿任务/延迟重投）会重驱动同一张单，见 {@link #apply}。
  * 退款统一退入钱包余额（MOCK 渠道；真实渠道对接时替换 RefundChannelClient）。
+ *
+ * <p><b>事务边界</b>：资金动作与状态 CAS 同事务（编程式事务），站内信与分账冲正在事务外 best-effort。
+ * 这个边界的由来是一次真实缺陷（批次32）：{@code @Transactional} 加在被同类私有方法调用的
+ * {@code apply} 上，自调用绕过代理 ⇒ 注解静默失效 ⇒ 加款已提交而 CAS 未做，重驱动时二次入账。
  */
 @Slf4j
 @Service
@@ -51,6 +56,9 @@ public class RefundService {
     private final com.swapops.server.settlement.service.SettlementService settlementService;
     private final com.swapops.server.order.dao.SwapOrderDao swapOrderDao;
 
+    /** 退款资金动作的事务执行器（见 {@link #apply} 的事务边界说明）。 */
+    private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
+
     public RefundService(RefundRecordDao refundRecordDao,
                          com.swapops.server.order.dao.PaymentRecordDao paymentRecordDao,
                          PaymentRecordService paymentRecordService, WalletService walletService,
@@ -58,7 +66,8 @@ public class RefundService {
                          DeadlockRetryExecutor deadlockRetryExecutor,
                          com.swapops.server.user.service.UserMessageService messageService,
                          com.swapops.server.settlement.service.SettlementService settlementService,
-                         com.swapops.server.order.dao.SwapOrderDao swapOrderDao) {
+                         com.swapops.server.order.dao.SwapOrderDao swapOrderDao,
+                         org.springframework.transaction.PlatformTransactionManager transactionManager) {
         this.refundRecordDao = refundRecordDao;
         this.paymentRecordDao = paymentRecordDao;
         this.paymentRecordService = paymentRecordService;
@@ -69,6 +78,7 @@ public class RefundService {
         this.messageService = messageService;
         this.settlementService = settlementService;
         this.swapOrderDao = swapOrderDao;
+        this.transactionTemplate = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
     }
 
     /**
@@ -89,6 +99,14 @@ public class RefundService {
     private RefundRecordEntity doRefund(Long orderId, Long userId, int amountFen, String reason) {
         RefundRecordEntity existing = findByOrderReason(orderId, reason);
         if (existing != null) {
+            // 命中既有单不再直接返回：WAIT 表示上一轮"资金动作 + CAS"没有整段落定（进程被杀、
+            // 死锁、下游异常），单子还悬着——用户没拿到钱而 refundableAmount 已把它算作"已退"。
+            // 这里显式重驱动（apply 幂等且同事务），重试耗尽/管理端重复发起都能自愈。
+            if (RefundStatus.WAIT.name().equals(existing.getStatus())) {
+                log.warn("退款单处于 WAIT，重驱动执行 refundNo={} orderId={}", existing.getRefundNo(), orderId);
+                applyAndScheduleRetryOnFailure(existing);
+                return refundRecordDao.selectById(existing.getId());
+            }
             return existing;
         }
         long now = System.currentTimeMillis();
@@ -109,28 +127,53 @@ public class RefundService {
         } catch (DuplicateKeyException e) {
             return findByOrderReason(orderId, reason); // 并发重复：幂等返回
         }
+        applyAndScheduleRetryOnFailure(record);
+        return refundRecordDao.selectById(record.getId());
+    }
+
+    /** 执行退款，失败不抛出：记日志 + 延迟重投（补偿任务/人工可反复触达，单子停在 WAIT 可自愈）。 */
+    private void applyAndScheduleRetryOnFailure(RefundRecordEntity record) {
         try {
             apply(record);
         } catch (RuntimeException e) {
             log.error("退款执行失败，转入延迟重试 orderId={} refundNo={} amountFen={} cause={}",
-                    orderId, record.getRefundNo(), amountFen, e.getMessage());
+                    record.getOrderId(), record.getRefundNo(), record.getAmountFen(), e.getMessage());
             enqueueRetry(record.getRefundNo());
         }
-        return refundRecordDao.selectById(record.getId());
     }
 
-    /** 执行退款（幂等）：仅 WAIT 执行；金额>0 时入余额 + 记 REFUND 流水，最后 CAS 标记 SUCCESS */
-    @Transactional
+    /**
+     * 执行退款（幂等）：仅 WAIT 执行；金额 &gt; 0 时入余额 + 记 REFUND 流水，最后 CAS 标记 SUCCESS。
+     *
+     * <p><b>事务边界（本方法存在的理由）</b>：资金动作（入余额 + 记 REFUND 流水）与
+     * {@code WAIT→SUCCESS} 的 CAS <b>必须同一事务</b>——CAS 就是"这笔钱只出一次"的闸门，
+     * 如果加款先自动提交、CAS 再单独执行，那么两步之间任何失败都会留下"钱已出、单仍 WAIT"，
+     * 而 WAIT 单会被重驱动（延迟重投／补偿任务／管理端重复发起）再次加款 ⇒ <b>同一张单退两次钱</b>。
+     *
+     * <p>为什么用编程式事务而不是 {@code @Transactional}：本方法会被同类私有方法 {@code doRefund} 直接调用，
+     * 而 <b>自调用不经过 Spring 代理，注解会静默失效</b>（不报错、不告警，只是没有事务）。
+     * 编程式事务对"谁来调"不敏感，在线退款与延迟重投两条入口语义完全一致。
+     * 这条纪律由 {@code TransactionalSelfInvocationGuardTest} 在字节码层兜底。
+     *
+     * <p>站内信与分账冲正刻意留在事务<b>外</b>：它们是通知/台账补偿，失败不应回滚已成立的退款
+     * （回到"事务里"会让一条站内信写失败把退款一起回滚，与 S7 WP-D 的声明相反）。
+     */
     public void apply(RefundRecordEntity record) {
         if (!RefundStatus.WAIT.name().equals(record.getStatus())) {
             return;
         }
+        transactionTemplate.executeWithoutResult(status -> applyMoney(record));
+        afterApply(record);
+    }
+
+    /** 事务内：加款 + 记流水 + CAS。任何一步抛异常都整体回滚，退款单保持 WAIT（可被重驱动）。 */
+    private void applyMoney(RefundRecordEntity record) {
         if (record.getAmountFen() != null && record.getAmountFen() > 0) {
             walletService.addBalance(record.getUserId(), record.getAmountFen());
             paymentRecordService.record(record.getUserId(), record.getOrderId(), PaymentType.REFUND,
                     record.getAmountFen(), "退款:" + record.getReason());
         }
-        int rows = refundRecordDao.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<RefundRecordEntity>()
+        int rows = refundRecordDao.update(null, new LambdaUpdateWrapper<RefundRecordEntity>()
                 .eq(RefundRecordEntity::getId, record.getId())
                 .eq(RefundRecordEntity::getStatus, RefundStatus.WAIT.name())
                 .set(RefundRecordEntity::getStatus, RefundStatus.SUCCESS.name())
@@ -138,10 +181,19 @@ public class RefundService {
         if (rows == 0) {
             throw new IllegalStateException("退款状态 CAS 冲突 refundNo=" + record.getRefundNo());
         }
+    }
+
+    /** 事务外：到账通知 + 分账冲正，各自 best-effort（失败只记日志，不影响退款成立）。 */
+    private void afterApply(RefundRecordEntity record) {
         if (record.getAmountFen() != null && record.getAmountFen() > 0) {
             // S7 WP-D：退款到账站内信（写失败不影响退款）
-            messageService.send(record.getUserId(), "REFUND", "退款到账",
-                    "退款 " + record.getAmountFen() + " 分已入余额（" + record.getReason() + "）");
+            try {
+                messageService.send(record.getUserId(), "REFUND", "退款到账",
+                        "退款 " + record.getAmountFen() + " 分已入余额（" + record.getReason() + "）");
+            } catch (RuntimeException e) {
+                log.warn("[退款] 到账站内信写入异常（不阻断退款） refundNo={} cause={}",
+                        record.getRefundNo(), e.getMessage());
+            }
         }
         // S7 WP-B：退款冲正（仅对已分账的完成单；event_key 幂等，失败不阻断退款）
         try {

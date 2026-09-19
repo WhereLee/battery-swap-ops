@@ -68,6 +68,13 @@ class RefundServiceTest {
     @Mock
     private com.swapops.server.order.dao.SwapOrderDao swapOrderDao;
 
+    /**
+     * 事务管理器用桩：资金动作的事务边界是批次32 的修复重点，这里断言的是
+     * "apply 确实开了事务、成功提交、失败回滚"——事务语义本身由 Spring 保证。
+     */
+    @Mock
+    private org.springframework.transaction.PlatformTransactionManager transactionManager;
+
     private RefundService service;
 
     @BeforeAll
@@ -80,10 +87,12 @@ class RefundServiceTest {
     @BeforeEach
     void setUp() {
         when(idGenerator.nextIdString()).thenReturn("123456");
+        when(transactionManager.getTransaction(any()))
+                .thenReturn(new org.springframework.transaction.support.SimpleTransactionStatus());
         service = new RefundService(refundRecordDao, paymentRecordDao,
                 paymentRecordService, walletService, delayQueueService, idGenerator,
                 new com.swapops.server.common.retry.DeadlockRetryExecutor(), messageService,
-                settlementService, swapOrderDao);
+                settlementService, swapOrderDao, transactionManager);
         // 默认可退口径：该订单已收 300（基础费），无历史退款（S5 审查：refund 入口先做可退上限校验）
         when(paymentRecordDao.selectList(any())).thenReturn(List.of(
                 payment(7L, 99L, PaymentType.BALANCE_FEE, 300)));
@@ -232,6 +241,71 @@ class RefundServiceTest {
         record.setPaymentType(type.name());
         record.setAmountFen(amountFen);
         return record;
+    }
+
+    // ---------- 批次32：资金动作的事务边界（P0 缺陷修复的回归网） ----------
+
+    @Test
+    @DisplayName("事务边界：退款成功走提交（不是自动提交的各写各的）")
+    void 退款成功提交事务() {
+        when(refundRecordDao.selectOne(any())).thenReturn(null);
+        when(refundRecordDao.insert(any(RefundRecordEntity.class))).thenAnswer(inv -> {
+            inv.getArgument(0, RefundRecordEntity.class).setId(5L);
+            return 1;
+        });
+        when(refundRecordDao.update(isNull(), any())).thenReturn(1);
+        when(refundRecordDao.selectById(anyLong())).thenReturn(record(RefundStatus.SUCCESS.name(), 300));
+
+        service.refund(99L, 7L, 300, "ADMIN_MANUAL");
+
+        verify(transactionManager).getTransaction(any());
+        verify(transactionManager).commit(any());
+        verify(transactionManager, never()).rollback(any());
+    }
+
+    @Test
+    @DisplayName("事务边界：CAS 冲突 → 回滚（加款随之撤销），单子留 WAIT 等重驱动，不产生二次入账")
+    void CAS冲突回滚资金动作() {
+        when(refundRecordDao.selectOne(any())).thenReturn(null);
+        when(refundRecordDao.insert(any(RefundRecordEntity.class))).thenAnswer(inv -> {
+            inv.getArgument(0, RefundRecordEntity.class).setId(5L);
+            return 1;
+        });
+        when(refundRecordDao.update(isNull(), any())).thenReturn(0); // 被并发抢先标记 SUCCESS
+        when(refundRecordDao.selectById(anyLong())).thenReturn(record(RefundStatus.WAIT.name(), 300));
+
+        RefundRecordEntity result = service.refund(99L, 7L, 300, "ADMIN_MANUAL");
+
+        verify(transactionManager).rollback(any());
+        verify(transactionManager, never()).commit(any());
+        assertThat(result.getStatus()).as("回滚后单子仍在 WAIT").isEqualTo(RefundStatus.WAIT.name());
+        verify(delayQueueService).enqueue(anyString(), anyString(), anyString(), anyLong());
+    }
+
+    @Test
+    @DisplayName("WAIT 重驱动：再次发起会重跑资金动作（旧实现命中 WAIT 直接返回 → 钱永久悬空）")
+    void WAIT单可重驱动() {
+        when(refundRecordDao.selectOne(any())).thenReturn(record(RefundStatus.WAIT.name(), 300));
+        when(refundRecordDao.update(isNull(), any())).thenReturn(1);
+        when(refundRecordDao.selectById(anyLong())).thenReturn(record(RefundStatus.SUCCESS.name(), 300));
+
+        RefundRecordEntity result = service.refund(99L, 7L, 300, "ADMIN_MANUAL");
+
+        verify(walletService).addBalance(7L, 300);
+        verify(transactionManager).commit(any());
+        assertThat(result.getStatus()).isEqualTo(RefundStatus.SUCCESS.name());
+    }
+
+    @Test
+    @DisplayName("SUCCESS 终态不再重驱动：重复发起幂等返回既有单，钱包不再变动")
+    void 成功单不重复入账() {
+        when(refundRecordDao.selectOne(any())).thenReturn(record(RefundStatus.SUCCESS.name(), 300));
+
+        RefundRecordEntity result = service.refund(99L, 7L, 300, "ADMIN_MANUAL");
+
+        assertThat(result.getStatus()).isEqualTo(RefundStatus.SUCCESS.name());
+        verifyNoInteractions(walletService);
+        verify(transactionManager, never()).getTransaction(any());
     }
 
     @Test

@@ -1,0 +1,60 @@
+=== batch32 gate probe: TransactionalSelfInvocationGuardTest can go RED ===
+
+Purpose: prove the guard is not vacuous. The probe re-introduces the exact shape of the
+batch32 defect (@Transactional on a method that a NON-transactional sibling calls via 'this').
+
+PROBE  = @Transactional re-added to RefundService.applyMoney (apply -> applyMoney is a self call)
+SHIPPED= programmatic TransactionTemplate inside apply (transaction survives self invocation)
+
+--- PROBE (expected: guard FAILS the build) ---
+[INFO] Reactor Build Order:
+[INFO] swap-server                                                        [jar]
+[INFO] Building battery-swap-ops 1.0.0                                    [1/3]
+[INFO] Building swap-contract 1.0.0                                       [2/3]
+[INFO] ----------------------< com.swapops:swap-server >-----------------------
+[INFO] Building swap-server 1.0.0                                         [3/3]
+[INFO]   from swap-server\pom.xml
+[INFO] --- jacoco:0.8.12:prepare-agent (default) @ swap-server ---
+[INFO] argLine set to -javaagent:C:\\Users\\lrs\\.m2\\repository\\org\\jacoco\\org.jacoco.agent\\0.8.12\\org.jacoco.agent-0.8.12-runtime.jar=destfile=C:\\Users\\lrs\\Desktop\\py\\interview\\battery-swap-ops\\swap-server\\target\\jacoco.exec
+[INFO] --- resources:3.3.1:resources (default-resources) @ swap-server ---
+[INFO] --- compiler:3.14.1:compile (default-compile) @ swap-server ---
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ swap-server ---
+[INFO] skip non existing resourceDirectory C:\Users\lrs\Desktop\py\interview\battery-swap-ops\swap-server\src\test\resources
+[INFO] --- compiler:3.14.1:testCompile (default-testCompile) @ swap-server ---
+[INFO] --- surefire:3.5.6:test (default-test) @ swap-server ---
+[ERROR] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0
+[INFO] Reactor Summary for battery-swap-ops 1.0.0:
+[INFO] swap-server ........................................ FAILURE [  4.720 s]
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.6:test (default-test) on project swap-server: There are test failures.
+[ERROR] See C:\Users\lrs\Desktop\py\interview\battery-swap-ops\swap-server\target\surefire-reports for the individual test results.
+[ERROR] After correcting the problems, you can resume the build with the command
+[ERROR]   mvn <args> -rf :swap-server
+
+--- SHIPPED / REVERTED (expected: guard PASSES) ---
+[INFO] Reactor Build Order:
+[INFO] swap-server                                                        [jar]
+[INFO] Building battery-swap-ops 1.0.0                                    [1/3]
+[INFO] Building swap-contract 1.0.0                                       [2/3]
+[INFO] ----------------------< com.swapops:swap-server >-----------------------
+[INFO] Building swap-server 1.0.0                                         [3/3]
+[INFO]   from swap-server\pom.xml
+[INFO] --- jacoco:0.8.12:prepare-agent (default) @ swap-server ---
+[INFO] argLine set to -javaagent:C:\\Users\\lrs\\.m2\\repository\\org\\jacoco\\org.jacoco.agent\\0.8.12\\org.jacoco.agent-0.8.12-runtime.jar=destfile=C:\\Users\\lrs\\Desktop\\py\\interview\\battery-swap-ops\\swap-server\\target\\jacoco.exec
+[INFO] --- resources:3.3.1:resources (default-resources) @ swap-server ---
+[INFO] --- compiler:3.14.1:compile (default-compile) @ swap-server ---
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ swap-server ---
+[INFO] skip non existing resourceDirectory C:\Users\lrs\Desktop\py\interview\battery-swap-ops\swap-server\src\test\resources
+[INFO] --- compiler:3.14.1:testCompile (default-testCompile) @ swap-server ---
+[INFO] --- surefire:3.5.6:test (default-test) @ swap-server ---
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0
+[INFO] --- jacoco:0.8.12:report (report) @ swap-server ---
+[INFO] Loading execution data file C:\Users\lrs\Desktop\py\interview\battery-swap-ops\swap-server\target\jacoco.exec
+[INFO] Analyzed bundle 'swap-server' with 197 classes
+[WARNING] Classes in bundle 'swap-server' do not match with execution data. For report generation the same class files must be used as at runtime.
+[INFO] Reactor Summary for battery-swap-ops 1.0.0:
+[INFO] swap-server ........................................ SUCCESS [  6.358 s]
+[INFO] BUILD SUCCESS
+
+NOTE: the assertion message itself is Chinese and is mangled by the Windows console code page,
+so only ASCII-safe lines are kept here; the full run is reproducible with the two commands above.
