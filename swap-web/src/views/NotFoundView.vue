@@ -32,6 +32,6 @@ function goHome(): void {
 
 .err-detail {
   margin-bottom: 16px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 </style>

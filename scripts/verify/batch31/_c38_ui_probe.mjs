@@ -220,6 +220,61 @@ const PROBE = `(() => {
     });
   });
 
+  // ---- text contrast beyond tags ------------------------------------------------------
+  // Declared boundary of the first version: only .el-tag was measured. But "I cannot read
+  // this" applies to every small grey label in the console, and Element Plus ships
+  // --el-text-color-secondary (#909399) and --el-text-color-placeholder, which sit around
+  // 2.8-3.4:1 on white. Walk leaf text elements rather than a hand-written selector list so a
+  // component nobody thought of is covered too, and apply the WCAG 1.4.3 split properly:
+  // 3:1 is allowed only for LARGE text (>=24px, or >=18.66px AND bold), everything else 4.5:1.
+  // Disabled controls and aria-hidden decoration are exempt by the same rule, so they are
+  // skipped instead of being counted as failures.
+  const TEXT_LIMIT = 800;
+  const textSamples = [];
+  let textScanned = 0;
+  const textSeen = new Set();
+  for (const el of document.querySelectorAll('body *')) {
+    if (textSamples.length >= TEXT_LIMIT) break;
+    if (el.closest('.is-disabled, [disabled], [aria-hidden="true"]')) continue;
+    if (el.getClientRects().length === 0) continue;
+    let ownsText = false;
+    for (const node of el.childNodes) {
+      if (node.nodeType === 3 && node.textContent.trim() !== '') {
+        ownsText = true;
+        break;
+      }
+    }
+    if (!ownsText) continue;
+    const style = getComputedStyle(el);
+    const fontSize = Number.parseFloat(style.fontSize) || 0;
+    const fontWeight = Number.parseInt(style.fontWeight, 10) || 400;
+    const need = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700) ? 3 : 4.5;
+    const fg = parseRGB(style.color);
+    const bg = effectiveBg(el);
+    const ratio = contrast(fg, bg);
+    if (ratio === null) continue;
+    textScanned++;
+    const cls = typeof el.className === 'string' && el.className.trim() !== ''
+      ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.')
+      : '';
+    const sample = {
+      text: (el.innerText || '').trim().slice(0, 24),
+      sel: el.tagName.toLowerCase() + cls,
+      fontSize: style.fontSize,
+      color: style.color,
+      background: 'rgb(' + bg.r + ',' + bg.g + ',' + bg.b + ')',
+      ratio,
+      need,
+    };
+    // One entry per (selector, colour) pair is enough to act on; without this the report is
+    // 400 copies of the same table-cell rule.
+    const key = sample.sel + '|' + sample.color + '|' + sample.need;
+    if (textSeen.has(key)) continue;
+    textSeen.add(key);
+    textSamples.push(sample);
+  }
+  const lowContrastText = textSamples.filter((t) => t.ratio < t.need);
+
   const tags = [];
   document.querySelectorAll('.el-tag').forEach((tag) => {
     // Inactive el-tabs panes are still in the DOM with display:none; measuring them yields
@@ -259,6 +314,9 @@ const PROBE = `(() => {
     clipped: clipped.slice(0, 20),
     intentionalEllipsisCount: intentionalEllipsis.length,
     tagCount: tags.length,
+    textScanned,
+    textSamples: textSamples.length,
+    lowContrastText,
     lowContrastTags: tags.filter((t) => t.contrast !== null && t.contrast < ${TAG_CONTRAST_MIN}),
     zeroWidthTags: tags.filter((t) => t.width < 12 || t.height < 12),
     sampleTags: tags.slice(0, 6),
@@ -325,6 +383,8 @@ async function main() {
       headerClipped.slice(0, 6).forEach((c) => console.log(`      clipped header: "${c.label}" height ${c.headerTextHeight}px`));
       console.log(`INFO  columns not rendering visible text: ${raw.dashColumns.length === 0 ? "none" : raw.dashColumns.map((c) => `"${c.label}" (${c.rows} rows visible-empty, ${c.domTextFilled} with DOM text${c.domTextFilled > 0 ? ` e.g. "${c.domTextSample}" - value bound but not visible` : ""})`).join(", ")}`);
       console.log(`INFO  tags=${raw.tagCount} lowContrast(<${TAG_CONTRAST_MIN}:1)=${raw.lowContrastTags.length} zeroSize=${raw.zeroWidthTags.length}`);
+      console.log(`INFO  text elements scanned=${raw.textScanned} distinct(selector,colour)=${raw.textSamples} below their WCAG threshold=${raw.lowContrastText.length}`);
+      raw.lowContrastText.slice(0, 8).forEach((t) => console.log(`      low text ${t.ratio}:1 (need ${t.need}) "${t.text}" ${t.sel} color=${t.color} bg=${t.background} font=${t.fontSize}`));
       if (raw.lowContrastTags.length > 0) {
         raw.lowContrastTags.slice(0, 5).forEach((t) => console.log(`      low contrast ${t.contrast}: "${t.text}" color=${t.color} bg=${t.background} font=${t.fontSize}`));
       }
@@ -346,10 +406,20 @@ async function main() {
     //      "slightly low" but unreadable - a reviewer described those cells as an empty
     //      coloured box. 4.5:1 is the WCAG 1.4.3 threshold for normal-size text and 12px
     //      is normal-size text, so the gate uses it rather than a lenient 3:1.
+    //   4. no text element below ITS OWN threshold - 4.5:1 normally, 3:1 only for large text
+    //      (>=24px, or >=18.66px bold). Added in batch39 after the tag-only version of this
+    //      file proved the failure was not tag-specific: Element Plus's
+    //      --el-text-color-secondary (#909399, 2.87-3.08:1) and --el-color-primary
+    //      (#409eff, 2.78:1 as text AND under white text) broke the whole secondary text
+    //      layer, every link, every table header label and the primary buttons. Measuring
+    //      leaf text elements instead of a fixed selector list is what makes this hold for
+    //      components nobody thought to list.
     const overflow = report.pages.filter((p) => p.pageHorizontalOverflow);
     const clipped = report.pages.reduce((sum, p) => sum + p.clippedCount, 0);
     const lowContrast = report.pages.reduce((sum, p) => sum + p.lowContrastTags.length, 0);
     const zeroSize = report.pages.reduce((sum, p) => sum + p.zeroWidthTags.length, 0);
+    const lowText = report.pages.reduce((sum, p) => sum + p.lowContrastText.length, 0);
+    const textScanned = report.pages.reduce((sum, p) => sum + p.textScanned, 0);
     const misaligned = report.pages.reduce(
       (sum, p) => sum + p.alignment.filter((c) => c.deltaLeft !== null && Math.abs(c.deltaLeft) > 2).length,
       0,
@@ -364,6 +434,7 @@ async function main() {
     console.log(`${misaligned === 0 ? "PASS" : "FAIL"}  no header cell sits over the wrong body column (${misaligned} misaligned)`);
     console.log(`${headerClipped === 0 ? "PASS" : "FAIL"}  no clipped table header text (${headerClipped})`);
     console.log(`${lowContrast === 0 ? "PASS" : "FAIL"}  every visible tag reaches ${TAG_CONTRAST_MIN}:1 contrast (${lowContrast} below)`);
+    console.log(`${lowText === 0 ? "PASS" : "FAIL"}  every text element reaches its WCAG threshold (${lowText} below, ${textScanned} elements scanned)`);
     console.log(`${zeroSize === 0 ? "PASS" : "FAIL"}  no zero-sized visible tag (${zeroSize})`);
     console.log(`${errors.consoleErrors.length === 0 ? "PASS" : "FAIL"}  console errors during probe: ${errors.consoleErrors.length}`);
     console.log(`${errors.httpErrors.length === 0 ? "PASS" : "FAIL"}  HTTP >= 400 during probe: ${errors.httpErrors.length}`);
@@ -372,10 +443,10 @@ async function main() {
     }
     report.consoleErrors = errors.consoleErrors;
     report.httpErrors = errors.httpErrors;
-    report.totals = { clipped, lowContrast, zeroSize, overflowPages: overflow.length, misaligned, headerClipped };
+    report.totals = { clipped, lowContrast, lowText, textScanned, zeroSize, overflowPages: overflow.length, misaligned, headerClipped };
 
     const hardFailures = report.pages.filter((p) => !p.ready).length + failures
-      + overflow.length + clipped + lowContrast + zeroSize + misaligned + headerClipped
+      + overflow.length + clipped + lowContrast + lowText + zeroSize + misaligned + headerClipped
       + errors.consoleErrors.length + errors.httpErrors.length;
     console.log("");
     console.log(`=== C38 summary: pages=${report.pages.length} hardFailures=${hardFailures} ===`);

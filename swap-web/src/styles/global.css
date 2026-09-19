@@ -36,7 +36,7 @@ body {
 .page-subtitle {
   margin: 4px 0 0;
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 .toolbar {
@@ -62,7 +62,7 @@ body {
 .metric-caption {
   margin-top: 4px;
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 .mono {
@@ -71,7 +71,125 @@ body {
 }
 
 .text-muted {
-  color: #909399;
+  color: var(--el-text-color-secondary);
+}
+
+/*
+ * batch39: Element Plus design tokens that fail WCAG AA for TEXT.
+ *
+ * The batch38 probe measured only .el-tag. Extending it to every leaf text element showed the
+ * failures were not tag-specific at all - two tokens account for almost all of them:
+ *
+ *   --el-text-color-secondary #909399 : 2.87:1 on #f5f7fa, 3.08:1 on white
+ *       -> page subtitles, "共 N 条", hints, timeline timestamps, table HEADER labels,
+ *          empty-state text, .text-muted spans. The entire secondary text layer.
+ *   --el-color-primary #409eff       : 2.78:1 - and it fails twice over, because Element Plus
+ *          uses it BOTH as text on white (links, active tab, primary el-link) and as the
+ *          background under white text (primary button, checked radio button, dark tags).
+ *          A single value can satisfy both: need luminance <= 0.1833, so 4.5:1 either way.
+ *
+ * Fixing the tokens (rather than each component) keeps the change small and stops the same
+ * failure reappearing in a component nobody has looked at yet. The light-N tints are
+ * recomputed with Element Plus's own formula - light-N = mix(primary, white, N*10%) - so
+ * hover/fill states stay in the same family instead of mixing a new primary with old tints.
+ *
+ *   #1668c1 on white  = 5.07:1     white on #1668c1 = 5.07:1
+ *   #5d6269 on white  = 6.06:1     #5d6269 on #f5f7fa = 5.62:1
+ */
+:root {
+  --el-text-color-secondary: #5d6269;
+  --el-color-primary: #1668c1;
+  --el-color-primary-light-3: #5c95d4;
+  --el-color-primary-light-5: #8bb4e0;
+  --el-color-primary-light-7: #b9d2ec;
+  --el-color-primary-light-8: #d0e1f3;
+  --el-color-primary-light-9: #e8f0f9;
+  --el-color-primary-dark-2: #1253a0;
+}
+
+/*
+ * Hover/active states are NOT measured by the probe (it reads the resting state a screenshot
+ * shows), but leaving them at the light tints would put white text on #5c95d4 = 3.13:1 the
+ * moment the pointer arrives. Darkening on hover is both the convention and the accessible
+ * choice. white on #1253a0 = 7.58:1.
+ */
+.el-button--primary {
+  --el-button-hover-bg-color: #1253a0;
+  --el-button-hover-border-color: #1253a0;
+  --el-button-active-bg-color: #0e4384;
+  --el-button-active-border-color: #0e4384;
+}
+
+.el-radio-button__original-radio:checked + .el-radio-button__inner:hover {
+  background-color: #1253a0;
+  border-color: #1253a0;
+}
+
+/*
+ * Semantic buttons have the same two-sided problem as primary: Element Plus paints a SOLID
+ * button with the semantic colour under white text, and a LINK button with the semantic colour
+ * as text on white. Both directions fail for the stock palette - white on #e6a23c (warning) is
+ * 2.19:1, and the probe caught exactly that case on the alarm page's 建工单 link button.
+ *
+ * Scoped to buttons rather than overriding --el-color-warning globally, because those colours
+ * are also chart/progress fills where a darker shade would change what the visual means; the
+ * failure here is specifically about text. The shades reuse the batch38 palette so the console
+ * has one accessible set of semantic colours instead of two.
+ */
+.el-button--warning {
+  --el-button-bg-color: #7a5203;
+  --el-button-border-color: #7a5203;
+  --el-button-hover-bg-color: #634202;
+  --el-button-hover-border-color: #634202;
+  --el-button-active-bg-color: #4d3301;
+  --el-button-active-border-color: #4d3301;
+}
+
+.el-button--success {
+  --el-button-bg-color: #2f6b1c;
+  --el-button-border-color: #2f6b1c;
+  --el-button-hover-bg-color: #255615;
+  --el-button-hover-border-color: #255615;
+  --el-button-active-bg-color: #1c410f;
+  --el-button-active-border-color: #1c410f;
+}
+
+.el-button--danger {
+  --el-button-bg-color: #8f2b2b;
+  --el-button-border-color: #8f2b2b;
+  --el-button-hover-bg-color: #742222;
+  --el-button-hover-border-color: #742222;
+  --el-button-active-bg-color: #5a1a1a;
+  --el-button-active-border-color: #5a1a1a;
+}
+
+.el-button--info {
+  --el-button-bg-color: #4c4f57;
+  --el-button-border-color: #4c4f57;
+  --el-button-hover-bg-color: #3d4046;
+  --el-button-hover-border-color: #3d4046;
+  --el-button-active-bg-color: #2e3035;
+  --el-button-active-border-color: #2e3035;
+}
+
+.el-button.is-link.el-button--warning {
+  --el-button-text-color: #7a5203;
+  --el-button-hover-text-color: #634202;
+}
+
+.el-button.is-link.el-button--success {
+  --el-button-text-color: #2f6b1c;
+  --el-button-hover-text-color: #255615;
+}
+
+.el-button.is-link.el-button--danger {
+  --el-button-text-color: #8f2b2b;
+  --el-button-hover-text-color: #742222;
+}
+
+.el-button.is-link.el-button--info {
+  --el-button-text-color: #4c4f57;
+  --el-button-hover-text-color: #3d4046;
 }
 
 /*

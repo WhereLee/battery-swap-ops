@@ -10,7 +10,7 @@
           <span>{{ entry.title }}</span>
         </el-menu-item>
       </el-menu>
-      <div class="aside-foot mono">codes: {{ auth.codes.size }}</div>
+      <div class="aside-foot mono">权限码 {{ auth.codes.size }}</div>
     </el-aside>
 
     <el-container>
@@ -101,7 +101,9 @@ async function onLogout(): Promise<void> {
 .brand-sub {
   margin-top: 2px;
   font-size: 11px;
-  color: #8492a6;
+  /* batch39: was #8492a6 = 4.43:1 on the #1f2d3d sidebar; on a dark background the fix is a
+     LIGHTER shade, not a darker one. #a8b3c4 = 6.61:1. */
+  color: #a8b3c4;
 }
 
 /* Element Plus menu theming via CSS vars (the bg/text color props are deprecated). */
@@ -116,7 +118,9 @@ async function onLogout(): Promise<void> {
 
 .aside-foot {
   padding: 8px 16px;
-  color: #5c6b7f;
+  /* batch39: was #5c6b7f = 2.57:1 on #1f2d3d - the worst text on the page, and the one a
+     reviewer flagged as looking like a stray debug line. #9aa7b8 = 5.73:1. */
+  color: #9aa7b8;
   border-top: 1px solid #263445;
 }
 

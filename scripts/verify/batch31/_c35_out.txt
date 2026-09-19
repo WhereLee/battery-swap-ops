@@ -8,31 +8,31 @@ PASS  B04 side menu lists all six pages for a SUPER identity (运营看板 / 告
 PASS  B05 dashboard renders 4 metric cards (cards=4)
 INFO  screenshot 02-dashboard.png (47 kB, captured 1440x900)
 PASS  B goto /alarm renders (alarm tabs)
-PASS  B06 alarm page renders rows consistent with its reported total (total=620 visibleRows=20)
-INFO  screenshot 03-alarm.png (200 kB, captured 1440x1404)
+PASS  B06 alarm page renders rows consistent with its reported total (total=627 visibleRows=20)
+INFO  screenshot 03-alarm.png (207 kB, captured 1440x1404)
 PASS  B goto /work-orders renders (work-order rows)
 PASS  B07 work-order list renders rows (rows=17)
-INFO  screenshot 04-work-orders.png (166 kB, captured 1440x1187)
+INFO  screenshot 04-work-orders.png (169 kB, captured 1440x1187)
 PASS  B08 work-order detail opens from the list and renders the flow log
 INFO  screenshot 05-work-order-detail.png (91 kB, captured 1440x1189)
 PASS  B goto /orders renders (order rows)
 PASS  B09 order list renders a full page of rows (rows=20)
 PASS  B10 order table does not surface internal columns
-INFO  screenshot 06-orders.png (120 kB, captured 1440x900)
+INFO  screenshot 06-orders.png (129 kB, captured 1440x900)
 PASS  B11 order detail opens from the list and renders payments/refunds cards
 INFO  screenshot 07-order-detail.png (70 kB, captured 1440x1358)
 PASS  B goto /cabinets renders (cabinet rows)
 PASS  B12 cabinet list renders rows (rows=10)
-INFO  screenshot 08-cabinets.png (87 kB, captured 1440x900)
+INFO  screenshot 08-cabinets.png (88 kB, captured 1440x900)
 PASS  B13 cabinet detail opens from the list and renders all four blocks
 PASS  B14 cabinet detail renders one row per cell (cells=12)
-INFO  screenshot 09-cabinet-detail.png (158 kB, captured 1440x1959)
+INFO  screenshot 09-cabinet-detail.png (157 kB, captured 1440x1959)
 PASS  B goto /settlements renders (settlement rows)
 PASS  B15 settlement list renders rows (rows=1)
-INFO  screenshot 10-settlements.png (43 kB, captured 1440x900)
+INFO  screenshot 10-settlements.png (44 kB, captured 1440x900)
 PASS  B16 settlement detail opens from the list
 PASS  B17 settlement detail renders the split ledger lines (lines=48)
-INFO  screenshot 11-settlement-detail.png (272 kB, captured 1440x2109)
+INFO  screenshot 11-settlement-detail.png (285 kB, captured 1440x2109)
 PASS  B18 route guard sends an unauthenticated deep link to /login
 PASS  B19 the guard preserves the requested path in ?redirect=
 PASS  B20 re-login returns the user to the originally requested page

@@ -46,7 +46,7 @@ async function onLogout(): Promise<void> {
 .err-detail {
   margin-bottom: 16px;
   line-height: 1.8;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   text-align: left;
 }
 </style>
