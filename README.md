@@ -66,10 +66,10 @@ flowchart LR
 #    RocketMQ namesrv 9876 + broker 10911 + proxy 8081（.local/start-broker-proxy.bat）
 #    有 Docker 的机器可跳过本节：docker compose -f docker-compose.middleware.yml up -d（仅 MySQL+Redis）
 
-# 2) 建库建表（幂等，db/00-17 共 18 个迁移脚本，按序执行）
+# 2) 建库建表（幂等，db/00-18 共 19 个迁移脚本，按序执行）
 mysql -uroot -proot < db/00-create-database.sql
 mysql -uroot -proot < db/01-swap-schema.sql
-# ... db/02-s2-migration.sql ~ db/17-work-order-scope.sql 依次执行
+# ... db/02-s2-migration.sql ~ db/18-payment-ledger-idem.sql 依次执行
 
 # 3) 密钥零明文：SWAP_DEV_SECRET / SWAP_ADMIN_TOKEN / SWAP_PAY_SECRET（.local/*.txt，gitignored）
 
@@ -83,6 +83,51 @@ powershell -File scripts/verify/batch1/_g1_open_loop.ps1
 ```
 
 运行模式与通道矩阵（fast 模式 / load 模式 / http|mq|dual 取舍）：`document/knowledge/runbook.md`。
+
+## 五分钟看到东西（面试现场最短路径）
+
+```powershell
+# A. 后端 + 管理台（本机）
+.local\run-server.bat                                   # 平台 :8400
+powershell -File scripts/demo/_p0_demo.ps1              # 换电全链路 + 对账，输出可留档
+cd swap-web; npm install; npm run dev                   # 管理台 http://localhost:5173 （/api 走 Vite 代理）
+#    账号：admin / 密码在 .local/admin-pass.txt（gitignored，页面不内置任何凭据）
+
+# B. 管理台自动化验收（无需人工点：零依赖 CDP + 本机 headless Chrome）
+cd swap-web; npm run build                              # 先用构建产物
+powershell -File scripts/verify/batch31/_c35_console.ps1   # 登录→八页走查→控制台 error 0，31/31
+powershell -File scripts/verify/batch31/_c34_pages.ps1     # 页面级 HTTP 契约 + 前端类型镜像，59/59
+
+# C. 云上（同源 nginx 站点；公网未放行，用隧道）
+ssh -L 80:127.0.0.1:80 ubuntu@124.223.36.154            # 另开一窗保持
+#    浏览器访问 http://127.0.0.1/ ：登录 → 看板 / 工单五步链 / 订单退款·冲正 / 柜详情 / 结算单
+```
+
+## 容器化（有 Docker 的机器）
+
+```bash
+# 1) 中间件（MySQL 8 + Redis 7；./db 挂进 initdb，首次启动即建库建表并跑完全部迁移）
+docker compose -f docker-compose.middleware.yml up -d --wait
+
+# 2) 平台镜像（jar 由 Maven 先构建；镜像里零密钥，全部走环境变量、缺一即启动失败）
+mvn -B -ntp -DskipTests package
+docker build -t swap-server:local .
+
+# 3) 跑起来（host 网络直连上面两个中间件；首次启动 DevSeeder 播种 4 柜×12 仓 + 25 用户）
+docker run -d --name swap-server --network host \
+  -e SPRING_DATASOURCE_URL='jdbc:mysql://127.0.0.1:3306/swap_ops?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true' \
+  -e SPRING_DATASOURCE_USERNAME=root -e SPRING_DATASOURCE_PASSWORD=root \
+  -e SPRING_DATA_REDIS_HOST=127.0.0.1 -e SPRING_DATA_REDIS_PORT=6379 \
+  -e SWAP_DEVICE_MQ_ENABLED=false -e SWAP_DEV_ENABLED=true \
+  -e SWAP_DEV_SECRET=<32hex> -e SWAP_ADMIN_TOKEN=<32hex> -e SWAP_PAY_SECRET=<32hex> \
+  -e SWAP_DEV_ADMIN_BOOTSTRAP_PASSWORD=<管理端引导密码> \
+  swap-server:local
+docker inspect --format '{{.State.Health.Status}}' swap-server   # healthy
+```
+
+> 这条路径由 CI 的 `docker` job 真正跑一遍（`scripts/cloud/ci-container-smoke.sh`）：
+> compose 起中间件 → 校验迁移建出的表数 → 构建镜像 → 容器内健康检查 UP → 容器外登录并调用 BFF 视图端点。
+> 本地开发机没有 Docker，所以"compose 五分钟起环境"这句承诺的**唯一验证点就是 CI**。
 
 ## 演示与复现（P0-4）
 

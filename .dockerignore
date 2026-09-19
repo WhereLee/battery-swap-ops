@@ -1,0 +1,16 @@
+# Keep the build context tiny: the image only needs swap-server/target/*.jar.
+# Everything else is either source (already compiled), local scratch, or large archives.
+.git
+.github
+.local
+diag-archive
+document
+scripts
+db
+swap-web/node_modules
+swap-web/dist
+swap-agent/target
+swap-contract/target
+swap-sim/target
+target
+*.log

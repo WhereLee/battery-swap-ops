@@ -67,3 +67,30 @@ jobs:
           name: swap-web-dist
           path: swap-web/dist
           retention-days: 7
+
+  # batch37: verify the documented Docker/compose reproduction path end to end. The local dev
+  # machine has no Docker, so this promise ("compose up gives you middleware, db/ migrations run
+  # on first boot, the image runs against it") could only ever be checked here.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Package jar (image input)
+        run: mvn -B -ntp -DskipTests package
+
+      - name: Compose middleware + build image + container smoke
+        run: bash scripts/cloud/ci-container-smoke.sh
+
+      - name: Container logs on failure
+        if: failure()
+        run: |
+          docker logs swap-ci 2>&1 | tail -60 || true
+          docker compose -f docker-compose.middleware.yml logs 2>&1 | tail -30 || true
