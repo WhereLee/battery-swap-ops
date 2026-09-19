@@ -48,7 +48,15 @@ INFO  after injection:         1 of 8 texts below threshold (worst 2.9:1 "请输
 PASS  C7 validation error contrast: clean page reports nothing (0 of 8 texts below threshold)
 PASS  C7 validation error contrast: injected defect is DETECTED (1 of 8 texts below threshold (worst 2.9:1 "请输入用户名"))
 PASS  C7 validation error contrast: signed back in after the login-page controls
+PASS  C8 hover state contrast: the hover state was actually constructed (before) (6 of 14 elements changed computed style under :hover)
+PASS  C8 hover state contrast: the hover state was actually constructed (after) (6 of 14 elements changed computed style under :hover)
+
+--- C8 hover state contrast on /work-orders ---
+INFO  baseline (no injection): 0 of 14 hovered elements below threshold (6 had a hover style)
+INFO  after injection:         6 of 14 hovered elements below threshold (6 had a hover style) (worst 2.82:1 "WO94492987559641088")
+PASS  C8 hover state contrast: clean page reports nothing (0 of 14 hovered elements below threshold (6 had a hover style))
+PASS  C8 hover state contrast: injected defect is DETECTED (6 of 14 hovered elements below threshold (6 had a hover style) (worst 2.82:1 "WO94492987559641088"))
 PASS  after removing all injections the page measures clean again (lowContrastTags=0 clipped=0)
 
-=== C40 summary: PASS=21 FAIL=0 ===
+=== C40 summary: PASS=25 FAIL=0 ===
 GATE-NEGCTL PASS

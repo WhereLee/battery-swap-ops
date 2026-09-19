@@ -34,6 +34,102 @@ const VIEWPORT_HEIGHT = Number(process.env.PROBE_HEIGHT ?? 900);
  */
 const TAG_CONTRAST_MIN = 4.5;
 
+/*
+ * Interaction states (batch43 补): hover / focus-visible / disabled were the last declared gap of
+ * this gate ("only the resting state is measured"). A static sweep can never see them: the styles
+ * that apply are selected by a pseudo-class the page is not currently in, so the measurement has
+ * to CONSTRUCT the state first - the same discipline as the validation pass (fail a rule to see
+ * the error text). Chrome DevTools Protocol can force a pseudo-class on a specific node
+ * (CSS.forcePseudoState), which is deterministic and does not depend on hit-testing or scrolling.
+ *
+ * Two things are asserted, not one:
+ *   1. the state actually applied - the computed style of the element must CHANGE when the
+ *      pseudo-class is forced. Without this, a silently broken forcePseudoState (wrong node id,
+ *      domain not enabled) would make every measurement "clean" and the gate would report success
+ *      for a state it never entered. Same shape as the validation pass asserting 0 login POSTs.
+ *   2. the text inside the hovered element still meets its WCAG threshold.
+ */
+const HOVER_SELECTOR = ".el-button, .el-link, .el-tabs__item";
+const HOVER_LIMIT = 14;
+const HOVER_PAGES = ["/work-orders", "/orders", "/alarm"];
+
+/** Tag up to `limit` visible, non-disabled interactive elements so CDP can address them. */
+function tagHoverCandidates(selector, limit) {
+  return `(() => {
+    document.querySelectorAll('[data-c38-hover]').forEach((el) => el.removeAttribute('data-c38-hover'));
+    const all = [...document.querySelectorAll(${JSON.stringify(selector)})].filter(
+      (el) => el.getClientRects().length > 0
+        && !el.hasAttribute('disabled')
+        && !el.classList.contains('is-disabled')
+        && !el.classList.contains('is-loading'),
+    );
+    const picked = all.slice(0, ${limit});
+    picked.forEach((el, i) => el.setAttribute('data-c38-hover', String(i)));
+    return JSON.stringify({
+      total: all.length,
+      picked: picked.length,
+      labels: picked.map((el) => (el.innerText || el.getAttribute('aria-label') || el.className || '').trim().replace(/\\s+/g, ' ').slice(0, 24)),
+    });
+  })()`;
+}
+
+/** The computed values a pseudo-class is expected to change. */
+function styleFingerprint(selector) {
+  return `(() => {
+    const el = document.querySelector(${JSON.stringify(selector)});
+    if (!el) return '';
+    const s = getComputedStyle(el);
+    return [s.color, s.backgroundColor, s.borderColor, s.boxShadow, s.outlineColor, s.outlineWidth].join(' | ');
+  })()`;
+}
+
+/**
+ * Force `:hover` on each tagged element, prove the style changed, and measure the text inside it
+ * with the gate's own probe expression. Exported so the negative control drives the SAME code.
+ */
+async function measureHoverStates(session, { selector = HOVER_SELECTOR, limit = HOVER_LIMIT, label = "interaction" } = {}) {
+  const info = JSON.parse(await session.evaluate(tagHoverCandidates(selector, limit)));
+  const result = { label, total: info.total, picked: info.picked, applied: 0, low: [], samples: [], notApplied: [] };
+  if (info.picked === 0) {
+    return result;
+  }
+  await session.cdp.send("DOM.enable");
+  await session.cdp.send("CSS.enable");
+  const { root } = await session.cdp.send("DOM.getDocument", { depth: 1, pierce: false });
+  const { nodeIds } = await session.cdp.send("DOM.querySelectorAll", { nodeId: root.nodeId, selector: "[data-c38-hover]" });
+  for (let i = 0; i < info.picked; i++) {
+    const scope = `[data-c38-hover="${i}"]`;
+    // probeExpression takes a JS EXPRESSION that evaluates to the root element, while
+    // styleFingerprint takes a selector - passing the bare attribute selector to the former
+    // produced `const root = [data-c38-hover="0"]`, i.e. an array literal with an assignment
+    // inside it (SyntaxError: Invalid left-hand side in assignment). Two different string shapes,
+    // named differently on purpose.
+    const scopeExpr = `document.querySelector('[data-c38-hover="${i}"]')`;
+    const nodeId = nodeIds[i];
+    if (nodeId === undefined) {
+      result.notApplied.push({ i, label: info.labels[i], why: "no CDP node id" });
+      continue;
+    }
+    const before = await session.evaluate(styleFingerprint(scope));
+    await session.cdp.send("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: ["hover"] });
+    const after = await session.evaluate(styleFingerprint(scope));
+    if (after !== before) {
+      result.applied++;
+      result.samples.push({ label: info.labels[i], before, after });
+    } else {
+      result.notApplied.push({ i, label: info.labels[i], why: "style did not change under :hover" });
+    }
+    const raw = JSON.parse(await session.evaluate(probeExpression(scopeExpr)));
+    raw.lowContrastText.forEach((t) => result.low.push({ ...t, element: info.labels[i] }));
+    if (raw.worstText) {
+      result.samples.push({ label: info.labels[i], worstText: raw.worstText });
+    }
+    await session.cdp.send("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: [] });
+  }
+  await session.evaluate("(() => { document.querySelectorAll('[data-c38-hover]').forEach((el) => el.removeAttribute('data-c38-hover')); return true; })()");
+  return result;
+}
+
 /**
  * Routes to measure. `clickFrom` marks a detail page and names the list it hangs off:
  * the probe clicks the first row link exactly like a user and reads back location.pathname.
@@ -724,6 +820,30 @@ async function main() {
       await sleep(400);
     }
 
+    // ---------------------------------------------------------------------------
+    // Interaction-state pass (batch43 补): hover was the last declared gap of this gate. The state
+    // is constructed with CDP (CSS.forcePseudoState) and asserted to have applied BEFORE any
+    // contrast number from it is trusted - see the note on HOVER_SELECTOR at the top of the file.
+    // ---------------------------------------------------------------------------
+    const hoverResults = [];
+    for (const path of HOVER_PAGES) {
+      await session.goto(`${APP_URL}${path}`, "!!document.querySelector('.page-title')");
+      await sleep(900);
+      const hover = await measureHoverStates(session, { label: path });
+      hover.worstText = hover.samples
+        .map((s) => s.worstText)
+        .filter(Boolean)
+        .reduce((w, t) => (w === null || t.ratio < w.ratio ? t : w), null);
+      hoverResults.push(hover);
+      console.log("");
+      console.log(`--- hover states ${path} ---`);
+      console.log(`${hover.picked > 0 ? "PASS" : "FAIL"}  interactive elements available to hover (${hover.picked} of ${hover.total} tagged, limit ${HOVER_LIMIT})`);
+      console.log(`${hover.applied > 0 ? "PASS" : "FAIL"}  forcing :hover changed the computed style (${hover.applied}/${hover.picked}) - a state that never applied would report clean for free`);
+      console.log(`${hover.low.length === 0 ? "PASS" : "FAIL"}  hovered text reaches its WCAG threshold (${hover.low.length} below, worst ${hover.worstText ? `${hover.worstText.ratio}:1 (needs ${hover.worstText.need})` : "n/a"})`);
+      hover.low.slice(0, 5).forEach((t) => console.log(`      low text ${t.ratio}:1 (need ${t.need}) "${t.text}" on "${t.element}" ${t.sel} color=${t.color} bg=${t.background}`));
+      hover.notApplied.slice(0, 3).forEach((n) => console.log(`      INFO no hover styling: "${n.label}" (${n.why})`));
+    }
+
     // Hard criteria (batch38): these are the three things the vision review flagged that
     // turned out to be measurable. They must stay clean, so they are gate conditions:
     //   1. no page-level horizontal overflow at the 1440px target width
@@ -782,6 +902,13 @@ async function main() {
     const validationLowText = (report.validation?.lowText ?? []).length;
     const alertMatrixResult = report.validation?.alertMatrix ?? { variants: 0, scanned: 0, lowText: [] };
     const alertMatrixBad = (alertMatrixResult.variants === 10 && alertMatrixResult.scanned >= 10 ? 0 : 1) + alertMatrixResult.lowText.length;
+    // Hover: a page where nothing could be hovered, or where forcing :hover changed nothing, is a
+    // failed measurement - not a clean one.
+    const hoverPicked = hoverResults.reduce((sum, h) => sum + h.picked, 0);
+    const hoverApplied = hoverResults.reduce((sum, h) => sum + h.applied, 0);
+    const hoverLow = hoverResults.reduce((sum, h) => sum + h.low.length, 0);
+    const hoverUnusable = hoverResults.filter((h) => h.picked === 0 || h.applied === 0).length;
+    report.hover = hoverResults;
     console.log("");
     console.log(`${overflow.length === 0 ? "PASS" : "FAIL"}  no page overflows horizontally at ${VIEWPORT_WIDTH}px`);
     console.log(`${clipped === 0 ? "PASS" : "FAIL"}  no non-intentional cell clipping (${clipped} cells)`);
@@ -797,11 +924,13 @@ async function main() {
     console.log(`${validationRequestSent ? "FAIL" : "PASS"}  the invalid submit never reached the server`);
     console.log(`${validationLowText === 0 ? "PASS" : "FAIL"}  validation error text contrast (${validationLowText} below, ${report.validation?.scanned ?? 0} elements scanned in the login scope)`);
     console.log(`${alertMatrixBad === 0 ? "PASS" : "FAIL"}  alert variant matrix: ${alertMatrixResult.variants} variants, ${alertMatrixResult.scanned} measured, ${alertMatrixResult.lowText.length} below threshold`);
+    console.log(`${hoverUnusable === 0 ? "PASS" : "FAIL"}  hover states were constructed on every page (${hoverApplied} of ${hoverPicked} elements changed style, ${hoverUnusable} pages with nothing measurable)`);
+    console.log(`${hoverLow === 0 ? "PASS" : "FAIL"}  hovered text contrast (${hoverLow} below across ${hoverPicked} hovered elements)`);
     console.log(`INFO  non-text boundaries (WCAG 1.4.11): ${nonTextMeasured} measured, ${nonTextWeak} below 3:1 - reported, deliberately NOT a gate condition`);
     // The closest call across everything measured. "0 below threshold" says nothing about how
     // much headroom is left; this does. Computed over pages, the login scope and the alert
     // matrix, so a variant that barely passes cannot hide inside a passing average.
-    const worstOverall = [...report.pages.map((p) => p.worstText), report.validation?.worstText, alertMatrixResult.worstText]
+    const worstOverall = [...report.pages.map((p) => p.worstText), report.validation?.worstText, alertMatrixResult.worstText, ...hoverResults.map((h) => h.worstText)]
       .filter(Boolean)
       .reduce((w, t) => (w === null || t.ratio < w.ratio ? t : w), null);
     console.log(`INFO  closest call anywhere in this run: ${worstOverall ? `${worstOverall.ratio}:1 (needs ${worstOverall.need}) "${worstOverall.text}" ${worstOverall.sel}` : "nothing measured"}`);
@@ -819,12 +948,14 @@ async function main() {
       validationCovered, validationRequestSent, validationLowText, validationScanned: report.validation?.scanned ?? 0,
       alertVariants: alertMatrixResult.variants, alertVariantsScanned: alertMatrixResult.scanned, alertVariantsLowText: alertMatrixResult.lowText.length,
       worstTextRatio: worstOverall?.ratio ?? null, worstTextLabel: worstOverall ? `${worstOverall.text} ${worstOverall.sel}` : null,
+      hoverPages: hoverResults.length, hoverPicked, hoverApplied, hoverLow, hoverUnusable,
     };
 
     const hardFailures = report.pages.filter((p) => !p.ready).length + failures
       + overflow.length + clipped + lowContrast + lowText + zeroSize + misaligned + headerClipped
       + dialogNotReady + dialogClipped + dialogLowText + dialogLowTag + dialogMisaligned + emptyScopes + badScopes + dialogWrongScope
       + (validationCovered ? 0 : 1) + (validationRequestSent ? 1 : 0) + validationLowText + alertMatrixBad
+      + hoverUnusable + hoverLow
       + errors.consoleErrors.length + errors.httpErrors.length;
     console.log("");
     console.log(`=== C38 summary: pages=${report.pages.length} dialogs=${dialogReady.length} hardFailures=${hardFailures} ===`);
@@ -850,4 +981,4 @@ if (isDirectRun) {
   });
 }
 
-export { probeExpression, TAG_CONTRAST_MIN, PAGES, alertMatrixExpression, ALERT_MATRIX_SCOPE };
+export { probeExpression, TAG_CONTRAST_MIN, PAGES, alertMatrixExpression, ALERT_MATRIX_SCOPE, measureHoverStates, HOVER_SELECTOR, HOVER_PAGES };

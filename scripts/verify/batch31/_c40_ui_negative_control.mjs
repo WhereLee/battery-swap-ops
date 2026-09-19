@@ -42,7 +42,7 @@
  * Inputs: APP_URL, ADMIN_USER, ADMIN_PASS (same as the gates).
  */
 import { launch, login, sleep } from "./_cdp.mjs";
-import { probeExpression, TAG_CONTRAST_MIN, alertMatrixExpression, ALERT_MATRIX_SCOPE } from "./_c38_ui_probe.mjs";
+import { probeExpression, TAG_CONTRAST_MIN, alertMatrixExpression, ALERT_MATRIX_SCOPE, measureHoverStates } from "./_c38_ui_probe.mjs";
 
 const APP_URL = process.env.APP_URL ?? "http://127.0.0.1:4173";
 const ADMIN_USER = process.env.ADMIN_USER ?? "admin";
@@ -211,6 +211,33 @@ const CONTROLS = [
       check("C7 validation error contrast: signed back in after the login-page controls", back);
     },
   },
+  {
+    name: "C8 hover state contrast",
+    page: "/work-orders",
+    // The hover pass is the newest check (batch43 补). A check that measures a state it failed to
+    // CONSTRUCT reports zero problems for free, so this control asserts two things: the injected
+    // defect is detected, and the state was actually entered (invariant below, in both phases).
+    // It drives the gate's own exported measureHoverStates - including the CDP forcePseudoState
+    // calls - rather than a re-implementation.
+    measure: async (session) => measureHoverStates(session, { label: "C8" }),
+    inject: () => {
+      const style = document.createElement('style');
+      style.id = 'negctl';
+      // The pre-fix pairing straight from Element Plus: hover text goes to primary-light-3.
+      style.textContent = '.el-link.el-link--primary{ --el-link-hover-text-color: #5c95d4 !important; }';
+      document.head.appendChild(style);
+      return true;
+    },
+    detected: (raw) => raw.low.length > 0,
+    describe: (raw) => `${raw.low.length} of ${raw.picked} hovered elements below threshold (${raw.applied} had a hover style)${raw.low.length > 0 ? ` (worst ${Math.min(...raw.low.map((t) => t.ratio))}:1 "${raw.low[0].text}")` : ""}`,
+    invariants: [
+      {
+        name: "the hover state was actually constructed",
+        ok: (raw) => raw.applied > 0,
+        describe: (raw) => `${raw.applied} of ${raw.picked} elements changed computed style under :hover`,
+      },
+    ],
+  },
 ];
 
 /** Clear the token key so the router guard lets /login render, then wait for the form. */
@@ -268,15 +295,27 @@ async function main() {
         // Runs once, before the baseline: creates the state the probe is about to measure.
         await control.prepare(session);
       }
-      const before = JSON.parse(await session.evaluate(probeExpression(control.scopeExpr ?? "document")));
+      const before = control.measure
+        ? await control.measure(session)
+        : JSON.parse(await session.evaluate(probeExpression(control.scopeExpr ?? "document")));
       const cleanBefore = control.detected(before) === false;
+      for (const inv of control.invariants ?? []) {
+        // Must hold in BOTH phases: it is the precondition that makes the measurement meaningful
+        // ("the state was entered"), not a defect to be detected.
+        check(`${control.name}: ${inv.name} (before)`, inv.ok(before), inv.describe ? inv.describe(before) : "");
+      }
 
       const injected = await session.evaluate(`(${control.inject.toString()})()`);
       await sleep(500);
       // C5 measures a deliberately empty scope, so it passes its own scope expression instead
       // of the document; every other control measures the whole page.
-      const after = JSON.parse(await session.evaluate(probeExpression(control.scopeExpr ?? "document")));
+      const after = control.measure
+        ? await control.measure(session)
+        : JSON.parse(await session.evaluate(probeExpression(control.scopeExpr ?? "document")));
       const detected = !injected ? false : control.detected(after) === true;
+      for (const inv of control.invariants ?? []) {
+        check(`${control.name}: ${inv.name} (after)`, inv.ok(after), inv.describe ? inv.describe(after) : "");
+      }
 
       console.log("");
       console.log(`--- ${control.name} on ${control.page} ---`);

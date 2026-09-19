@@ -249,6 +249,46 @@ body {
 }
 
 /*
+ * batch43 补: `.el-link` hover. The resting colour was fixed in batch39 (the primary token), but
+ * hover is a DIFFERENT token and Element Plus points it at a LIGHTENED tint:
+ *
+ *   .el-link--primary { --el-link-hover-text-color: var(--el-color-primary-light-3) }  -> #5c95d4
+ *
+ * which measures 3.13:1 on white and 2.82:1 on the light-9 danger tint of a highlighted table row
+ * (need 4.5:1). That never showed up because the probe only ever measured the RESTING state - the
+ * hover pass added in batch43 forces :hover through CDP and found 14 failing links across two
+ * pages on the first run. Hovering text should get DARKER, not lighter: these are the same shades
+ * the link buttons already use for their hover, so the console keeps one red/one green/one amber.
+ *
+ * SPECIFICITY NOTE - this file walked into the SAME trap twice in one round. The first version of
+ * this rule used `.el-link--primary` (0,1,0) while Element Plus ships `.el-link.el-link--primary`
+ * (0,2,0): the probe kept measuring #5c95d4 while the source looked correct, exactly like the
+ * counter rule above. Match EP's weight - "check who wins the cascade" is not a one-off step, it
+ * is a step per override.
+ */
+.el-link,
+.el-link.el-link--primary {
+  --el-link-hover-text-color: #1253a0;
+}
+
+.el-link.el-link--success {
+  --el-link-hover-text-color: #255615;
+}
+
+.el-link.el-link--warning {
+  --el-link-hover-text-color: #634202;
+}
+
+.el-link.el-link--danger,
+.el-link.el-link--error {
+  --el-link-hover-text-color: #742222;
+}
+
+.el-link.el-link--info {
+  --el-link-hover-text-color: #3d4046;
+}
+
+/*
  * batch38: Element Plus tag contrast. Measured with scripts/verify/batch31/_c38_ui_probe.mjs,
  * which reads the rendered foreground/background of every visible .el-tag and computes the
  * WCAG ratio. Both tag effects ship below the 4.5:1 that 12px normal-size text requires:
