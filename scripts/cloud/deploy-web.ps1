@@ -38,7 +38,14 @@ $check = ssh $remote "ls $remoteTmp/rollout-web.sh $remoteTmp/web/index.html $re
 Write-Host "remote staging check: $check"
 
 Write-Host "running remote rollout..."
-ssh $remote "chmod +x $remoteTmp/rollout-web.sh && bash $remoteTmp/rollout-web.sh"
+# batch43 补记: hand the md5 of the freshly built css to the remote script so the deploy asserts
+# that what the browser will download IS what was just built - the check that would have caught
+# the batch31-on-the-server/batch43-in-the-repo gap automatically (see batch42).
+$builtCss = Get-ChildItem (Join-Path $root "swap-web\dist\assets\index-*.css") | Select-Object -First 1
+if (-not $builtCss) { Write-Host "FATAL no dist css found - run npm run build first"; exit 1 }
+$builtMd5 = (Get-FileHash $builtCss.FullName -Algorithm MD5).Hash.ToLower()
+Write-Host "local bundle: $($builtCss.Name) md5=$builtMd5"
+ssh $remote "chmod +x $remoteTmp/rollout-web.sh && bash $remoteTmp/rollout-web.sh $builtMd5"
 $code = $LASTEXITCODE
 Write-Host "remote rollout exit=$code; cleaning staging..."
 Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue

@@ -10,6 +10,23 @@ DB_PASS=$(grep '^SPRING_DATASOURCE_PASSWORD=' "$ENV_FILE" | cut -d= -f2)
 B=http://127.0.0.1:8400/api
 WEB_ROOT=/opt/swap/web
 
+# batch43 补记: verify the payload BEFORE doing anything at all.
+# "published files: N" only proves that something was copied and the smoke test only proves that
+# nginx answers - neither can tell the batch31 bundle from the batch43 one. That is how the demo
+# site sat three batches behind the repo (batch42). So the deploy asserts identity, and it does
+# the cheap half first, before the snapshot, the migrations and the service restart: the bundle
+# staged for publication must be the one that was BUILT on the workstation (md5 handed over by
+# deploy-web.ps1 as $1). If it is not, nothing on the live site has been touched yet.
+EXPECT_CSS_MD5="${1:-}"
+STAGED_CSS=$(find /tmp/swapdeploy/web/assets -maxdepth 1 -name 'index-*.css' -printf '%f\n' | head -1)
+if [ -z "$STAGED_CSS" ]; then echo "FATAL no staged dist css under /tmp/swapdeploy/web/assets"; exit 1; fi
+STAGED_MD5=$(md5sum "/tmp/swapdeploy/web/assets/$STAGED_CSS" | cut -d' ' -f1)
+echo "staged bundle: $STAGED_CSS md5=$STAGED_MD5 expected=${EXPECT_CSS_MD5:-not-checked}"
+if [ -n "$EXPECT_CSS_MD5" ] && [ "$STAGED_MD5" != "$EXPECT_CSS_MD5" ]; then
+    echo "FATAL staged css is not the bundle built on the workstation; nothing has been changed"
+    exit 1
+fi
+
 echo "== step0: snapshot before schema change =="
 sudo /opt/swap/config/backup.sh | tail -1
 
@@ -61,6 +78,21 @@ sudo chown -R www-data:www-data "$WEB_ROOT"
 # Count as root: /opt/swap/web is www-data-owned and ubuntu cannot traverse it (the first
 # deploy reported "published files: 1" for that reason - a wrong number, not a wrong copy).
 echo "published files: $(sudo find $WEB_ROOT -type f | wc -l) | index sha256: $(sudo sha256sum $WEB_ROOT/index.html | cut -c1-16)"
+# Second half of the identity check: the served bundle must be byte-identical to the staged one,
+# and index.html must actually reference it - a stale index.html pointing at a deleted hash
+# answers 200 with an HTML page whose bundle 404s, which any uptime check reads as "the site is
+# up". (The first half ran before step0 - see the top of this script.)
+DEPLOYED_CSS=$(sudo find "$WEB_ROOT/assets" -maxdepth 1 -name 'index-*.css' -printf '%f\n' | head -1)
+DEPLOYED_MD5=$(sudo md5sum "$WEB_ROOT/assets/$DEPLOYED_CSS" 2>/dev/null | cut -d' ' -f1)
+echo "deployed bundle: $DEPLOYED_CSS md5=$DEPLOYED_MD5"
+if [ "$STAGED_CSS" != "$DEPLOYED_CSS" ] || [ "$STAGED_MD5" != "$DEPLOYED_MD5" ]; then
+    echo "FATAL deployed css ($DEPLOYED_CSS md5=$DEPLOYED_MD5) != staged ($STAGED_CSS md5=$STAGED_MD5)"
+    exit 1
+fi
+if ! sudo grep -q "assets/$DEPLOYED_CSS" "$WEB_ROOT/index.html"; then
+    echo "FATAL index.html does not reference $DEPLOYED_CSS"; exit 1
+fi
+echo "bundle identity verified: index.html -> $DEPLOYED_CSS, md5 $DEPLOYED_MD5"
 
 echo "== step4: nginx site =="
 sudo cp /tmp/swapdeploy/nginx-swap.conf /etc/nginx/sites-available/swap-web
