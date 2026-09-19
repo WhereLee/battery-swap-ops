@@ -22,6 +22,9 @@
 #      SUM_NO_INDEX_USED did NOT grow and rows-examined-per-execution stayed near 1. This is
 #      the part that proves a fix rather than describing one: the pre-fix measurement for
 #      payment_record WHERE order_id = ? was ~8,090 rows examined per execution.
+#   4. UNBOUNDED READS: no SELECT with neither WHERE nor LIMIT is currently returning a large
+#      result set. A class-level guard, added because one such statement could not be
+#      attributed to any caller - the guard makes attribution unnecessary next time.
 #
 # Non-mutating by design: it only reads statistics and calls read-only endpoints. It does not
 # truncate performance_schema, does not change server variables, and does not write rows.
@@ -262,6 +265,58 @@ foreach ($w in $watched) {
     Check ($w.tag + " none ran without an index (" + $w.why + ")") ($dNoIdx -eq 0) ("no_index_used +$dNoIdx")
     Check ($w.tag + " rows examined per execution collapsed (" + $w.why + ")") ($perExec -le $w.maxRowsPerExec) ("$perExec rows/exec, threshold $($w.maxRowsPerExec), pre-fix ~$($w.preFixRowsPerExec)")
 }
+
+# ---------------------------------------------------------------------------
+# 4. UNBOUNDED READS - a SELECT with neither WHERE nor LIMIT that returns many rows
+#
+# This came out of chasing a loose end: the batch40 audit found a statement
+#   SELECT <every column> FROM swap_order ORDER BY create_time DESC
+# (6 executions, 5,832 rows returned each, last seen 2026-09-19 02:01) and three searches -
+# Java sources, scripts/, .local/ - could not attribute it to any current caller. Spending
+# more effort on archaeology for a statement that already stopped is the wrong trade; the
+# right one is a guard that catches the CLASS, so if it ever comes back the gate says so
+# immediately instead of requiring another hunt.
+#
+# Rule: a SELECT from the application schema with no WHERE and no LIMIT is unbounded by
+# construction. Small result sets are not interesting (a lookup table read has no WHERE
+# either), so the threshold is on rows returned per execution. Historical occurrences are
+# reported as INFO; anything seen in the last 30 minutes is a FAIL, because that means the
+# running platform is doing it right now.
+# ---------------------------------------------------------------------------
+Emit ""
+Emit "--- unbounded reads: SELECT with neither WHERE nor LIMIT ---"
+
+$rowsPerExecMin = 500
+$activeWindowMinutes = 30
+$unbounded = SqlRows @"
+SELECT LEFT(DIGEST_TEXT, 200) AS shape, COUNT_STAR AS execs,
+       ROUND(SUM_ROWS_SENT / NULLIF(COUNT_STAR, 0), 1) AS rows_per_exec,
+       SUM_ROWS_SENT AS sent, LAST_SEEN,
+       TIMESTAMPDIFF(MINUTE, LAST_SEEN, NOW()) AS minutes_ago
+FROM performance_schema.events_statements_summary_by_digest
+WHERE SCHEMA_NAME = 'swap_ops'
+  AND DIGEST_TEXT LIKE 'SELECT%'
+  AND DIGEST_TEXT NOT LIKE '%WHERE%'
+  AND DIGEST_TEXT NOT LIKE '%LIMIT%'
+  AND DIGEST_TEXT NOT LIKE '%information_schema%'
+  AND DIGEST_TEXT NOT LIKE '%performance_schema%'
+  AND SUM_ROWS_SENT / NULLIF(COUNT_STAR, 0) > $rowsPerExecMin
+ORDER BY SUM_ROWS_SENT DESC LIMIT 10
+"@
+
+$activeUnbounded = 0
+if ($unbounded.Count -eq 0) {
+    Emit "INFO  none: no SELECT without WHERE/LIMIT returned more than $rowsPerExecMin rows"
+} else {
+    foreach ($u in $unbounded) {
+        $ago = [int]$u["minutes_ago"]
+        $isActive = $ago -le $activeWindowMinutes
+        if ($isActive) { $activeUnbounded++ }
+        Emit ("INFO  [" + $(if ($isActive) { "ACTIVE" } else { "historical" }) + "] execs=$($u['execs']) rows/exec=$($u['rows_per_exec']) last_seen=$($u['LAST_SEEN']) (${ago}min ago)")
+        Emit ("        shape: " + $u["shape"])
+    }
+}
+Check "no unbounded SELECT is currently being executed (seen within $activeWindowMinutes min)" ($activeUnbounded -eq 0) ("$activeUnbounded active, " + ($unbounded.Count - $activeUnbounded) + " historical")
 
 Emit ""
 Emit "=== C39 summary: PASS=$($script:pass) FAIL=$($script:fail) ==="

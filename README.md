@@ -22,7 +22,8 @@
 - 索引与访问路径（服务器侧实测，`_c39`）：用 `performance_schema` 逐语句统计审计真实流量 →
   修 3 处缺访问路径（`payment_record.order_id` 随 db/18 的唯一键被一起删掉、`alarm` 缺 `create_time`
   前导索引、"全部"页签全表排序、`swap_order` 缺 `(status, complete_time)`）→ **打流量读计数器差值**因果证明：
-  **8,090 → 1 行/次**、**4,032 → 20 行/次**（均"无索引次数 +0"）
+  **8,090 → 1 行/次**、**4,032 → 20 行/次**（均"无索引次数 +0"）；另含**无界读守类**（无 `WHERE`/`LIMIT`
+  且每次返回 >500 行的 `SELECT`，30 分钟内出现即判红）
 - 管理台可访问性（实机测量，`_c38`）：**10 条路由 1936 个文字元素 + 270 个标签对比度全部达标**
   （Element Plus 默认配色不达 WCAG AA：次要文字 2.87–3.08:1、主色 `#409eff` **2.78:1 双向失败**、
   标签 2.04–3.08:1；已做令牌级修正，标签区间 6.00–8.57:1）、89 个表头零错列、零裁切、零横向溢出；
@@ -168,7 +169,7 @@ cd swap-web; npm run type-check; npm run build      # 前端门禁（CI frontend
 ```
 
 - 实机剧本 54 个（`scripts/verify/README.md` 为总索引，全 PASS）；容量与 GC 证据在 `batch7/`（jtl/GC 原件归档 `diag-archive/`，不入 git）
-- 前端浏览器门禁（本地，需本机 Chrome + 平台在跑）：`_c34` 契约 59/59、`_c35` 走查 31/31（含整页截图）、`_c38` 布局/对比度 10 页 hardFailures=0、`_c39` 索引审计 14/14（需本机 MySQL）
+- 前端浏览器门禁（本地，需本机 Chrome + 平台在跑）：`_c34` 契约 59/59、`_c35` 走查 31/31（含整页截图）、`_c38` 布局/对比度 10 页 hardFailures=0、`_c39` 索引审计 15/15（含无界读守类，需本机 MySQL）
 - CI：`.github/workflows/ci.yml`（`build` job：verify + coverage summary；`frontend` job：npm ci + type-check + build + dist artifact；`docker` job：compose 起中间件 + 镜像构建 + 容器内业务请求冒烟）
 
 ## 文档地图
