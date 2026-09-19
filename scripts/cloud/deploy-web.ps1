@@ -21,6 +21,7 @@ Copy-Item $jar $staging
 Copy-Item (Join-Path $root "swap-web\dist\*") (Join-Path $staging "web") -Recurse
 Copy-Item (Join-Path $root "db\16-data-scope.sql") $staging
 Copy-Item (Join-Path $root "db\17-work-order-scope.sql") $staging
+Copy-Item (Join-Path $root "db\18-payment-ledger-idem.sql") $staging
 Copy-Item (Join-Path $PSScriptRoot "nginx-swap.conf") $staging
 Copy-Item (Join-Path $PSScriptRoot "rollout-web.sh") $staging
 Copy-Item (Join-Path $PSScriptRoot "probe-web.sh") $staging

@@ -170,6 +170,8 @@ class SettlementServiceTest {
         origin.setEventKey("SWO-1:ORDER");
         origin.setStationId(7L);
         origin.setAgentId(1L);
+        origin.setBaseAmountFen(300);   // 原单基数
+        origin.setAgentShareFen(180);   // 原单比例 6000bp
         when(orderSettlementDao.selectOne(any())).thenReturn(origin);
         when(agentDao.selectById(1L)).thenReturn(agent(1L, 6000));
         when(orderSettlementDao.insert(any(OrderSettlementEntity.class))).thenReturn(1);
@@ -194,11 +196,64 @@ class SettlementServiceTest {
     }
 
     @Test
-    @DisplayName("补缴补行：正行按原单代理；未分账跳过；金额<=0 跳过")
+    @DisplayName("冲正按【原单比例】而非代理当前比例（批次35 AUD-5：比例被改后冲正不得漂移）")
+    void 冲正用原单比例() {
+        OrderSettlementEntity origin = new OrderSettlementEntity();
+        origin.setEventKey("SWO-1:ORDER");
+        origin.setStationId(7L);
+        origin.setAgentId(1L);
+        origin.setBaseAmountFen(300);   // 原单：300 分里代理拿 180（6000bp）
+        origin.setAgentShareFen(180);
+        when(orderSettlementDao.selectOne(any())).thenReturn(origin);
+        // 代理比例事后被下调到 2000bp——旧实现会据此把冲正算成 -20，代理白拿 40 分
+        when(agentDao.selectById(1L)).thenReturn(agent(1L, 2000));
+        when(orderSettlementDao.insert(any(OrderSettlementEntity.class))).thenReturn(1);
+        RefundRecordEntity refund = new RefundRecordEntity();
+        refund.setRefundNo("RF2");
+        refund.setAmountFen(100);
+
+        service.recordRefundReversal(order("SWAP", "BALANCE", 200, 0, 7L), refund);
+
+        ArgumentCaptor<OrderSettlementEntity> captor = ArgumentCaptor.forClass(OrderSettlementEntity.class);
+        verify(orderSettlementDao).insert(captor.capture());
+        OrderSettlementEntity line = captor.getValue();
+        assertThat(line.getAgentShareFen())
+                .as("按原单 6000bp 冲正（-60），不是按当前 2000bp（-20）")
+                .isEqualTo(-60);
+        assertThat(line.getPlatformShareFen()).isEqualTo(-40);
+        assertThat(line.getAgentId()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("冲正：原单基数为 0（月卡计次不分账）→ 全部记平台并告警，不静默按 0 分摊")
+    void 冲正遇零基数() {
+        OrderSettlementEntity origin = new OrderSettlementEntity();
+        origin.setEventKey("SWO-1:ORDER");
+        origin.setAgentId(1L);
+        origin.setBaseAmountFen(0);
+        origin.setAgentShareFen(0);
+        when(orderSettlementDao.selectOne(any())).thenReturn(origin);
+        when(orderSettlementDao.insert(any(OrderSettlementEntity.class))).thenReturn(1);
+        RefundRecordEntity refund = new RefundRecordEntity();
+        refund.setRefundNo("RF3");
+        refund.setAmountFen(50);
+
+        service.recordRefundReversal(order("SWAP", "BALANCE", 200, 0, 7L), refund);
+
+        ArgumentCaptor<OrderSettlementEntity> captor = ArgumentCaptor.forClass(OrderSettlementEntity.class);
+        verify(orderSettlementDao).insert(captor.capture());
+        assertThat(captor.getValue().getAgentShareFen()).isZero();
+        assertThat(captor.getValue().getPlatformShareFen()).isEqualTo(-50);
+    }
+
+    @Test
+    @DisplayName("补缴补行：正行按原单代理与比例；未分账跳过；金额<=0 跳过")
     void 补缴补行() {
         OrderSettlementEntity origin = new OrderSettlementEntity();
         origin.setStationId(7L);
         origin.setAgentId(1L);
+        origin.setBaseAmountFen(300);
+        origin.setAgentShareFen(180);
         when(orderSettlementDao.selectOne(any())).thenReturn(origin);
         when(agentDao.selectById(1L)).thenReturn(agent(1L, 6000));
         when(orderSettlementDao.insert(any(OrderSettlementEntity.class))).thenReturn(1);
@@ -210,6 +265,8 @@ class SettlementServiceTest {
         assertThat(captor.getValue().getEventType()).isEqualTo("ARREARS_SETTLE");
         assertThat(captor.getValue().getEventKey()).isEqualTo("SWO-1:ARR:11");
         assertThat(captor.getValue().getBaseAmountFen()).isEqualTo(100);
+        assertThat(captor.getValue().getAgentShareFen()).as("同样按原单 6000bp").isEqualTo(60);
+        assertThat(captor.getValue().getPlatformShareFen()).isEqualTo(40);
 
         service.recordArrearsSettlement("SWO-1", 11L, 99L, 0);
         verify(orderSettlementDao, org.mockito.Mockito.times(1)).insert(any(OrderSettlementEntity.class));

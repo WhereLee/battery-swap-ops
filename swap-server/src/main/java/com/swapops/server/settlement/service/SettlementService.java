@@ -91,59 +91,105 @@ public class SettlementService {
             baseAmount = fee + subsidy;
         }
         writeLine(order.getOrderNo(), ":ORDER", order.getId(), order.getStationId(),
-                null, false, "ORDER", baseType, baseAmount, subsidy);
+                "ORDER", baseType, baseAmount, subsidy);
     }
 
-    /** 退款冲正（RefundService.apply 成功后调用；仅对已分账订单生效；按原单代理冲正） */
+    /** 退款冲正（RefundService.apply 成功后调用；仅对已分账订单生效；按原单代理与<b>原单比例</b>冲正） */
     public void recordRefundReversal(SwapOrderEntity order, RefundRecordEntity refund) {
         if (order == null || refund == null || refund.getAmountFen() == null || refund.getAmountFen() <= 0) {
             return;
         }
-        OrderSettlementEntity origin = orderSettlementDao.selectOne(new LambdaQueryWrapper<OrderSettlementEntity>()
-                .eq(OrderSettlementEntity::getEventKey, order.getOrderNo() + ":ORDER"));
+        OrderSettlementEntity origin = originLine(order.getOrderNo());
         if (origin == null) {
             log.info("[分账] 退款冲正跳过（订单未分账） orderNo={} refundNo={}", order.getOrderNo(), refund.getRefundNo());
             return;
         }
-        writeLine(order.getOrderNo(), ":REV:" + refund.getRefundNo(), order.getId(), origin.getStationId(),
-                origin.getAgentId(), true, "REFUND_REVERSAL", "REVERSAL", -refund.getAmountFen(), 0);
+        writeOriginProportionalLine(order.getOrderNo(), ":REV:" + refund.getRefundNo(), order.getId(),
+                origin, "REFUND_REVERSAL", "REVERSAL", -refund.getAmountFen());
     }
 
-    /** 欠费补缴补行（ArrearsService.pay 结清后调用；实缴部分确认收入） */
+    /** 欠费补缴补行（ArrearsService.pay 结清后调用；实缴部分确认收入，同样按原单比例） */
     public void recordArrearsSettlement(String orderNo, Long arrearsId, Long orderId, int paidFen) {
         if (orderNo == null || paidFen <= 0) {
             return;
         }
-        OrderSettlementEntity origin = orderSettlementDao.selectOne(new LambdaQueryWrapper<OrderSettlementEntity>()
-                .eq(OrderSettlementEntity::getEventKey, orderNo + ":ORDER"));
+        OrderSettlementEntity origin = originLine(orderNo);
         if (origin == null) {
             log.info("[分账] 欠费补缴补行跳过（订单未分账） orderNo={} arrearsId={}", orderNo, arrearsId);
             return;
         }
-        writeLine(orderNo, ":ARR:" + arrearsId, orderId, origin.getStationId(),
-                origin.getAgentId(), true, "ARREARS_SETTLE", "ARREARS", paidFen, 0);
+        writeOriginProportionalLine(orderNo, ":ARR:" + arrearsId, orderId, origin,
+                "ARREARS_SETTLE", "ARREARS", paidFen);
+    }
+
+    /** 原单分账行（{@code orderNo:ORDER}）——冲正/补缴的唯一参照系。 */
+    private OrderSettlementEntity originLine(String orderNo) {
+        return orderSettlementDao.selectOne(new LambdaQueryWrapper<OrderSettlementEntity>()
+                .eq(OrderSettlementEntity::getEventKey, orderNo + ":ORDER"));
     }
 
     /**
-     * 统一写入（幂等 + 分成计算；event_key 重复=已入账忽略）。
+     * 按<b>原单比例</b>写冲正/补缴行（批次35 修复 AUD-5）。
      *
-     * @param agentFromOrigin true=用 originAgentId 快照冲正（退款/补缴按原单归属，防站点归属变更串账）；
-     *                        false=按站点当前归属解析
+     * <p>为什么不能按"代理当前 shareBp"重算：ORDER 行按订单完成时的比例分成，而 {@code AgentService.update}
+     * 允许随时改比例。若冲正按现读比例算，比例一下调，代理被少扣（差额被代理白拿）；一上调则多扣。
+     * 更糟的是对账发现不了——既有的"分账守恒"不变量只校验单行 {@code agent+platform=base}，
+     * 两行各自守恒、比例却不同，跨行口径漂移是隐形的。
+     *
+     * <p>口径：{@code agentShare = amount × origin.agentShareFen ÷ origin.baseAmountFen}（同号取整，
+     * 与 ORDER 行的 floor 口径一致），{@code platform = amount - agentShare}（不丢分）。
+     * 月卡订单的原单基数为 0（PLAN_MONTHLY 计次不分账），此时无比例可言——回落为"全部平台"并告警，
+     * 不静默按 0 分摊。
+     */
+    private void writeOriginProportionalLine(String orderNo, String keySuffix, Long orderId,
+                                             OrderSettlementEntity origin, String eventType,
+                                             String baseType, int amount) {
+        Integer originBase = origin.getBaseAmountFen();
+        Integer originAgentShare = origin.getAgentShareFen();
+        int agentShare = 0;
+        if (originBase == null || originBase == 0 || originAgentShare == null) {
+            if (originAgentShare != null && originAgentShare != 0) {
+                log.warn("[分账] 原单基数异常，冲正按全平台记 orderNo={} originBase={} originAgentShare={}",
+                        orderNo, originBase, originAgentShare);
+            }
+        } else {
+            agentShare = (int) ((long) amount * originAgentShare / originBase);
+        }
+        OrderSettlementEntity line = new OrderSettlementEntity();
+        line.setEventKey(orderNo + keySuffix);
+        line.setOrderId(orderId);
+        line.setOrderNo(orderNo);
+        line.setStationId(origin.getStationId());
+        line.setAgentId(origin.getAgentId());
+        line.setEventType(eventType);
+        line.setBaseType(baseType);
+        line.setBaseAmountFen(amount);
+        line.setAgentShareFen(agentShare);
+        line.setPlatformShareFen(amount - agentShare);
+        line.setSubsidyFen(0);
+        line.setCreateTime(System.currentTimeMillis());
+        try {
+            orderSettlementDao.insert(line);
+            log.info("[分账] {} orderNo={} amount={} agent={} platform={}（按原单比例 {}‰ 口径）",
+                    eventType, orderNo, amount, agentShare, amount - agentShare,
+                    originBase == null || originBase == 0 ? "n/a"
+                            : String.valueOf((int) ((long) originAgentShare * 1000 / originBase)));
+        } catch (DuplicateKeyException e) {
+            log.debug("[分账] 幂等命中（已入账） key={}", line.getEventKey());
+        }
+    }
+
+    /**
+     * 原单（ORDER）行写入：幂等（{@code event_key} 重复=已入账忽略）+ 按<b>站点当前归属</b>解析代理与比例。
+     *
+     * <p>只有"订单首次分账"走这里；冲正与补缴走 {@link #writeOriginProportionalLine}
+     * （它们必须复用原单的比例，不能现读代理配置——见该方法的说明）。
      */
     private void writeLine(String orderNo, String keySuffix, Long orderId, Long stationId,
-                           Long originAgentId, boolean agentFromOrigin, String eventType,
-                           String baseType, int baseAmount, int subsidy) {
+                           String eventType, String baseType, int baseAmount, int subsidy) {
         Long agentId = null;
         Integer shareBp = 0;
-        if (agentFromOrigin) {
-            if (originAgentId != null) {
-                AgentEntity agent = agentDao.selectById(originAgentId);
-                if (agent != null) {
-                    agentId = agent.getId();
-                    shareBp = agent.getShareBp() == null ? 0 : agent.getShareBp();
-                }
-            }
-        } else if (stationId != null) {
+        if (stationId != null) {
             var station = stationDao.selectById(stationId);
             if (station != null && station.getAgentId() != null) {
                 AgentEntity agent = agentDao.selectById(station.getAgentId());

@@ -13,15 +13,28 @@ WEB_ROOT=/opt/swap/web
 echo "== step0: snapshot before schema change =="
 sudo /opt/swap/config/backup.sh | tail -1
 
-echo "== step1: apply db/16 + db/17 (idempotent DDL) =="
-for f in 16-data-scope.sql 17-work-order-scope.sql; do
-    mysql -uswap_app -p"$DB_PASS" -h127.0.0.1 swap_ops < "/tmp/swapdeploy/$f"
-    echo "applied $f"
+echo "== step1: apply pending migrations (idempotent DDL) =="
+for f in 16-data-scope.sql 17-work-order-scope.sql 18-payment-ledger-idem.sql; do
+    if [ -f "/tmp/swapdeploy/$f" ]; then
+        # db/18 changes a unique key: pre-check for rows that would violate the new key so a
+        # bad dataset fails loudly BEFORE the ALTER rather than half-way through the deploy.
+        if [ "$f" = "18-payment-ledger-idem.sql" ]; then
+            DUP=$(mysql -uswap_app -p"$DB_PASS" -h127.0.0.1 swap_ops -N -e \
+                "SELECT COUNT(*) FROM (SELECT CONCAT(order_id,':',payment_type) k FROM payment_record \
+                 WHERE payment_type <> 'REFUND' AND order_id IS NOT NULL GROUP BY k HAVING COUNT(*) > 1) t")
+            echo "db/18 pre-check: duplicate non-refund keys = $DUP"
+            if [ "$DUP" != "0" ]; then echo "FATAL db/18 would violate uk_payment_idem; aborting"; exit 1; fi
+        fi
+        mysql -uswap_app -p"$DB_PASS" -h127.0.0.1 swap_ops < "/tmp/swapdeploy/$f"
+        echo "applied $f"
+    fi
 done
 echo "admin_user.data_scope present: $(mysql -uswap_app -p"$DB_PASS" -h127.0.0.1 swap_ops -N -e \
     "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='swap_ops' AND table_name='admin_user' AND column_name='data_scope'")"
 echo "work_order.station_id present: $(mysql -uswap_app -p"$DB_PASS" -h127.0.0.1 swap_ops -N -e \
     "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='swap_ops' AND table_name='work_order' AND column_name='station_id'")"
+echo "payment_record.uk_payment_idem present: $(mysql -uswap_app -p"$DB_PASS" -h127.0.0.1 swap_ops -N -e \
+    "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema='swap_ops' AND table_name='payment_record' AND index_name='uk_payment_idem'")"
 
 echo "== step2: deploy server jar =="
 sudo systemctl stop swap-server
