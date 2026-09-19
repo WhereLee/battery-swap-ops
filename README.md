@@ -113,6 +113,7 @@ powershell -File scripts/verify/batch31/_c38_ui_probe.ps1  # 布局/对比度探
 # C. 云上（同源 nginx 站点；公网未放行，用隧道）
 ssh -L 80:127.0.0.1:80 ubuntu@124.223.36.154            # 另开一窗保持
 #    浏览器访问 http://127.0.0.1/ ：登录 → 看板 / 工单五步链 / 订单退款·冲正 / 柜详情 / 结算单
+#    云上产物与仓库同源：`deploy-web.ps1` 一条命令完成 快照→迁移(含 db/19)→换 jar→发 dist→nginx→冒烟 16/16
 ```
 
 ## 容器化（有 Docker 的机器）

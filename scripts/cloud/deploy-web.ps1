@@ -22,10 +22,11 @@ Copy-Item (Join-Path $root "swap-web\dist\*") (Join-Path $staging "web") -Recurs
 Copy-Item (Join-Path $root "db\16-data-scope.sql") $staging
 Copy-Item (Join-Path $root "db\17-work-order-scope.sql") $staging
 Copy-Item (Join-Path $root "db\18-payment-ledger-idem.sql") $staging
+Copy-Item (Join-Path $root "db\19-index-audit-fixes.sql") $staging
 Copy-Item (Join-Path $PSScriptRoot "nginx-swap.conf") $staging
 Copy-Item (Join-Path $PSScriptRoot "rollout-web.sh") $staging
 Copy-Item (Join-Path $PSScriptRoot "probe-web.sh") $staging
-Write-Host "staging ready: $staging (jar + dist + db/16,17 + nginx site + rollout + probe)"
+Write-Host "staging ready: $staging (jar + dist + db/16,17,18,19 + nginx site + rollout + probe)"
 
 Write-Host "uploading (jar ~60MB + dist over 3Mbps)..."
 # Mirror scripts/cloud/deploy.ps1: remove the target dir, then scp the staging DIRECTORY

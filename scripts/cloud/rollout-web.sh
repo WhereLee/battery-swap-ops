@@ -14,7 +14,7 @@ echo "== step0: snapshot before schema change =="
 sudo /opt/swap/config/backup.sh | tail -1
 
 echo "== step1: apply pending migrations (idempotent DDL) =="
-for f in 16-data-scope.sql 17-work-order-scope.sql 18-payment-ledger-idem.sql; do
+for f in 16-data-scope.sql 17-work-order-scope.sql 18-payment-ledger-idem.sql 19-index-audit-fixes.sql; do
     if [ -f "/tmp/swapdeploy/$f" ]; then
         # db/18 changes a unique key: pre-check for rows that would violate the new key so a
         # bad dataset fails loudly BEFORE the ALTER rather than half-way through the deploy.
@@ -35,6 +35,12 @@ echo "work_order.station_id present: $(mysql -uswap_app -p"$DB_PASS" -h127.0.0.1
     "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='swap_ops' AND table_name='work_order' AND column_name='station_id'")"
 echo "payment_record.uk_payment_idem present: $(mysql -uswap_app -p"$DB_PASS" -h127.0.0.1 swap_ops -N -e \
     "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema='swap_ops' AND table_name='payment_record' AND index_name='uk_payment_idem'")"
+# batch40 access-path audit (db/19). Asserted here as well as applied, because an index that
+# silently failed to apply would not break any request - the queries would just scan again.
+echo "db/19 access paths present: $(mysql -uswap_app -p"$DB_PASS" -h127.0.0.1 swap_ops -N -e \
+    "SELECT CONCAT('idx_order_id=', (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema='swap_ops' AND table_name='payment_record' AND index_name='idx_order_id'), \
+                   ' idx_alarm_create_time=', (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema='swap_ops' AND table_name='alarm' AND index_name='idx_alarm_create_time'), \
+                   ' idx_status_complete=', (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema='swap_ops' AND table_name='swap_order' AND index_name='idx_status_complete'))")"
 
 echo "== step2: deploy server jar =="
 sudo systemctl stop swap-server
