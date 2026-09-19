@@ -8,7 +8,7 @@ PASS  B04 side menu lists all six pages for a SUPER identity (运营看板 / 告
 PASS  B05 dashboard renders 4 metric cards (cards=4)
 INFO  screenshot 02-dashboard.png (47 kB, captured 1440x900)
 PASS  B goto /alarm renders (alarm tabs)
-PASS  B06 alarm page renders rows consistent with its reported total (total=646 visibleRows=20)
+PASS  B06 alarm page renders rows consistent with its reported total (total=664 visibleRows=20)
 INFO  screenshot 03-alarm.png (208 kB, captured 1440x1404)
 PASS  B goto /work-orders renders (work-order rows)
 PASS  B07 work-order list renders rows (rows=17)
@@ -23,7 +23,7 @@ PASS  B11 order detail opens from the list and renders payments/refunds cards
 INFO  screenshot 07-order-detail.png (70 kB, captured 1440x1358)
 PASS  B goto /cabinets renders (cabinet rows)
 PASS  B12 cabinet list renders rows (rows=10)
-INFO  screenshot 08-cabinets.png (90 kB, captured 1440x900)
+INFO  screenshot 08-cabinets.png (93 kB, captured 1440x900)
 PASS  B13 cabinet detail opens from the list and renders all four blocks
 PASS  B14 cabinet detail renders one row per cell (cells=12)
 INFO  screenshot 09-cabinet-detail.png (157 kB, captured 1440x1959)

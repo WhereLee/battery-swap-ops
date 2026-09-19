@@ -339,6 +339,11 @@ function probeExpression(scopeExpr = "document") {
   });
 
   const lowContrastText = textSamples.filter((t) => t.ratio < t.need);
+  // "0 below threshold" is only meaningful next to HOW FAR the closest call was - the same
+  // reasoning as scopeElements: a count of problems says nothing unless you also know what was
+  // measured. worstText is the lowest ratio among everything measured, so a page that passes by
+  // a hair is visible in the report instead of being indistinguishable from one with headroom.
+  const worstText = textSamples.reduce((worst, t) => (worst === null || t.ratio < worst.ratio ? t : worst), null);
   const isPlaceholder = (t) => t.sel.endsWith('::placeholder') || t.sel.includes('select__placeholder');
   const lowContrastPlaceholders = lowContrastText.filter(isPlaceholder);
 
@@ -424,6 +429,7 @@ function probeExpression(scopeExpr = "document") {
     tagCount: tags.length,
     textScanned,
     textSamples: textSamples.length,
+    worstText: worstText === null ? null : { ratio: worstText.ratio, need: worstText.need, text: worstText.text, sel: worstText.sel },
     lowContrastText,
     lowContrastPlaceholders,
     lowContrastTags: tags.filter((t) => t.contrast !== null && t.contrast < ${TAG_CONTRAST_MIN}),
@@ -437,9 +443,43 @@ function probeExpression(scopeExpr = "document") {
     // zero as a failure rather than as a pass.
     scopeElements: tags.length + textSamples.length + alignment.length + clipped.length
       + tables.length + dashColumns.length,
+    // Fingerprint, not just a count. "Non-empty" only rules out an empty subtree; pointing the
+    // scope at some OTHER non-empty part of the page still measures something and still reports
+    // zero problems. These two fields let the caller assert that the thing measured is the thing
+    // it meant to measure: the page scope must contain the .page-title element the gate waited
+    // for, and a dialog scope must contain the dialog's own title text.
+    scopeHasPageTitle: !!root.querySelector('.page-title'),
+    scopeSignature: (root.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 160),
   });
 })()`;
 }
+/**
+ * Build the alert variant matrix: clone the one real .el-alert on the login form once per
+ * Element Plus variant (5 types x light/dark) into a throwaway host and return how many clones
+ * were created. Exported so the batch43 negative control injects a defect into the SAME matrix
+ * the gate measures - a control that rebuilt it would prove nothing about this gate.
+ */
+function alertMatrixExpression(selector = ".login-card .el-alert") {
+  return `(() => {
+    const src = document.querySelector(${JSON.stringify(selector)});
+    if (!src) return 0;
+    const host = document.createElement('div');
+    host.id = 'c38-alert-matrix';
+    for (const type of ['primary', 'success', 'warning', 'error', 'info']) {
+      for (const effect of ['light', 'dark']) {
+        const clone = src.cloneNode(true);
+        clone.className = 'el-alert el-alert--' + type + ' is-' + effect;
+        const title = clone.querySelector('.el-alert__title') || clone;
+        title.textContent = type + '/' + effect;
+        host.appendChild(clone);
+      }
+    }
+    document.body.appendChild(host);
+    return host.querySelectorAll('.el-alert').length;
+  })()`;
+}
+const ALERT_MATRIX_SCOPE = "document.getElementById('c38-alert-matrix')";
+
 async function main() {
   if (!ADMIN_PASS) {
     console.log("FATAL ADMIN_PASS is empty (read .local/admin-pass.txt)");
@@ -451,6 +491,81 @@ async function main() {
   let failures = 0;
 
   try {
+    // ---------------------------------------------------------------------------
+    // Validation-state pass (batch43 补): a form error message exists only while a rule is
+    // failing, so no walk over the rendered app can ever see one - which is how
+    // `.el-form-item__error` (Element Plus paints it with --el-color-danger #f56c6c = 2.90:1 on
+    // white) survived the batch39 sweep over 1936 text elements and the batch41 placeholder
+    // sweep. The login form is the only form in the app with rules, and failing it on purpose is
+    // safe AND checkable: onSubmit() awaits validate() and returns before the request when it is
+    // false. Both halves are asserted below - the error text renders, and no /admin/auth/login
+    // request was sent - so "we measured a harmless state" is evidence rather than a promise.
+    //
+    // This is measured before signing in, and it is the only measurement in this file whose
+    // scope is not a page or a dialog, so its results go in their own bucket: a scope without
+    // .page-title would otherwise be counted as a fingerprint failure.
+    // ---------------------------------------------------------------------------
+    let loginPosts = 0;
+    session.cdp.on("Network.requestWillBeSent", (params) => {
+      if (String(params.request?.url ?? "").includes("/admin/auth/login")) {
+        loginPosts++;
+      }
+    });
+    const validation = { attempted: false, errorSeen: false, requestSent: false, lowText: [], scanned: 0, scopes: 0 };
+    await session.goto(`${APP_URL}/login`, "!!document.querySelector('.login-card')");
+    await sleep(800);
+    validation.attempted = await session.evaluate(
+      "(() => { const b = document.querySelector('.login-btn'); if (!b) return false; b.click(); return true; })()",
+    );
+    if (validation.attempted) {
+      validation.errorSeen = await session.waitFor("!!document.querySelector('.el-form-item__error')", 5000);
+    }
+    validation.requestSent = loginPosts > 0;
+    await sleep(300);
+    const vraw = JSON.parse(await session.evaluate(probeExpression("document.querySelector('.login-card')")));
+    validation.scopes = vraw.scopeElements;
+    validation.scanned = vraw.textScanned;
+    validation.lowText = vraw.lowContrastText;
+    validation.worstText = vraw.worstText;
+    report.validation = validation;
+    console.log("");
+    console.log("--- login form validation state ---");
+    console.log(`${validation.attempted ? "PASS" : "FAIL"}  empty submit clicked the login button`);
+    console.log(`${validation.errorSeen ? "PASS" : "FAIL"}  a failing rule renders .el-form-item__error (this state is normally invisible to a page sweep)`);
+    console.log(`${validation.requestSent ? "FAIL" : "PASS"}  a failing rule sends no request to the server (${loginPosts} login POSTs during the empty submit)`);
+    console.log(`${validation.scopes > 0 ? "PASS" : "FAIL"}  login scope is non-empty (${validation.scopes} elements measured)`);
+    console.log(`${validation.lowText.length === 0 ? "PASS" : "FAIL"}  validation error text reaches its WCAG threshold (${validation.lowText.length} below, ${validation.scanned} elements scanned, worst ${validation.worstText ? `${validation.worstText.ratio}:1 (needs ${validation.worstText.need}) "${validation.worstText.text}"` : "n/a"})`);
+    validation.lowText.slice(0, 6).forEach((t) => console.log(`      low text ${t.ratio}:1 (need ${t.need}) "${t.text}" ${t.sel} color=${t.color} bg=${t.background} font=${t.fontSize}`));
+
+    // ---------------------------------------------------------------------------
+    // Component variant matrix (batch43): `.el-alert` is conditional everywhere in this app
+    // (a scoped identity for the dashboard note, a refund hint for the two order ones), so the
+    // page sweep can only ever see the one on the login form. A fix verified on one variant of
+    // a component whose other four variants are never rendered is a fix verified by luck - the
+    // same luck that let the batch38 tag fix and the batch39 token sweep both walk past this
+    // component. So the real component is cloned once per variant (5 types x 2 effects) into a
+    // throwaway host, and the clones are measured with THIS file's own measurement code. The
+    // variant name is written into the title text, so a failure names itself in the output.
+    //
+    // This measures the shipped cascade, not a prediction of it: the clones carry exactly the
+    // class names Element Plus puts on the root element. It is not a substitute for measuring a
+    // real alert - it is what makes "all five variants are readable" checkable at all.
+    // ---------------------------------------------------------------------------
+    const alertMatrix = { variants: 0, scanned: 0, lowText: [] };
+    alertMatrix.variants = await session.evaluate(alertMatrixExpression());
+    if (alertMatrix.variants > 0) {
+      const mraw = JSON.parse(await session.evaluate(probeExpression(ALERT_MATRIX_SCOPE)));
+      alertMatrix.scanned = mraw.textScanned;
+      alertMatrix.lowText = mraw.lowContrastText;
+      alertMatrix.worstText = mraw.worstText;
+      await session.evaluate("(() => { const h = document.querySelector('#c38-alert-matrix'); if (h) h.remove(); return true; })()");
+    }
+    validation.alertMatrix = alertMatrix;
+    console.log(`${alertMatrix.variants === 10 ? "PASS" : "FAIL"}  alert variant matrix rendered (${alertMatrix.variants}/10 clones: 5 types x light/dark)`);
+    console.log(`${alertMatrix.scanned >= 10 ? "PASS" : "FAIL"}  alert variant matrix measured (${alertMatrix.scanned} text elements, one per variant)`);
+    console.log(`${alertMatrix.lowText.length === 0 ? "PASS" : "FAIL"}  every alert variant is readable (${alertMatrix.lowText.length} below, worst ${alertMatrix.worstText ? `${alertMatrix.worstText.ratio}:1 (needs ${alertMatrix.worstText.need}) "${alertMatrix.worstText.text}"` : "n/a"})`);
+    alertMatrix.lowText.slice(0, 6).forEach((t) => console.log(`      low text ${t.ratio}:1 (need ${t.need}) "${t.text}" ${t.sel} color=${t.color} bg=${t.background}`));
+
     const signedIn = await login(session, APP_URL, ADMIN_USER, ADMIN_PASS);
     console.log(`${signedIn ? "PASS" : "FAIL"}  login`);
     if (!signedIn) {
@@ -490,6 +605,7 @@ async function main() {
       console.log(`PASS  rendered (title element present)`);
       console.log(`INFO  viewport=${raw.viewport.w}x${raw.viewport.h} document=${raw.document.scrollWidth}x${raw.document.scrollHeight} contentHeight=${raw.contentHeight} scrollers=[${raw.scrollers.map((s) => `${s.tag}.${s.cls.split(" ")[0]}:${s.clientHeight}<${s.scrollHeight}`).join(" ")}]`);
       console.log(`${raw.scopeElements > 0 ? "PASS" : "FAIL"}  measurement scope is non-empty (${raw.scopeElements} elements measured - a scope that measures nothing would otherwise report zero problems)`);
+      console.log(`${raw.scopeHasPageTitle ? "PASS" : "FAIL"}  measurement scope is the page we navigated to (fingerprint: .page-title present)`);
       console.log(`${raw.pageHorizontalOverflow ? "FAIL" : "PASS"}  page-level horizontal overflow ${raw.pageHorizontalOverflow ? "(body scrolls sideways)" : "(none)"}`);
       console.log(`${scrollTables.length === 0 ? "PASS" : "WARN"}  tables needing internal horizontal scroll: ${scrollTables.length}/${raw.tables.length} ${scrollTables.map((t) => `[cols=${t.columns} ${t.wrapperClientWidth}<${t.wrapperScrollWidth}]`).join(" ")}`);
       console.log(`${raw.clippedCount === 0 ? "PASS" : "FAIL"}  table cells clipped NOT by design: ${raw.clippedCount} (intentional ellipsis with tooltip: ${raw.intentionalEllipsisCount})`);
@@ -501,7 +617,7 @@ async function main() {
       headerClipped.slice(0, 6).forEach((c) => console.log(`      clipped header: "${c.label}" height ${c.headerTextHeight}px`));
       console.log(`INFO  columns not rendering visible text: ${raw.dashColumns.length === 0 ? "none" : raw.dashColumns.map((c) => `"${c.label}" (${c.rows} rows visible-empty, ${c.domTextFilled} with DOM text${c.domTextFilled > 0 ? ` e.g. "${c.domTextSample}" - value bound but not visible` : ""})`).join(", ")}`);
       console.log(`INFO  tags=${raw.tagCount} lowContrast(<${TAG_CONTRAST_MIN}:1)=${raw.lowContrastTags.length} zeroSize=${raw.zeroWidthTags.length}`);
-      console.log(`INFO  text elements scanned=${raw.textScanned} distinct(selector,colour)=${raw.textSamples} below their WCAG threshold=${raw.lowContrastText.length}`);
+      console.log(`INFO  text elements scanned=${raw.textScanned} distinct(selector,colour)=${raw.textSamples} below their WCAG threshold=${raw.lowContrastText.length} worst=${raw.worstText ? `${raw.worstText.ratio}:1 (needs ${raw.worstText.need}) "${raw.worstText.text}"` : "n/a"}`);
       raw.lowContrastText.slice(0, 8).forEach((t) => console.log(`      low text ${t.ratio}:1 (need ${t.need}) "${t.text}" ${t.sel} color=${t.color} bg=${t.background} font=${t.fontSize}`));
       if (raw.lowContrastTags.length > 0) {
         raw.lowContrastTags.slice(0, 5).forEach((t) => console.log(`      low contrast ${t.contrast}: "${t.text}" color=${t.color} bg=${t.background} font=${t.fontSize}`));
@@ -528,17 +644,34 @@ async function main() {
     // FAIL: whether a 驳回/退款 button exists depends on the row's allowedActions, which is
     // data-dependent by design.
     // ---------------------------------------------------------------------------
+    // preStep runs in the browser before the opener is looked for: a dialog that lives behind
+    // a tab is unreachable otherwise, and "SKIP - opener absent" for a dialog that simply needed
+    // one click is a coverage hole disguised as a data condition.
+    // titleAny covers dialogs whose title is dynamic (the order dialog is 退款 or 冲正
+    // depending on the row), which the content fingerprint must accept either way.
     const DIALOGS = [
       { path: "/alarm", opener: "建工单", title: "从告警创建工单" },
-      { path: "/alarm", opener: "驳回", title: "驳回建议单" },
-      { path: "/orders", opener: "退款", title: "退款" },
+      { path: "/alarm", opener: "驳回", title: "驳回建议单",
+        preStep: "(() => { const tab = [...document.querySelectorAll('.el-tabs__item')].find((t) => (t.innerText || '').includes('建议单')); if (!tab) return false; tab.click(); return true; })()" },
+      { path: "/orders", opener: "退款", titleAny: ["退款", "冲正"] },
       { path: "/work-orders", opener: "分诊", title: "工单动作" },
     ];
     const dialogScope = "([...document.querySelectorAll('.el-dialog')].find((d) => d.getClientRects().length > 0) || null)";
 
     for (const d of DIALOGS) {
+      const label = d.title ?? d.titleAny.join("/");
       await session.goto(`${APP_URL}${d.path}`, "!!document.querySelector('.page-title')");
       await sleep(700);
+      if (d.preStep) {
+        const stepped = await session.evaluate(d.preStep);
+        await sleep(600);
+        if (!stepped) {
+          console.log("");
+          console.log(`SKIP  dialog "${label}" on ${d.path}: preStep could not run (the tab it needs was not found)`);
+          report.dialogSkips = (report.dialogSkips ?? 0) + 1;
+          continue;
+        }
+      }
       const opened = await session.evaluate(`(() => {
         const btn = [...document.querySelectorAll('.el-button')]
           .find((b) => b.getClientRects().length > 0 && (b.innerText || '').trim().startsWith(${JSON.stringify(d.opener)}));
@@ -548,23 +681,27 @@ async function main() {
       })()`);
       if (!opened) {
         console.log("");
-        console.log(`SKIP  dialog "${d.title}" on ${d.path}: no visible button starting with "${d.opener}" (allowedActions-driven, may be absent for this data)`);
+        console.log(`SKIP  dialog "${label}" on ${d.path}: no visible button starting with "${d.opener}" (allowedActions-driven, may be absent for this data)`);
         report.dialogSkips = (report.dialogSkips ?? 0) + 1;
         continue;
       }
       const visible = await session.waitFor(`!!${dialogScope}`, 8000);
       if (!visible) {
         console.log("");
-        console.log(`FAIL  dialog "${d.title}" on ${d.path}: button clicked but no visible .el-dialog appeared`);
+        console.log(`FAIL  dialog "${label}" on ${d.path}: button clicked but no visible .el-dialog appeared`);
         report.dialogs = report.dialogs ?? [];
-        report.dialogs.push({ path: d.path, title: d.title, ready: false });
+        report.dialogs.push({ path: d.path, title: label, ready: false });
         continue;
       }
       await sleep(400);
       const raw = JSON.parse(await session.evaluate(probeExpression(dialogScope)));
       raw.path = d.path;
-      raw.title = d.title;
+      raw.title = d.title ?? d.titleAny.join("/");
       raw.ready = true;
+      // Content fingerprint: the measured subtree must be the dialog we opened. The count check
+      // below only rules out an EMPTY scope; this rules out measuring a different non-empty one.
+      const expected = d.titleAny ?? [d.title];
+      raw.fingerprintOk = expected.some((needle) => raw.scopeSignature.includes(needle));
       report.dialogs = report.dialogs ?? [];
       report.dialogs.push(raw);
 
@@ -574,6 +711,7 @@ async function main() {
       console.log(`--- dialog: ${d.title} (${d.path}) ---`);
       console.log(`PASS  opened and visible`);
       console.log(`${raw.scopeElements > 0 ? "PASS" : "FAIL"}  dialog scope is non-empty (${raw.scopeElements} elements measured)`);
+      console.log(`${raw.fingerprintOk ? "PASS" : "FAIL"}  dialog scope is the dialog we opened (expected "${d.title}" in "${raw.scopeSignature.slice(0, 40)}")`);
       console.log(`${raw.clippedCount === 0 ? "PASS" : "FAIL"}  dialog cells clipped NOT by design: ${raw.clippedCount}`);
       raw.clipped.slice(0, 4).forEach((c) => console.log(`      clipped: "${c.text}" (${c.clientWidth}<${c.scrollWidth}px)`));
       console.log(`${misaligned.length === 0 ? "PASS" : "FAIL"}  dialog tables aligned: ${raw.alignment.length} columns, ${misaligned.length} misaligned`);
@@ -629,11 +767,21 @@ async function main() {
       0,
     );
     const dialogNotReady = dialogs.filter((d) => d.ready === false).length;
+    const dialogWrongScope = dialogReady.filter((d) => d.fingerprintOk === false).length;
     // A scope that measured nothing is a failed measurement, not a clean one.
+    const badScopes = report.pages.filter((p) => !(p.scopeHasPageTitle)).length
     const emptyScopes = report.pages.filter((p) => !(p.scopeElements > 0)).length
       + dialogReady.filter((d) => !(d.scopeElements > 0)).length;
     const nonTextWeak = report.pages.reduce((sum, p) => sum + p.nonText.filter((n) => n.ratio < 3).length, 0);
     const nonTextMeasured = report.pages.reduce((sum, p) => sum + p.nonText.length, 0);
+    // The validation pass is a gate condition, not a footnote: if the error state never appeared
+    // then the measurement did not happen, and "no low-contrast error text" would be a claim
+    // about nothing. Same principle as an empty measurement scope.
+    const validationCovered = !!(report.validation?.attempted && report.validation?.errorSeen);
+    const validationRequestSent = !!report.validation?.requestSent;
+    const validationLowText = (report.validation?.lowText ?? []).length;
+    const alertMatrixResult = report.validation?.alertMatrix ?? { variants: 0, scanned: 0, lowText: [] };
+    const alertMatrixBad = (alertMatrixResult.variants === 10 && alertMatrixResult.scanned >= 10 ? 0 : 1) + alertMatrixResult.lowText.length;
     console.log("");
     console.log(`${overflow.length === 0 ? "PASS" : "FAIL"}  no page overflows horizontally at ${VIEWPORT_WIDTH}px`);
     console.log(`${clipped === 0 ? "PASS" : "FAIL"}  no non-intentional cell clipping (${clipped} cells)`);
@@ -643,8 +791,20 @@ async function main() {
     console.log(`${lowText === 0 ? "PASS" : "FAIL"}  every text element reaches its WCAG threshold (${lowText} below, ${textScanned} elements scanned)`);
     console.log(`${zeroSize === 0 ? "PASS" : "FAIL"}  no zero-sized visible tag (${zeroSize})`);
     console.log(`${emptyScopes === 0 ? "PASS" : "FAIL"}  every measurement scope contained elements (${emptyScopes} empty)`);
+    console.log(`${badScopes === 0 && dialogWrongScope === 0 ? "PASS" : "FAIL"}  every measurement scope matched its fingerprint (page .page-title missing: ${badScopes}, dialog title mismatch: ${dialogWrongScope})`);
     console.log(`${dialogNotReady === 0 && dialogClipped + dialogLowText + dialogLowTag + dialogMisaligned === 0 ? "PASS" : "FAIL"}  dialogs: ${dialogReady.length} measured (${report.dialogSkips ?? 0} skipped - opener absent), ${dialogNotReady} failed to open, ${dialogClipped} clipped, ${dialogMisaligned} misaligned, ${dialogLowTag} low-contrast tags, ${dialogLowText} low-contrast text`);
+    console.log(`${validationCovered ? "PASS" : "FAIL"}  login validation state was reached (attempted=${report.validation?.attempted}, error text rendered=${report.validation?.errorSeen})`);
+    console.log(`${validationRequestSent ? "FAIL" : "PASS"}  the invalid submit never reached the server`);
+    console.log(`${validationLowText === 0 ? "PASS" : "FAIL"}  validation error text contrast (${validationLowText} below, ${report.validation?.scanned ?? 0} elements scanned in the login scope)`);
+    console.log(`${alertMatrixBad === 0 ? "PASS" : "FAIL"}  alert variant matrix: ${alertMatrixResult.variants} variants, ${alertMatrixResult.scanned} measured, ${alertMatrixResult.lowText.length} below threshold`);
     console.log(`INFO  non-text boundaries (WCAG 1.4.11): ${nonTextMeasured} measured, ${nonTextWeak} below 3:1 - reported, deliberately NOT a gate condition`);
+    // The closest call across everything measured. "0 below threshold" says nothing about how
+    // much headroom is left; this does. Computed over pages, the login scope and the alert
+    // matrix, so a variant that barely passes cannot hide inside a passing average.
+    const worstOverall = [...report.pages.map((p) => p.worstText), report.validation?.worstText, alertMatrixResult.worstText]
+      .filter(Boolean)
+      .reduce((w, t) => (w === null || t.ratio < w.ratio ? t : w), null);
+    console.log(`INFO  closest call anywhere in this run: ${worstOverall ? `${worstOverall.ratio}:1 (needs ${worstOverall.need}) "${worstOverall.text}" ${worstOverall.sel}` : "nothing measured"}`);
     console.log(`${errors.consoleErrors.length === 0 ? "PASS" : "FAIL"}  console errors during probe: ${errors.consoleErrors.length}`);
     console.log(`${errors.httpErrors.length === 0 ? "PASS" : "FAIL"}  HTTP >= 400 during probe: ${errors.httpErrors.length}`);
     if (errors.consoleErrors.length > 0) {
@@ -654,13 +814,17 @@ async function main() {
     report.httpErrors = errors.httpErrors;
     report.totals = {
       clipped, lowContrast, lowText, textScanned, zeroSize, overflowPages: overflow.length, misaligned, headerClipped,
-      dialogsMeasured: dialogReady.length, dialogSkips: report.dialogSkips ?? 0, emptyScopes, dialogClipped, dialogLowText, dialogLowTag,
+      dialogsMeasured: dialogReady.length, dialogSkips: report.dialogSkips ?? 0, emptyScopes, badScopes, dialogWrongScope, dialogClipped, dialogLowText, dialogLowTag,
       dialogMisaligned, dialogNotReady, nonTextMeasured, nonTextWeak,
+      validationCovered, validationRequestSent, validationLowText, validationScanned: report.validation?.scanned ?? 0,
+      alertVariants: alertMatrixResult.variants, alertVariantsScanned: alertMatrixResult.scanned, alertVariantsLowText: alertMatrixResult.lowText.length,
+      worstTextRatio: worstOverall?.ratio ?? null, worstTextLabel: worstOverall ? `${worstOverall.text} ${worstOverall.sel}` : null,
     };
 
     const hardFailures = report.pages.filter((p) => !p.ready).length + failures
       + overflow.length + clipped + lowContrast + lowText + zeroSize + misaligned + headerClipped
-      + dialogNotReady + dialogClipped + dialogLowText + dialogLowTag + dialogMisaligned + emptyScopes
+      + dialogNotReady + dialogClipped + dialogLowText + dialogLowTag + dialogMisaligned + emptyScopes + badScopes + dialogWrongScope
+      + (validationCovered ? 0 : 1) + (validationRequestSent ? 1 : 0) + validationLowText + alertMatrixBad
       + errors.consoleErrors.length + errors.httpErrors.length;
     console.log("");
     console.log(`=== C38 summary: pages=${report.pages.length} dialogs=${dialogReady.length} hardFailures=${hardFailures} ===`);
@@ -686,4 +850,4 @@ if (isDirectRun) {
   });
 }
 
-export { probeExpression, TAG_CONTRAST_MIN, PAGES };
+export { probeExpression, TAG_CONTRAST_MIN, PAGES, alertMatrixExpression, ALERT_MATRIX_SCOPE };

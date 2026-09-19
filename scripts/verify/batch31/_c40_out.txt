@@ -27,11 +27,28 @@ PASS  C4 table header misalignment: clean page reports nothing (0 misaligned col
 PASS  C4 table header misalignment: injected defect is DETECTED (11 misaligned columns)
 
 --- C5 empty measurement scope on /dashboard ---
-INFO  baseline (no injection): scopeElements=22
+INFO  baseline (no injection): scopeElements=undefined
 INFO  after injection:         scopeElements=0
-PASS  C5 empty measurement scope: clean page reports nothing (scopeElements=22)
+PASS  C5 empty measurement scope: clean page reports nothing (scopeElements=undefined)
 PASS  C5 empty measurement scope: injected defect is DETECTED (scopeElements=0)
+PASS  C6 alert variant contrast: setup reached the state under test
+PASS  C6 alert variant contrast: the matrix under test was built by the gate's own code (10 variants)
+
+--- C6 alert variant contrast on /dashboard ---
+INFO  baseline (no injection): 0 of 10 variants below threshold
+INFO  after injection:         1 of 10 variants below threshold (worst 2.04:1 "warning/light")
+PASS  C6 alert variant contrast: clean page reports nothing (0 of 10 variants below threshold)
+PASS  C6 alert variant contrast: injected defect is DETECTED (1 of 10 variants below threshold (worst 2.04:1 "warning/light"))
+PASS  C7 validation error contrast: setup reached the state under test
+PASS  C7 validation error contrast: the error state under test is present
+
+--- C7 validation error contrast on /dashboard ---
+INFO  baseline (no injection): 0 of 8 texts below threshold
+INFO  after injection:         1 of 8 texts below threshold (worst 2.9:1 "请输入用户名")
+PASS  C7 validation error contrast: clean page reports nothing (0 of 8 texts below threshold)
+PASS  C7 validation error contrast: injected defect is DETECTED (1 of 8 texts below threshold (worst 2.9:1 "请输入用户名"))
+PASS  C7 validation error contrast: signed back in after the login-page controls
 PASS  after removing all injections the page measures clean again (lowContrastTags=0 clipped=0)
 
-=== C40 summary: PASS=12 FAIL=0 ===
+=== C40 summary: PASS=21 FAIL=0 ===
 GATE-NEGCTL PASS

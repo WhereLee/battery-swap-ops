@@ -75,6 +75,48 @@ body {
 }
 
 /*
+ * batch43: two text colours that the batch39 token sweep could not see, both found by widening
+ * the probe instead of by reading the stylesheet.
+ *
+ * 1. the input character counter ("0 / 200") is painted with --el-color-info (#909399, 3.08:1
+ *    on white). It only exists inside the reject dialog, which only became measurable once the
+ *    probe learned to switch tabs first. It is hint text, so it gets what every other hint got
+ *    in batch39: the secondary text token (6.06:1).
+ * 2. the form validation message (`.el-form-item__error`, EP paints it with --el-color-danger
+ *    #f56c6c = 2.90:1 on white). It only exists while a rule fails, so no amount of walking the
+ *    rendered pages would have shown it. The house danger shade from the tag/link palette above
+ *    (#8f2b2b = 8.25:1) is used here as well, so the console still has one red.
+ *
+ * Scoped to these elements rather than overriding --el-color-info / --el-color-danger globally:
+ * both tokens are also FILL colours (progress bars, info and danger tags, buttons) where
+ * darkening them would change what the colour means - the same reasoning as the semantic-button
+ * overrides above.
+ *
+ * SPECIFICITY NOTE: Element Plus declares the counter as `.el-input .el-input__count` and
+ * `.el-textarea .el-input__count`, i.e. (0,2,0). A single-class override of `.el-input__count`
+ * loses to that no matter where it sits in the cascade - the first version of this rule did
+ * exactly that and the probe kept measuring 3.08:1 while the source looked fixed. The selectors
+ * below match EP's weight; `.el-form-item__error` is (0,1,0) in EP and only sets padding in its
+ * size variants, so the plain selector is enough there.
+ */
+.el-input .el-input__count,
+.el-input .el-input__count-inner,
+.el-textarea .el-input__count,
+.el-textarea .el-input__count-inner {
+  color: var(--el-text-color-secondary);
+}
+
+/* Over the limit: still a warning, but readable. EP's rule here is (0,4,0) and keeps winning. */
+.el-input.is-exceed .el-input__suffix .el-input__count,
+.el-textarea.is-exceed .el-input__count {
+  color: #8f2b2b;
+}
+
+.el-form-item__error {
+  color: #8f2b2b;
+}
+
+/*
  * batch39: Element Plus design tokens that fail WCAG AA for TEXT.
  *
  * The batch38 probe measured only .el-tag. Extending it to every leaf text element showed the
@@ -279,4 +321,66 @@ body {
 .el-tag--dark.el-tag--info {
   --el-tag-bg-color: #4c4f57;
   --el-tag-border-color: #4c4f57;
+}
+
+/*
+ * batch43: `.el-alert` is the third and last component with the batch38 anti-pattern - it paints
+ * its text with the BASE semantic colour on that colour's light-9 tint, the same pairing that
+ * made the light tags unreadable (info #909399 on #f4f4f5 = 2.80:1, warning #e6a23c on #fdf6ec =
+ * 2.04:1). It survived both the batch39 text sweep over 1936 elements and the batch41 dialog
+ * sweep because every alert in this app is conditional: the dashboard one needs a STATION-scoped
+ * identity, the two order ones need a refund hint. The login-page one was simply on a route the
+ * probe did not visit - it only became visible when the probe learned to fail a form on purpose
+ * to reach the validation state. Same fix as the tags: keep each hue, move the TEXT much darker
+ * (6.0-7.8:1 on the tint); for the dark effect the fill moves down instead so the white text
+ * keeps its contrast (6.6-8.6:1). Shades are shared with the tag and link-button palette above,
+ * so the console still has exactly one red, one green, one amber.
+ *
+ * SPECIFICITY NOTE: Element Plus declares these as `.el-alert--info.is-light` and
+ * `.el-alert--info.is-light .el-alert__description`, i.e. (0,2,0) and (0,3,0); the selectors
+ * below match that weight and this file is imported after element-plus/dist/index.css.
+ */
+.el-alert--primary.is-light,
+.el-alert--primary.is-light .el-alert__description {
+  color: #1c4e80;
+}
+
+.el-alert--success.is-light,
+.el-alert--success.is-light .el-alert__description {
+  color: #2f6b1c;
+}
+
+.el-alert--warning.is-light,
+.el-alert--warning.is-light .el-alert__description {
+  color: #7a5203;
+}
+
+.el-alert--error.is-light,
+.el-alert--error.is-light .el-alert__description {
+  color: #8f2b2b;
+}
+
+.el-alert--info.is-light,
+.el-alert--info.is-light .el-alert__description {
+  color: #4c4f57;
+}
+
+.el-alert--primary.is-dark {
+  background-color: #1c4e80;
+}
+
+.el-alert--success.is-dark {
+  background-color: #2f6b1c;
+}
+
+.el-alert--warning.is-dark {
+  background-color: #7a5203;
+}
+
+.el-alert--error.is-dark {
+  background-color: #8f2b2b;
+}
+
+.el-alert--info.is-dark {
+  background-color: #4c4f57;
 }
