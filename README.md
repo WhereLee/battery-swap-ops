@@ -18,7 +18,11 @@
 - 测试：**520/520**（契约 4 + 平台 456 + 模拟器 31 + Agent 29，Skipped 0）；JaCoCo 门槛 server 65% / sim 55% / contract 70% / agent 65%，CI `mvn verify` 强制（实测 server 71.5% / agent 86.2%）；前端门禁 `vue-tsc --noEmit` + `vite build`（CI `frontend` job）；集成测试 `*IT` 由 failsafe 在 CI（Docker）跑，本地 `mvn test` 不受影响
 - 对账不变量 **14 组**（含分账守恒/结算单一致/完成单必分账/欠费/券状态）；任务看护 9 项
 - 容量（读路径方法论复测，512m 堆，限流关，同机）：**3,230/s @20 线程 / 3,526/s @100 线程，0 错误，p99 16ms/84ms**（预热+稳态窗口；旧 465.5/s 为压测端端口耗尽假象，见 `document/knowledge/capacity-model.md`）
-- 实机剧本 53 个（`scripts/verify/README.md` 总索引；batch1-38 全 PASS，含双实例 `_c29`、异构设备端 `_c30`、运维 Agent `_c31`、BFF 视图与数据权限 `_c32`、分页回归网 `_c33`、页面级契约 `_c34`、**真实浏览器验收 `_c35`**、限流 XFF 绕过 `_c36`、**布局/对比度探针 `_c38`**）；另含两处**门禁可红性实证**（CI 集成测试红探针、事务自调用守卫红探针）
+- 实机剧本 54 个（`scripts/verify/README.md` 总索引；batch1-40 全 PASS，含双实例 `_c29`、异构设备端 `_c30`、运维 Agent `_c31`、BFF 视图与数据权限 `_c32`、分页回归网 `_c33`、页面级契约 `_c34`、**真实浏览器验收 `_c35`**、限流 XFF 绕过 `_c36`、**布局/对比度探针 `_c38`**、**索引/访问路径审计 `_c39`**）；另含两处**门禁可红性实证**（CI 集成测试红探针、事务自调用守卫红探针）
+- 索引与访问路径（服务器侧实测，`_c39`）：用 `performance_schema` 逐语句统计审计真实流量 →
+  修 3 处缺访问路径（`payment_record.order_id` 随 db/18 的唯一键被一起删掉、`alarm` 缺 `create_time`
+  前导索引、"全部"页签全表排序、`swap_order` 缺 `(status, complete_time)`）→ **打流量读计数器差值**因果证明：
+  **8,090 → 1 行/次**、**4,032 → 20 行/次**（均"无索引次数 +0"）
 - 管理台可访问性（实机测量，`_c38`）：**10 条路由 1936 个文字元素 + 270 个标签对比度全部达标**
   （Element Plus 默认配色不达 WCAG AA：次要文字 2.87–3.08:1、主色 `#409eff` **2.78:1 双向失败**、
   标签 2.04–3.08:1；已做令牌级修正，标签区间 6.00–8.57:1）、89 个表头零错列、零裁切、零横向溢出；
@@ -70,10 +74,10 @@ flowchart LR
 #    RocketMQ namesrv 9876 + broker 10911 + proxy 8081（.local/start-broker-proxy.bat）
 #    有 Docker 的机器可跳过本节：docker compose -f docker-compose.middleware.yml up -d（仅 MySQL+Redis）
 
-# 2) 建库建表（幂等，db/00-18 共 19 个迁移脚本，按序执行）
+# 2) 建库建表（幂等，db/00-19 共 20 个迁移脚本，按序执行）
 mysql -uroot -proot < db/00-create-database.sql
 mysql -uroot -proot < db/01-swap-schema.sql
-# ... db/02-s2-migration.sql ~ db/18-payment-ledger-idem.sql 依次执行
+# ... db/02-s2-migration.sql ~ db/19-index-audit-fixes.sql 依次执行
 
 # 3) 密钥零明文：SWAP_DEV_SECRET / SWAP_ADMIN_TOKEN / SWAP_PAY_SECRET（.local/*.txt，gitignored）
 
@@ -163,8 +167,8 @@ mvn -B -ntp clean verify                            # 覆盖率门槛 + SpotBugs
 cd swap-web; npm run type-check; npm run build      # 前端门禁（CI frontend job 同款）
 ```
 
-- 实机剧本 53 个（`scripts/verify/README.md` 为总索引，全 PASS）；容量与 GC 证据在 `batch7/`（jtl/GC 原件归档 `diag-archive/`，不入 git）
-- 前端浏览器门禁（本地，需本机 Chrome + 平台在跑）：`_c34` 契约 59/59、`_c35` 走查 31/31（含整页截图）、`_c38` 布局/对比度 10 页 hardFailures=0
+- 实机剧本 54 个（`scripts/verify/README.md` 为总索引，全 PASS）；容量与 GC 证据在 `batch7/`（jtl/GC 原件归档 `diag-archive/`，不入 git）
+- 前端浏览器门禁（本地，需本机 Chrome + 平台在跑）：`_c34` 契约 59/59、`_c35` 走查 31/31（含整页截图）、`_c38` 布局/对比度 10 页 hardFailures=0、`_c39` 索引审计 14/14（需本机 MySQL）
 - CI：`.github/workflows/ci.yml`（`build` job：verify + coverage summary；`frontend` job：npm ci + type-check + build + dist artifact；`docker` job：compose 起中间件 + 镜像构建 + 容器内业务请求冒烟）
 
 ## 文档地图

@@ -1,0 +1,59 @@
+=== C39 batch40: index/access-path audit (server-side digest evidence) ===
+
+--- audit: statements MySQL recorded as executed without an index ---
+INFO  [REAL-GAP(history)] payment_record (rows=7875): execs=55081 no_idx=5104 rows/exec=750.2 - 750.2 rows/exec on a 7875-row table
+        shape: SELECT `id` , `user_id` , `order_id` , `payment_type` , `amount_fen` , CHANNEL , `trade_no` , STATUS , `remark` , `create_time` FROM `payment_record` WHERE ( `order_id` = ? )
+INFO  [benign] cabinet (rows=10): execs=3845528 no_idx=618 rows/exec=2.8 - table only 10 rows
+        shape: SELECT `id` , `cabinet_no` , `station_id` , `cell_count` , STATUS , `secret` , `last_boot_id` , `last_event_seq` , `last_heartbeat_time` , `create_time` , `update_time` FROM `cabinet` WHERE ( `station
+INFO  [REAL-GAP(history)] payment_record (rows=7875): execs=60 no_idx=45 rows/exec=6072.5 - 6072.5 rows/exec on a 7875-row table
+        shape: SELECT `id` , `user_id` , `order_id` , `payment_type` , `amount_fen` , CHANNEL , `trade_no` , STATUS , `remark` , `create_time` FROM `payment_record` WHERE ( `order_id` IN (...) )
+INFO  [benign] cabinet (rows=10): execs=27334 no_idx=27334 rows/exec=10.6 - table only 10 rows
+        shape: SELECT `id` , `cabinet_no` , `station_id` , `cell_count` , STATUS , `secret` , `last_boot_id` , `last_event_seq` , `last_heartbeat_time` , `create_time` , `update_time` FROM `cabinet`
+INFO  [benign] alarm (rows=4416): execs=1745 no_idx=45 rows/exec=157.2 - 157.2 rows/exec on a 4416-row table
+        shape: SELECT `id` , `device_type` , `device_no` , `alarm_type` , `content` , `handled` , HANDLER , `create_time` , `handled_time` FROM `alarm` WHERE ( `handled` = ? ) ORDER BY `create_time` DESC LIMIT ?
+INFO  [unclassified] execs=78 no_idx=78 rows/exec=2232.1 - FROM clause not inside the captured digest window
+        shape: SELECT `id` , `event_key` , `order_id` , `order_no` , `station_id` , `agent_id` , `event_type` , `base_type` , `base_amount_fen` , `agent_share_fen` , `platform_share_fen` , `subsidy_fen` , `statement
+INFO  [REAL-GAP(history)] swap_order (rows=5177): execs=35 no_idx=30 rows/exec=4841.8 - 4841.8 rows/exec on a 5177-row table
+        shape: SELECT COUNT ( * ) AS `total` FROM `swap_order` WHERE ( STATUS = ? AND `complete_time` >= ? )
+INFO  [unclassified] execs=6 no_idx=6 rows/exec=11664.0 - FROM clause not inside the captured digest window
+        shape: SELECT `id` , `order_no` , `order_type` , `user_id` , `station_id` , `cabinet_id` , `cell_id` , `take_battery_id` , `return_battery_id` , `user_plan_id` , STATUS , `fee_fen` , `pay_type` , `open_comma
+INFO  [unclassified] execs=2529 no_idx=2183 rows/exec=22.5 - FROM clause not inside the captured digest window
+        shape: SELECT `id` , `order_no` , `order_type` , `user_id` , `station_id` , `cabinet_id` , `cell_id` , `take_battery_id` , `return_battery_id` , `user_plan_id` , STATUS , `fee_fen` , `pay_type` , `open_comma
+INFO  [unclassified] execs=2515 no_idx=2169 rows/exec=22.5 - FROM clause not inside the captured digest window
+        shape: SELECT `id` , `order_no` , `order_type` , `user_id` , `station_id` , `cabinet_id` , `cell_id` , `take_battery_id` , `return_battery_id` , `user_plan_id` , STATUS , `fee_fen` , `pay_type` , `open_comma
+INFO  [unclassified] execs=78 no_idx=59 rows/exec=509.0 - FROM clause not inside the captured digest window
+        shape: SELECT `id` , `order_no` , `order_type` , `user_id` , `station_id` , `cabinet_id` , `cell_id` , `take_battery_id` , `return_battery_id` , `user_plan_id` , STATUS , `fee_fen` , `pay_type` , `open_comma
+INFO  [unclassified] execs=78 no_idx=59 rows/exec=509.0 - FROM clause not inside the captured digest window
+        shape: SELECT `id` , `order_no` , `order_type` , `user_id` , `station_id` , `cabinet_id` , `cell_id` , `take_battery_id` , `return_battery_id` , `user_plan_id` , STATUS , `fee_fen` , `pay_type` , `open_comma
+INFO  [REAL-GAP(history)] alarm (rows=4416): execs=48 no_idx=8 rows/exec=688.7 - 688.7 rows/exec on a 4416-row table
+        shape: SELECT `id` , `device_type` , `device_no` , `alarm_type` , `content` , `handled` , HANDLER , `create_time` , `handled_time` FROM `alarm` ORDER BY `create_time` DESC LIMIT ?
+INFO  [REAL-GAP(history)] payment_record (rows=7875): execs=3 no_idx=3 rows/exec=8095.3 - 8095.3 rows/exec on a 7875-row table
+        shape: SELECT COUNT ( * ) FROM `payment_record` WHERE `order_id` = ?
+INFO  [REAL-GAP(history)] swap_order (rows=5177): execs=3 no_idx=3 rows/exec=8093.3 - 8093.3 rows/exec on a 5177-row table
+        shape: SELECT `o` . `id` , `o` . `order_no` , `o` . `user_id` FROM `swap_order` `o` WHERE `o` . `status` = ? AND NOT EXISTS ( SELECT ? FROM `payment_record` `p` WHERE `p` . `order_id` = `o` . `id` AND `p` . 
+INFO  counters are cumulative since MySQL start, so REAL-GAP(history) entries include scans from before the batch40 fix.
+INFO  verdict rule: rows/exec > 200 on a table larger than 1000 rows; smaller tables are scanned by design and are not defects.
+
+--- plan: EXPLAIN the hot paths (a full scan on a big table is a FAIL) ---
+PASS  P1 payment_record WHERE order_id = ? uses an index (type=ref key=idx_order_id rows=2 table_rows=7875)
+PASS  P2 payment_record has an index leading with order_id (leading-column indexes=1)
+PASS  P1 payment_record WHERE order_id IN (...) uses an index (type=range key=idx_order_id rows=3 table_rows=7875)
+PASS  P2 payment_record has an index leading with order_id (leading-column indexes=1)
+PASS  P1 alarm list ordered by create_time (the all tab) uses an index (type=index key=idx_alarm_create_time rows=20 table_rows=4416)
+PASS  P2 alarm has an index leading with create_time (leading-column indexes=1)
+PASS  P3 swap_order reconcile window uses idx_status_complete (window_since=1789611551492 type=range key=idx_status_complete rows=2)
+PASS  P4 swap_order has idx_status_complete(status, complete_time) for the reconcile window (index columns=2)
+
+--- causal delta: drive real traffic and compare the server-side counters ---
+INFO  W1 payment_record WHERE order_id = ?: drove 20/20 requests; delta execs=+20 no_index_used=+0 rows_examined=+20 (=1 per execution; pre-fix ~8090)
+PASS  W1 statements were executed by the traffic (payment_record WHERE order_id = ?) (execs +20, expected >= 20)
+PASS  W1 none ran without an index (payment_record WHERE order_id = ?) (no_index_used +0)
+PASS  W1 rows examined per execution collapsed (payment_record WHERE order_id = ?) (1 rows/exec, threshold 5, pre-fix ~8090)
+INFO  W2 alarm list with no handled filter (the all tab): drove 20/20 requests; delta execs=+20 no_index_used=+0 rows_examined=+400 (=20 per execution; pre-fix ~4032)
+PASS  W2 statements were executed by the traffic (alarm list with no handled filter (the all tab)) (execs +20, expected >= 20)
+PASS  W2 none ran without an index (alarm list with no handled filter (the all tab)) (no_index_used +0)
+PASS  W2 rows examined per execution collapsed (alarm list with no handled filter (the all tab)) (20 rows/exec, threshold 40, pre-fix ~4032)
+
+=== C39 summary: PASS=14 FAIL=0 ===
+INFO evidence written: scripts/verify/batch40/_c39_out.txt
+GATE-INDEX PASS

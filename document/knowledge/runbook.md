@@ -125,7 +125,7 @@ load 模式附加：`-Xms512m -Xmx512m -Xlog:gc:file=gc.log:time,uptime` + `swap
 
 ## 8. 实机剧本
 
-总索引 `scripts/verify/README.md`（**52 个剧本与验证脚本** + 容量证据；`_out.txt` 为统计数据，原件归档 diag-archive/）。
+总索引 `scripts/verify/README.md`（**54 个剧本与验证脚本** + 容量证据；`_out.txt` 为统计数据，原件归档 diag-archive/）。
 剧本前置 = 中间件 + fast 模式平台 + dual 模拟器（`_g*` 部分只需 http）。
 
 管理台（S8）另有两层页面级验收：`batch31/_c34_pages.ps1`（HTTP 契约 + 前端类型镜像）与
