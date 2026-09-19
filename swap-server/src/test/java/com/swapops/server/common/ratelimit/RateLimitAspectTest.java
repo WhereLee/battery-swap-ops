@@ -59,12 +59,17 @@ class RateLimitAspectTest {
         @RateLimit(name = "spel-l", dimension = RateLimitDimension.USER, permits = 1, windowSeconds = 1, key = "#p0")
         public void withKey(String phone) {
         }
+
+        /** 登录撞库防护的真实形状（AdminAuthController#login） */
+        @RateLimit(name = "admin-login", dimension = RateLimitDimension.IP, permits = 5, windowSeconds = 5)
+        public void loginByIp() {
+        }
     }
 
     @BeforeEach
     void setUp() {
         properties = new RateLimitProperties();
-        aspect = new RateLimitAspect(redis, properties);
+        aspect = new RateLimitAspect(redis, properties, new ClientIpResolver(properties));
     }
 
     @AfterEach
@@ -170,5 +175,35 @@ class RateLimitAspectTest {
         org.mockito.ArgumentCaptor<List> captor = org.mockito.ArgumentCaptor.forClass(List.class);
         verify(redis).execute(any(RedisScript.class), captor.capture(), any(), any());
         assertThat(captor.getValue().get(0).toString()).contains("api-l").contains("Fixture.api()");
+    }
+
+    @Test
+    @DisplayName("IP 维度（批次33）：伪造 X-Forwarded-For 不改变桶键（撞库防护不可被 header 绕过）")
+    void ip维度忽略伪造XFF() throws Throwable {
+        givenMethod("loginByIp");
+        givenAcquire(1L);
+
+        java.util.Set<String> buckets = new java.util.HashSet<>();
+        for (int i = 0; i < 20; i++) {
+            org.springframework.mock.web.MockHttpServletRequest request =
+                    new org.springframework.mock.web.MockHttpServletRequest("POST", "/api/admin/auth/login");
+            request.setRemoteAddr("203.0.113.7");
+            request.addHeader("X-Forwarded-For", "10.0.0." + i);
+            org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                    new org.springframework.web.context.request.ServletRequestAttributes(request));
+
+            org.mockito.ArgumentCaptor<List> captor = org.mockito.ArgumentCaptor.forClass(List.class);
+            aspect.around(pjp, annotation("loginByIp"));
+            verify(redis, org.mockito.Mockito.atLeastOnce())
+                    .execute(any(RedisScript.class), captor.capture(), any(), any());
+            buckets.add(captor.getValue().get(0).toString());
+            org.mockito.Mockito.clearInvocations(redis);
+        }
+        org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+
+        assertThat(buckets)
+                .as("20 个不同 XFF 必须落进同一个桶：%s", buckets)
+                .hasSize(1);
+        assertThat(buckets.iterator().next()).contains("203.0.113.7").doesNotContain("10.0.0.");
     }
 }

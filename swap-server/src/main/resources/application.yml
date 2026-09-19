@@ -145,6 +145,10 @@ swap:
   ratelimit:
     # S3.8 WP2 令牌桶限流（粒度由 @RateLimit 注解声明；关闭后注解失效）
     enabled: true
+    # 批次33：受信反向代理（精确 IP 或 CIDR）。空=不采信任何 X-Forwarded-For，
+    # IP 维度按 TCP 对端地址分桶。只有确实有反代（云上 nginx）时才配置，
+    # 否则登录撞库防护的分桶键会落到客户端可伪造的 header 上（可一行绕过）。
+    trusted-proxies: []
   cache:
     # S3.8 WP1 两级缓存：L1=Caffeine 本进程 / L2=Redis JSON；仅展示/字典类读
     enabled: true

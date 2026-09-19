@@ -1,7 +1,6 @@
 package com.swapops.server.common.ratelimit;
 
 import com.swapops.server.common.web.UserContext;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -31,7 +30,7 @@ import java.util.concurrent.atomic.LongAdder;
  * <ul>
  *   <li>桶状态在 Redis，Lua 原子"取时间/补令牌/扣减/续期"——多实例共享、无竞态超发；</li>
  *   <li>时间以 Redis TIME 为准（跨实例时钟不一致不影响判定）；</li>
- *   <li>维度解析：GLOBAL / USER(UserContext) / IP(XFF 优先) / API(方法签名)，支持 SpEL 附加键；</li>
+ *   <li>维度解析：GLOBAL / USER(UserContext) / IP(默认 TCP 对端地址，受信代理后才看 XFF) / API(方法签名)，支持 SpEL 附加键；</li>
  *   <li>拒绝：429 + Retry-After（由 RRExceptionHandler 映射）；</li>
  *   <li>Redis 故障 fail-open（放行 + 告警）——限流只降体验不阻业务。</li>
  * </ul>
@@ -78,9 +77,14 @@ public class RateLimitAspect {
     private final ConcurrentHashMap<String, LongAdder> allowedCounters = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, LongAdder> deniedCounters = new ConcurrentHashMap<>();
 
-    public RateLimitAspect(StringRedisTemplate redis, RateLimitProperties properties) {
+    /** 客户端地址解析（批次33：默认不信任 XFF，见 {@link ClientIpResolver}）。 */
+    private final ClientIpResolver clientIpResolver;
+
+    public RateLimitAspect(StringRedisTemplate redis, RateLimitProperties properties,
+                           ClientIpResolver clientIpResolver) {
         this.redis = redis;
         this.properties = properties;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @Around("@annotation(rateLimit)")
@@ -168,11 +172,9 @@ public class RateLimitAspect {
         if (attributes == null) {
             return "unknown";
         }
-        HttpServletRequest request = attributes.getRequest();
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
-        return request.getRemoteAddr() == null ? "unknown" : request.getRemoteAddr();
+        // 批次33：地址解析交给 ClientIpResolver——默认不信任 X-Forwarded-For，
+        // 只有直连地址在受信代理列表里才从右往左取真实客户端（旧实现取左起第一段，
+        // 一行 header 就能让撞库防护的令牌桶随便换桶）。
+        return clientIpResolver.resolve(attributes.getRequest());
     }
 }

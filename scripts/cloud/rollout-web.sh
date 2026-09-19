@@ -48,6 +48,29 @@ sudo systemctl restart nginx
 echo "nginx=$(systemctl is-active nginx)"
 echo "ufw (unchanged): $(sudo ufw status | head -3 | tr '\n' ' ')"
 
+echo "== step4b: rate limiter must trust the local proxy (batch33) =="
+# Once nginx fronts /api, EVERY request reaches the app from 127.0.0.1. Without a trusted
+# proxy entry the IP-dimension limiter (admin-login / user-login, 5 per 5s) would put all
+# users in one bucket, and with the pre-batch33 code the spoofable XFF decided the bucket.
+# nginx appends the real peer with $proxy_add_x_forwarded_for, so trusting 127.0.0.1 makes
+# the resolver read the RIGHTMOST address, which is the only one nginx vouches for.
+if grep -q '^SWAP_RATELIMIT_TRUSTED_PROXIES=' "$ENV_FILE"; then
+    echo "trusted-proxies already configured: $(grep '^SWAP_RATELIMIT_TRUSTED_PROXIES=' "$ENV_FILE")"
+else
+    echo 'SWAP_RATELIMIT_TRUSTED_PROXIES=127.0.0.1' | sudo tee -a "$ENV_FILE" >/dev/null
+    echo "appended SWAP_RATELIMIT_TRUSTED_PROXIES=127.0.0.1 to swap.env"
+    sudo systemctl restart swap-server
+    sleep 10
+    echo "server after limiter config=$(systemctl is-active swap-server) health=$(curl -sf $B/actuator/health || echo FAIL)"
+fi
+echo "limiter probe (expect throttling to still work through the proxy):"
+for i in 1 2 3 4 5 6 7 8; do
+    printf '%s ' "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1/api/admin/auth/login \
+        -H 'Content-Type: application/json' -H "X-Forwarded-For: 203.0.113.$i" \
+        -d '{"username":"admin","password":"wrong-on-purpose"}')"
+done
+echo ""
+
 echo "== step5: smoke through nginx (same origin as the browser) =="
 echo "index: $(curl -sf -o /dev/null -w '%{http_code} %{content_type}' http://127.0.0.1/)"
 echo "spa-deep-link: $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1/work-orders/1)"
