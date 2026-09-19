@@ -107,14 +107,18 @@ flowchart TB
   三路实证不受影响，`scripts/verify/batch27/_c31_out.txt`）。云端可按需追加 systemd 服务。
 - **前端接入层（S8，2026-09-19）**：BFF 视图层 `com.swapops.server.web.view`（**同进程，不独立成服务**——
   单消费方场景下独立 BFF 的收益不兑现，取舍已申报见 `plans/S8-前端管理台与BFF视图层-方案.md` §4.1）：
-  `/admin/view/**` 7 个只读聚合端点（一页一请求，批量查询防 N+1）+ `allowedActions` 能力位
-  （`common/action/ActionsSupport` 纯函数，前端不复制状态机）+ VO 化（不出 Entity；柜 VO 无 `secret`；
-  可退金额取服务端资金口径）；`GET /admin/auth/me` 下发角色/37 权限码/数据范围；权限码前后端一致性由
-  `PermissionCodeContractTest` 在 CI 把关。工单新增 `station_id`（db/17，创建时由 `DeviceOwnershipService` 按设备解析）
-  使工单纳入站点数据范围；`alarm`/`agent_action` 无站点归属列，为全局口径资源（有意不挂 `@DataFilter`）。
-  前端工程 `swap-web`（Vue 3 + Vite + TS + Element Plus + Pinia，**批次30 已落地**：登录/看板/告警与建议单 +
+  `/admin/view/**` **11 个**只读聚合端点（一页一请求，批量查询防 N+1）+ `allowedActions` 能力位
+  （`common/action/ActionsSupport` 纯函数，前端不复制状态机：工单五步链 / 建议单 confirm-reject /
+  结算单 confirm-paid / 订单 refund-reversal 通道二选一）+ VO 化（不出 Entity；柜 VO 无 `secret`；
+  订单列表 VO 无 `idemKey` 等内部列；可退金额取服务端资金口径）；`GET /admin/auth/me` 下发角色/37 权限码/数据范围；
+  权限码前后端一致性由 `PermissionCodeContractTest` 在 CI 把关。工单新增 `station_id`（db/17，创建时由
+  `DeviceOwnershipService` 按设备解析）使工单纳入站点数据范围；`alarm`/`agent_action`/`settlement_statement`
+  无站点归属列，为全局口径资源（有意不挂 `@DataFilter`）。
+  前端工程 `swap-web`（Vue 3 + Vite + TS + Element Plus + Pinia，**批次30-31 已落地八个业务页**：
+  登录/看板/告警与建议单/工单列表+详情/订单列表+详情/换电柜列表+详情/结算单列表+详情 +
   路由 `meta.codes` 守卫 + `v-access` 按钮级；菜单由路由表派生；门禁 `vue-tsc --noEmit` + `vite build`，CI `frontend` job）；
-  开发期 Vite proxy :5173→:8400、生产 nginx 同源反代 `/api`（后端不开 CORS）。
+  开发期 Vite proxy :5173→:8400、生产 **nginx 同源反代 `/api`**（后端不开 CORS，站点配置 `scripts/cloud/nginx-swap.conf`，
+  已上云；页面级验收 `_c34`（HTTP 契约）+ `_c35`（真实浏览器走查））。
 - **持久层拦截器（S8 批次30 补，2026-09-19）**：`config/MybatisPlusConfig` 注册 `PaginationInnerInterceptor`
   （MySQL 方言、`maxLimit = PageParams.MAX_LIMIT = 200`、`overflow=false` 使页码越界返回空而非静默回首页）
   + `BlockAttackInnerInterceptor`（已核实全仓 update/delete 均带 where，只拦事故不拦业务）。

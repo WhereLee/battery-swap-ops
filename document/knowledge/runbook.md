@@ -125,10 +125,14 @@ load 模式附加：`-Xms512m -Xmx512m -Xlog:gc:file=gc.log:time,uptime` + `swap
 
 ## 8. 实机剧本
 
-总索引 `scripts/verify/README.md`（**37 个剧本** + 容量证据；`_out.txt` 为统计数据，原件归档 diag-archive/）。
+总索引 `scripts/verify/README.md`（**52 个剧本与验证脚本** + 容量证据；`_out.txt` 为统计数据，原件归档 diag-archive/）。
 剧本前置 = 中间件 + fast 模式平台 + dual 模拟器（`_g*` 部分只需 http）。
 
-## 9. 云端部署（2026-09-14 已部署，阶段1）
+管理台（S8）另有两层页面级验收：`batch31/_c34_pages.ps1`（HTTP 契约 + 前端类型镜像）与
+`batch31/_c35_console.ps1`（用构建产物 `dist/` 起 `vite preview`，再用零依赖 CDP 驱动本机 headless Chrome
+真实登录并逐页走查）；后者需先 `cd swap-web; npm run build`。
+
+## 9. 云端部署（2026-09-14 首次部署；2026-09-19 增补管理台与 nginx）
 
 - 形态：`jar + systemd`（`swap-server` :8400 / `swap-sim` :8500，堆 768m/256m），
   目录 `/opt/swap`，配置 `/opt/swap/config/swap.env`（600，服务器本地生成密钥）；部署脚本 `scripts/cloud/`。

@@ -62,7 +62,9 @@
 | batch33 | `_c36_xff.ps1` | 登录限流不可被 header 绕过：10 次**各带不同伪造 X-Forwarded-For** 的爆破 → 前 5 次 400、后 5 次 **429**（同一个桶）；等 6s 窗口过后恢复（是窗口不是封禁） | PASS 5/5 |
 | batch35 | `_c37_refund_ledger.ps1` | 资金台账幂等键分型（db/18）：旧 `uk_order_type` 已删 / 生成列 `idem_key` 存在；**同订单第二笔 REFUND 行可插入**（修复前 1062）/ 重复 trade_no 仍拒 / **同订单第二笔 BALANCE_FEE 仍拒**（扣费幂等闸未削弱）/ 无订单归属行不受约束 / 探针清理；实机两笔真实部分退款（ADMIN_MANUAL 100 + ADMIN_REVERSAL 200）→ 订单详情 2 条 REFUND 流水、台账合计=退款单合计 | PASS 13/13 |
 
-合计 39 个剧本（`_g1`-`_g8` + `_c0`-`_c28` + `_c30`-`_c35`；`_c29` 为双实例演练分析脚本）+ 容量工程脚本（batch16 读路径复测 / batch17 写路径 + JVM 对比驱动）+ 1 个第三方契约验证脚本 + batch18 防回归脚本（dev reset 收敛）+ batch19 混沌三剧本（Redis/MySQL/broker 停机）+ batch20 指标监控剧本（P1-6）+ batch21 校验/webhook 剧本（P1-7/P1-11）+ batch22 数据权限剧本（P1-8）+ batch23 集成测试门禁证据（P0-1，CI 内跑，非本地剧本）+ batch24 分片保序/双实例剧本（P0-2）+ batch26 异构设备端剧本（P2-13）+ batch27 运维 Agent 剧本（S6/P2-11）+ batch29 BFF 视图层与数据权限剧本（S8）+ batch30 分页回归网（S8）+ batch31 页面级契约与浏览器验收剧本（S8）+ batch32 事务自调用守卫探针 + batch33 限流 XFF 绕过剧本；batch9（S5 运维收口）与 batch14（S7 收口）为文档/运维层面，无独立剧本。
+合计 **52 个剧本与验证脚本**（`_g` 主线 ×8 + `_c` 能力 ×39 + `_p03` 容量 ×3 + `_b18` 防回归 ×1 + Python 契约客户端 ×1），
+另有 3 个辅助脚本（`_c26_mock_receiver.py` webhook 接收端、`hetero_device.py` 异构设备端库、`_c35_console.mjs` CDP 浏览器驱动）；
+batch9（S5 运维收口）与 batch14（S7 收口）为文档/运维层面，无独立剧本。
 P0-4 演示入口：`scripts/demo/_p0_demo.ps1`（不在本索引的剧本口径内，证据 `_p0_demo_out.txt`）。
 
 证据文件：`batch7/_cov_out.txt`（覆盖率门槛）、`batch7/_load_out.txt`（压测+GC 统计）、`batch27/_eval_out.txt`（Agent 评测集 20/20）。
