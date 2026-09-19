@@ -1,6 +1,7 @@
 # 运行手册（battery-swap-ops 本地全栈）
 
-> 适用：Windows 本机开发/联调/压测。云端部署待口径（见 §9）。
+> 适用：Windows 本机开发/联调/压测。云端部署见 §9。
+> **Git 提交 / CI 门禁 / 云上部署的可执行命令序列**：见 `document/Git与CI与云部署-操作手册.md`（本文件只讲本地运行）。
 > 所有启动器在 `.local/`（gitignored），密钥文件同目录，**仓库零明文**。
 
 ## 1. 中间件（先启）
@@ -32,10 +33,15 @@
 
 ```powershell
 mvn -B -ntp clean test                              # 全量单测基线（clean 必须）
-mvn -B -ntp test "-Dsurefire.runOrder=random"       # push 前随机顺序复跑
-mvn -B -ntp clean verify                            # 覆盖率门槛（CI 同款：server 65/sim 55/contract 70）
-mvn -B -ntp package                                 # 出双端 jar（启动器依赖）
+mvn -B -ntp test "-Dsurefire.runOrder=random"       # push 前随机顺序复跑（防静态缓存假绿）
+mvn -B -ntp clean verify                            # CI 同款：含 *IT（需 Docker）+ 覆盖率门槛 + SpotBugs
+mvn -B -ntp clean verify -DskipITs                 # Windows 本机无 Docker：跳 IT，其余与 CI 同源
+mvn -B -ntp package                                 # 出双端 jar（启动器与云部署依赖）
+cd swap-web; npm run type-check; npm run build       # 前端门禁（vue-tsc + vite build）
 ```
+
+> 单模块跑测试必须带 `-am`（本地仓无同仓 `swap-contract:1.0.0` 产物）；
+> 配 `-Dsurefire.failIfNoSpecifiedTests=false` 才能用 `-Dtest=XxxTest` 跑单类。
 
 ## 4. 健康检查
 
@@ -119,7 +125,7 @@ load 模式附加：`-Xms512m -Xmx512m -Xlog:gc:file=gc.log:time,uptime` + `swap
 
 ## 8. 实机剧本
 
-总索引 `scripts/verify/README.md`（31 个剧本 + 容量证据；`_out.txt` 为统计数据，原件归档 diag-archive/）。
+总索引 `scripts/verify/README.md`（**37 个剧本** + 容量证据；`_out.txt` 为统计数据，原件归档 diag-archive/）。
 剧本前置 = 中间件 + fast 模式平台 + dual 模拟器（`_g*` 部分只需 http）。
 
 ## 9. 云端部署（2026-09-14 已部署，阶段1）
