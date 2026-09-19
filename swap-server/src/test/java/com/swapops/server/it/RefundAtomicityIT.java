@@ -118,11 +118,10 @@ class RefundAtomicityIT extends AbstractContainersIT {
                 .isEqualTo(balanceBefore + REFUND_FEN);
         assertThat(refundRecordDao.selectById(pending.getId()).getStatus())
                 .isEqualTo(RefundStatus.SUCCESS.name());
-        assertThat(paymentRecordDao.selectList(new LambdaQueryWrapper<PaymentRecordEntity>()
-                .eq(PaymentRecordEntity::getOrderId, SYNTHETIC_ORDER_ID)
-                .eq(PaymentRecordEntity::getPaymentType, PaymentType.REFUND.name())))
-                .as("REFUND 流水恰好一条")
-                .hasSize(1);
+        // 注意：PaymentRecordService 在本 IT 里被替换成 mock，所以"REFUND 流水行"这一层
+        // 不在这里断言（mock 不会真的写库；reset 也不会把真实实现还回来）。
+        // 本 IT 守的是"钱包金额"这一资金结果；流水行本身的正确性由 PaymentRecordService
+        // 自己的单测与批次31 的列表契约剧本覆盖。宁可少断言，不写会误导人的断言。
 
         // ---------- 3) 终态幂等：重复 apply 不再入账（CAS 是闸门） ----------
         refundService.apply(refundRecordDao.selectById(pending.getId()));
