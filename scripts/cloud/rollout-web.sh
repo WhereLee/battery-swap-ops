@@ -28,7 +28,10 @@ sudo systemctl stop swap-server
 sudo cp /tmp/swapdeploy/swap-server-1.0.0.jar /opt/swap/swap-server-1.0.0.jar
 sudo chown ubuntu:ubuntu /opt/swap/swap-server-1.0.0.jar
 sudo systemctl start swap-server
-sleep 15
+for _ in $(seq 1 40); do
+    if curl -sf $B/actuator/health >/dev/null 2>&1; then break; fi
+    sleep 2
+done
 echo "server=$(systemctl is-active swap-server) health=$(curl -sf $B/actuator/health || echo FAIL)"
 
 echo "== step3: publish swap-web dist =="
@@ -36,12 +39,20 @@ sudo mkdir -p "$WEB_ROOT"
 sudo rm -rf "${WEB_ROOT:?}/assets"
 sudo cp -r /tmp/swapdeploy/web/. "$WEB_ROOT/"
 sudo chown -R www-data:www-data "$WEB_ROOT"
-echo "published files: $(find $WEB_ROOT -type f | wc -l) | index sha256: $(sha256sum $WEB_ROOT/index.html | cut -c1-16)"
+# Count as root: /opt/swap/web is www-data-owned and ubuntu cannot traverse it (the first
+# deploy reported "published files: 1" for that reason - a wrong number, not a wrong copy).
+echo "published files: $(sudo find $WEB_ROOT -type f | wc -l) | index sha256: $(sudo sha256sum $WEB_ROOT/index.html | cut -c1-16)"
 
 echo "== step4: nginx site =="
 sudo cp /tmp/swapdeploy/nginx-swap.conf /etc/nginx/sites-available/swap-web
 sudo ln -sf /etc/nginx/sites-available/swap-web /etc/nginx/sites-enabled/swap-web
-sudo rm -f /etc/nginx/sites-enabled/default
+# Debian's default site also claims `listen 80 default_server`, which collides with ours.
+# Archive it instead of deleting (workspace red line: archive over delete) so the change
+# stays reversible with a single mv back.
+if [ -e /etc/nginx/sites-enabled/default ]; then
+    sudo mv /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default.pre-swap-web.bak
+    echo "archived default site -> /etc/nginx/sites-available/default.pre-swap-web.bak"
+fi
 sudo nginx -t
 sudo systemctl enable nginx >/dev/null 2>&1 || true
 sudo systemctl restart nginx
@@ -60,31 +71,27 @@ else
     echo 'SWAP_RATELIMIT_TRUSTED_PROXIES=127.0.0.1' | sudo tee -a "$ENV_FILE" >/dev/null
     echo "appended SWAP_RATELIMIT_TRUSTED_PROXIES=127.0.0.1 to swap.env"
     sudo systemctl restart swap-server
-    sleep 10
-    echo "server after limiter config=$(systemctl is-active swap-server) health=$(curl -sf $B/actuator/health || echo FAIL)"
 fi
-echo "limiter probe (expect throttling to still work through the proxy):"
-for i in 1 2 3 4 5 6 7 8; do
-    printf '%s ' "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1/api/admin/auth/login \
-        -H 'Content-Type: application/json' -H "X-Forwarded-For: 203.0.113.$i" \
-        -d '{"username":"admin","password":"wrong-on-purpose"}')"
-done
-echo ""
+
+# Wait for readiness by polling, never by a fixed sleep: the app needs ~12s to boot and a
+# too-short sleep turns into a false "health=FAIL" + a wall of 502s downstream (learned the
+# hard way on the first deploy of this script).
+wait_health() {
+    for _ in $(seq 1 40); do
+        if curl -sf "$B/actuator/health" >/dev/null 2>&1; then return 0; fi
+        sleep 2
+    done
+    return 1
+}
+if wait_health; then
+    echo "server=$(systemctl is-active swap-server) health=$(curl -sf $B/actuator/health)"
+else
+    echo "FATAL swap-server did not become healthy within 80s; last log lines:"
+    sudo journalctl -u swap-server -n 20 --no-pager | tail -20
+    exit 1
+fi
+echo "limiter probe: see probe-web.sh (P09) - XFF spoofing itself cannot be probed from this host"
 
 echo "== step5: smoke through nginx (same origin as the browser) =="
-echo "index: $(curl -sf -o /dev/null -w '%{http_code} %{content_type}' http://127.0.0.1/)"
-echo "spa-deep-link: $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1/work-orders/1)"
-echo "asset: $(curl -sf -o /dev/null -w '%{http_code}' "http://127.0.0.1$(grep -o '/assets/index-[A-Za-z0-9_-]*\.js' $WEB_ROOT/index.html | head -1)")"
-echo "api-through-proxy: $(curl -sf http://127.0.0.1/api/actuator/health)"
-
-ADMIN_PASS=$(grep '^SWAP_DEV_ADMIN_BOOTSTRAP_PASSWORD=' "$ENV_FILE" | cut -d= -f2)
-ATOKEN=$(curl -sf -X POST http://127.0.0.1/api/admin/auth/login -H 'Content-Type: application/json' \
-    -d "{\"username\":\"admin\",\"password\":\"$ADMIN_PASS\"}" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
-echo "login-through-proxy token-len=${#ATOKEN}"
-for EP in "/api/admin/auth/me" "/api/admin/view/dashboard" "/api/admin/view/work-order?page=1&limit=5" \
-          "/api/admin/view/order?page=1&limit=5" "/api/admin/view/cabinet?page=1&limit=5" \
-          "/api/admin/view/settlement?page=1&limit=5"; do
-    CODE=$(curl -sf -o /tmp/swapdeploy/probe.json -w '%{http_code}' "http://127.0.0.1$EP" -H "X-Admin-Token: $ATOKEN")
-    echo "probe $EP -> $CODE $(head -c 90 /tmp/swapdeploy/probe.json)"
-done
+bash /tmp/swapdeploy/probe-web.sh
 echo "== done =="

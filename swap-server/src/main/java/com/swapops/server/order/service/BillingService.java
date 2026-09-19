@@ -1,5 +1,6 @@
 package com.swapops.server.order.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.swapops.server.alarm.AlarmType;
 import com.swapops.server.alarm.service.AlarmService;
@@ -10,6 +11,7 @@ import com.swapops.server.order.entity.SwapOrderEntity;
 import com.swapops.server.order.enums.OrderType;
 import com.swapops.server.order.enums.PayType;
 import com.swapops.server.order.enums.PaymentType;
+import com.swapops.server.user.entity.PlanEntity;
 import com.swapops.server.user.entity.UserPlanEntity;
 import com.swapops.server.user.entity.WalletEntity;
 import com.swapops.server.user.service.CouponService;
@@ -84,8 +86,13 @@ public class BillingService {
         boolean planCharged = false;
         if (plan != null) {
             if (plan.getRemainingTimes() == null) {
-                // 月卡：有效期内即权益（日限在创建时已校验）
-                planCharged = true;
+                // 月卡：有效期内即权益，但受套餐模板的日限约束（S0.1 声明的 dailyLimitTimes；
+                // 批次34 落地——此前只有建表/表单/校验，"日限"实际从未生效，见审计台账 AUD-4）
+                planCharged = !monthlyDailyLimitReached(plan, completeTime);
+                if (!planCharged) {
+                    log.info("[计费] 月卡日限已用完，回落余额计费 orderNo={} userPlanId={}",
+                            order.getOrderNo(), plan.getId());
+                }
             } else {
                 // 次卡：CAS 扣次；并发扣穿则回落余额
                 planCharged = planService.deductTimes(plan.getId());
@@ -168,6 +175,38 @@ public class BillingService {
         settlementService.settleOrder(order);
         log.info("订单计费完成 orderNo={} type={} payType={} baseFee={} discount={} chargedBase={} overdueFee={}",
                 order.getOrderNo(), type, payType, baseFee, discount, chargedBase, overdueFee);
+    }
+
+    /**
+     * 月卡日限判定（批次34）：统计"同一张月卡 + 今日（自然日）+ 已按套餐计费完成"的单量。
+     *
+     * <p>实现要点与取舍：
+     * <ol>
+     *   <li><b>口径回源</b>：{@code plan.daily_limit_times} 是 S0.1 领域模型声明的字段，
+     *       空＝不限；判定按"自然日"（与看板"今日完成单"同一时区口径）。</li>
+     *   <li><b>先加行锁再数</b>：先 {@code SELECT ... FOR UPDATE} 锁住这张 user_plan，
+     *       把"数今日单量 + 放行"做成临界区。否则同一用户在两台柜上并发的两笔完成事件会各自放行，
+     *       日限被突破（两个事务互相看不见对方未提交的行）。</li>
+     *   <li><b>只数 payType=PLAN 的单</b>：日限约束的是"月卡权益"，被限流后回落余额的单不该再占额度
+     *       （否则一次超限会连锁把当天剩下的次数全吃掉）。</li>
+     *   <li><b>超限的后果是"回落常规计费"而不是拒单</b>：换电服务已经交付，计费只能选通道，
+     *       余额不足自然走欠费化（S7 韧性补丁 G1）。</li>
+     * </ol>
+     */
+    private boolean monthlyDailyLimitReached(UserPlanEntity userPlan, long completeTime) {
+        PlanEntity planTemplate = planService.findPlan(userPlan.getPlanId());
+        Integer limit = planTemplate == null ? null : planTemplate.getDailyLimitTimes();
+        if (limit == null || limit <= 0) {
+            return false;
+        }
+        planService.lockUserPlan(userPlan.getId()); // 临界区：本卡今日额度判定的互斥
+        long dayStart = java.time.LocalDate.now(java.time.ZoneId.systemDefault())
+                .atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+        Long used = orderDao.selectCount(new LambdaQueryWrapper<SwapOrderEntity>()
+                .eq(SwapOrderEntity::getUserPlanId, userPlan.getId())
+                .eq(SwapOrderEntity::getPayType, PayType.PLAN.name())
+                .ge(SwapOrderEntity::getCompleteTime, dayStart));
+        return used != null && used >= limit;
     }
 
     /** 超时费：余额优先、押金兜底；不足额记欠费 + ORDER_ARREARS 告警（S5 审查补：欠费必须显性可见） */

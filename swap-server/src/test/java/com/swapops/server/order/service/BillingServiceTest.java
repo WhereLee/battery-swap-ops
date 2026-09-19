@@ -25,6 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -115,6 +116,84 @@ class BillingServiceTest {
         when(walletService.deductBalance(7L, 300)).thenReturn(true);
         service.charge(order("SWAP", null), System.currentTimeMillis());
         verify(paymentRecordService).record(eq(7L), eq(99L), eq(PaymentType.BALANCE_FEE), eq(300), anyString());
+    }
+
+    // ---------- 批次34：月卡日限（S0.1 声明的 dailyLimitTimes 落地） ----------
+
+    /** 月卡（remainingTimes=null）；日限配置在套餐模板上 */
+    private UserPlanEntity monthlyPlan() {
+        UserPlanEntity plan = new UserPlanEntity();
+        plan.setId(5L);
+        plan.setPlanId(100L);
+        plan.setRemainingTimes(null);
+        return plan;
+    }
+
+    private com.swapops.server.user.entity.PlanEntity planTemplate(Integer dailyLimit) {
+        com.swapops.server.user.entity.PlanEntity template = new com.swapops.server.user.entity.PlanEntity();
+        template.setId(100L);
+        template.setDailyLimitTimes(dailyLimit);
+        return template;
+    }
+
+    @Test
+    @DisplayName("月卡日限未满：仍走套餐权益（不加锁、不查单量）")
+    void 月卡日限未满走套餐() {
+        when(planService.findUsablePlan(eq(7L), anyLong())).thenReturn(monthlyPlan());
+        when(planService.findPlan(100L)).thenReturn(planTemplate(5));
+        when(orderDao.selectCount(any())).thenReturn(2L);
+
+        service.charge(order("SWAP", null), System.currentTimeMillis());
+
+        verify(planService).lockUserPlan(5L);
+        verify(planService, never()).deductTimes(anyLong());
+        verify(paymentRecordService).record(eq(7L), eq(99L), eq(PaymentType.PLAN_DEDUCT), eq(0), anyString());
+        verify(paymentRecordService, never()).record(anyLong(), anyLong(), eq(PaymentType.BALANCE_FEE), anyInt(), anyString());
+    }
+
+    @Test
+    @DisplayName("月卡日限已满：回落余额计费（权益不再放行），不再扣套餐")
+    void 月卡日限已满回落余额() {
+        when(planService.findUsablePlan(eq(7L), anyLong())).thenReturn(monthlyPlan());
+        when(planService.findPlan(100L)).thenReturn(planTemplate(2));
+        when(orderDao.selectCount(any())).thenReturn(2L);
+        when(walletService.deductBalance(7L, 300)).thenReturn(true);
+
+        service.charge(order("SWAP", null), System.currentTimeMillis());
+
+        verify(paymentRecordService).record(eq(7L), eq(99L), eq(PaymentType.BALANCE_FEE), eq(300), anyString());
+        verify(paymentRecordService, never()).record(anyLong(), anyLong(), eq(PaymentType.PLAN_DEDUCT), anyInt(), anyString());
+        verify(planService).lockUserPlan(5L);
+    }
+
+    @Test
+    @DisplayName("月卡未配日限（空/0）：不受限，且不产生行锁与计数查询")
+    void 月卡未配日限不受限() {
+        when(planService.findUsablePlan(eq(7L), anyLong())).thenReturn(monthlyPlan());
+        when(planService.findPlan(100L)).thenReturn(planTemplate(null));
+
+        service.charge(order("SWAP", null), System.currentTimeMillis());
+
+        verify(planService, never()).lockUserPlan(anyLong());
+        verify(orderDao, never()).selectCount(any());
+        verify(paymentRecordService).record(eq(7L), eq(99L), eq(PaymentType.PLAN_DEDUCT), eq(0), anyString());
+    }
+
+    @Test
+    @DisplayName("次卡不受日限影响：日限只约束月卡（次卡本身有次数闸）")
+    void 次卡不受日限影响() {
+        UserPlanEntity timesPlan = new UserPlanEntity();
+        timesPlan.setId(6L);
+        timesPlan.setPlanId(101L);
+        timesPlan.setRemainingTimes(3);
+        when(planService.findUsablePlan(eq(7L), anyLong())).thenReturn(timesPlan);
+        when(planService.deductTimes(6L)).thenReturn(true);
+
+        service.charge(order("SWAP", null), System.currentTimeMillis());
+
+        verify(planService, never()).findPlan(anyLong());
+        verify(orderDao, never()).selectCount(any());
+        verify(paymentRecordService).record(eq(7L), eq(99L), eq(PaymentType.PLAN_DEDUCT), eq(0), anyString());
     }
 
     @Test

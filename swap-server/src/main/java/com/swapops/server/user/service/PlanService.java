@@ -251,4 +251,29 @@ public class PlanService {
                 .set(UserPlanEntity::getUpdateTime, System.currentTimeMillis()));
         return rows > 0;
     }
+
+    /** 套餐模板按 id 读取（可空）。 */
+    public PlanEntity findPlan(Long planId) {
+        return planId == null ? null : planDao.selectById(planId);
+    }
+
+    /**
+     * 对 user_plan 行加排他锁（批次34，月卡日限用）。
+     *
+     * <p>为什么需要锁：月卡日限是"数今日单量 → 决定这张卡今天还能不能用"的<b>先检查后动作</b>。
+     * 同一用户在两台柜上并发的两笔完成事件是两个事务，彼此看不见对方未提交的行，
+     * 各自都会数到"还差一个就满"，于是双双放行——日限被突破一次。
+     * 在计费事务里先对本行 {@code SELECT ... FOR UPDATE}，把这段判定变成同一张卡的临界区。
+     * 代价：月卡订单的计费路径多一次行锁（只影响同一张卡的并发，不阻塞其他用户）。
+     *
+     * @return 加锁后的最新行；不存在返回 null
+     */
+    public UserPlanEntity lockUserPlan(Long userPlanId) {
+        if (userPlanId == null) {
+            return null;
+        }
+        return userPlanDao.selectOne(new LambdaQueryWrapper<UserPlanEntity>()
+                .eq(UserPlanEntity::getId, userPlanId)
+                .last("FOR UPDATE"));
+    }
 }

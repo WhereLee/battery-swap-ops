@@ -23,12 +23,17 @@ Copy-Item (Join-Path $root "db\16-data-scope.sql") $staging
 Copy-Item (Join-Path $root "db\17-work-order-scope.sql") $staging
 Copy-Item (Join-Path $PSScriptRoot "nginx-swap.conf") $staging
 Copy-Item (Join-Path $PSScriptRoot "rollout-web.sh") $staging
-Write-Host "staging ready: $staging (jar + dist + db/16,17 + nginx site)"
+Copy-Item (Join-Path $PSScriptRoot "probe-web.sh") $staging
+Write-Host "staging ready: $staging (jar + dist + db/16,17 + nginx site + rollout + probe)"
 
 Write-Host "uploading (jar ~60MB + dist over 3Mbps)..."
-ssh $remote "rm -rf $remoteTmp; mkdir -p $remoteTmp"
-scp -r "$staging\*" "${remote}:${remoteTmp}/" | Out-Null
+# Mirror scripts/cloud/deploy.ps1: remove the target dir, then scp the staging DIRECTORY
+# itself (no trailing slash, no glob) so its contents land directly in /tmp/swapdeploy.
+ssh $remote "rm -rf $remoteTmp"
+scp -r $staging "${remote}:${remoteTmp}" | Out-Null
 if ($LASTEXITCODE -ne 0) { Write-Host "FATAL scp failed"; exit 1 }
+$check = ssh $remote "ls $remoteTmp/rollout-web.sh $remoteTmp/web/index.html $remoteTmp/swap-server-1.0.0.jar"
+Write-Host "remote staging check: $check"
 
 Write-Host "running remote rollout..."
 ssh $remote "chmod +x $remoteTmp/rollout-web.sh && bash $remoteTmp/rollout-web.sh"
