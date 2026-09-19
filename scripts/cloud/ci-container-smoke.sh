@@ -65,15 +65,30 @@ echo "== step6: docker healthcheck status (what an operator would look at) =="
 docker inspect --format '{{.State.Health.Status}}' "$NAME"
 
 echo "== step7: real request through the container =="
-TOKEN=$(curl -s -X POST http://127.0.0.1:8400/api/admin/auth/login -H 'Content-Type: application/json' \
-    -d '{"username":"admin","password":"container-smoke-pass-24hex0"}' \
-    | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
-[ -n "$TOKEN" ] || { echo "FATAL admin login failed"; exit 1; }
-echo "admin login ok (token length ${#TOKEN})"
+# NOTE (learned on the first CI run of this job): a healthy container is NOT a seeded
+# container. Tomcat answers /actuator/health as soon as the web context is up, while
+# DevSeeder keeps creating cabinets/users afterwards - and the bootstrap admin account is
+# created at the END of seeding. A one-shot login here raced the seeder and failed with 400.
+# So poll the login (1 attempt per 3s stays well under the 5-per-5s login rate limit).
+TOKEN=""
+for i in $(seq 1 20); do
+    TOKEN=$(curl -s -X POST http://127.0.0.1:8400/api/admin/auth/login -H 'Content-Type: application/json' \
+        -d '{"username":"admin","password":"container-smoke-pass-24hex0"}' \
+        | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+    if [ -n "$TOKEN" ]; then
+        echo "admin login ok after ${i} attempt(s) (token length ${#TOKEN})"
+        break
+    fi
+    sleep 3
+done
+[ -n "$TOKEN" ] || { echo "FATAL admin login failed (seeder never created the bootstrap admin?)"; exit 1; }
 ME=$(curl -s http://127.0.0.1:8400/api/admin/auth/me -H "X-Admin-Token: $TOKEN")
 echo "auth/me -> ${ME:0:120}"
 DASH=$(curl -s -o /tmp/dash.json -w '%{http_code}' http://127.0.0.1:8400/api/admin/view/dashboard -H "X-Admin-Token: $TOKEN")
 echo "view/dashboard -> $DASH $(head -c 100 /tmp/dash.json)"
 [ "$DASH" = "200" ] || { echo "FATAL dashboard view failed"; exit 1; }
+CAB=$(curl -s -o /tmp/cab.json -w '%{http_code}' 'http://127.0.0.1:8400/api/admin/view/cabinet?page=1&limit=3' -H "X-Admin-Token: $TOKEN")
+echo "view/cabinet -> $CAB $(head -c 100 /tmp/cab.json)"
+[ "$CAB" = "200" ] || { echo "FATAL cabinet view failed"; exit 1; }
 
 echo "== CONTAINER-SMOKE PASS =="
