@@ -1,0 +1,31 @@
+=== C40 batch43: negative control for the UI gate (the gate must be able to fail) ===
+INFO  measuring with the gate's own probe expression, imported from _c38_ui_probe.mjs
+PASS  login
+
+--- C1 tag contrast on /work-orders ---
+INFO  baseline (no injection): 0 tags below 4.5:1 (worst Infinity:1)
+INFO  after injection:         70 tags below 4.5:1 (worst 1.05:1)
+PASS  C1 tag contrast: clean page reports nothing (0 tags below 4.5:1 (worst Infinity:1))
+PASS  C1 tag contrast: injected defect is DETECTED (70 tags below 4.5:1 (worst 1.05:1))
+
+--- C2 cell clipping on /orders ---
+INFO  baseline (no injection): 0 clipped cells
+INFO  after injection:         20 clipped cells
+PASS  C2 cell clipping: clean page reports nothing (0 clipped cells)
+PASS  C2 cell clipping: injected defect is DETECTED (20 clipped cells)
+
+--- C3 page horizontal overflow on /cabinets ---
+INFO  baseline (no injection): pageHorizontalOverflow=false
+INFO  after injection:         pageHorizontalOverflow=true
+PASS  C3 page horizontal overflow: clean page reports nothing (pageHorizontalOverflow=false)
+PASS  C3 page horizontal overflow: injected defect is DETECTED (pageHorizontalOverflow=true)
+
+--- C4 table header misalignment on /settlements ---
+INFO  baseline (no injection): 0 misaligned columns
+INFO  after injection:         11 misaligned columns
+PASS  C4 table header misalignment: clean page reports nothing (0 misaligned columns)
+PASS  C4 table header misalignment: injected defect is DETECTED (11 misaligned columns)
+PASS  after removing all injections the page measures clean again (lowContrastTags=0 clipped=0)
+
+=== C40 summary: PASS=10 FAIL=0 ===
+GATE-NEGCTL PASS

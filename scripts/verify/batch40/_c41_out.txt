@@ -1,0 +1,43 @@
+=== C41 batch43: negative control for the index audit (the gate must be able to fail) ===
+INFO  baseline: idx_order_id present = True
+PASS  precondition: idx_order_id exists before the control
+
+--- step 1: drop the access path (reproduce the batch40 defect shape) ---
+INFO  idx_order_id present after drop = False
+PASS  step 1: the index is really gone
+
+--- step 2: the audit must go RED, and red on the access-path check ---
+      FAIL  P1 payment_record WHERE order_id = ? uses an index (type=ALL key=NULL rows=7875 table_rows=7875)
+      FAIL  P2 payment_record has an index leading with order_id (leading-column indexes=0)
+      FAIL  P1 payment_record WHERE order_id IN (...) uses an index (type=ALL key=NULL rows=7875 table_rows=7875)
+      FAIL  P2 payment_record has an index leading with order_id (leading-column indexes=0)
+      PASS  P1 alarm list ordered by create_time (the all tab) uses an index (type=index key=idx_alarm_create_time rows=20 table_rows=4416)
+      PASS  P2 alarm has an index leading with create_time (leading-column indexes=1)
+INFO  audit exit code with the index missing = 1
+PASS  step 2: audit exits non-zero (exit=1)
+PASS  step 2: it reports at least one FAIL (6 FAIL lines)
+PASS  step 2: the FAIL is the access-path assertion (FAIL  P1 payment_record WHERE order_id = ? uses an index (type=ALL key=NULL rows=7875 table_rows=7875))
+PASS  step 2: the summary reports hardFailures
+
+--- step 3: restore (db/19 is idempotent; runs even if the checks above threw) ---
+      APPLY: db\19-index-audit-fixes.sql
+      done
+      db/19 index-audit-fixes done
+      APPLY_EXIT: 0
+PASS  step 3: idx_order_id is back
+
+--- step 4: the audit must go GREEN again ---
+      PASS  P1 payment_record WHERE order_id = ? uses an index (type=ref key=idx_order_id rows=2 table_rows=7875)
+      PASS  P2 payment_record has an index leading with order_id (leading-column indexes=1)
+      PASS  P1 payment_record WHERE order_id IN (...) uses an index (type=range key=idx_order_id rows=3 table_rows=7875)
+      PASS  P2 payment_record has an index leading with order_id (leading-column indexes=1)
+      PASS  P1 alarm list ordered by create_time (the all tab) uses an index (type=index key=idx_alarm_create_time rows=20 table_rows=4416)
+      PASS  P2 alarm has an index leading with create_time (leading-column indexes=1)
+      === C39 summary: PASS=15 FAIL=0 ===
+      GATE-INDEX PASS
+PASS  step 4: audit exits zero (exit=0)
+PASS  step 4: GATE-INDEX PASS
+
+=== C41 summary: PASS=9 FAIL=0 ===
+INFO evidence written: scripts/verify/batch40/_c41_out.txt
+GATE-IDX-NEGCTL PASS

@@ -1,19 +1,19 @@
 === C39 batch40: index/access-path audit (server-side digest evidence) ===
 
 --- audit: statements MySQL recorded as executed without an index ---
-INFO  [REAL-GAP(history)] payment_record (rows=7875): execs=55625 no_idx=5104 rows/exec=742.9 - 742.9 rows/exec on a 7875-row table
+INFO  [REAL-GAP(history)] payment_record (rows=7875): execs=56318 no_idx=5124 rows/exec=736.6 - 736.6 rows/exec on a 7875-row table
         shape: SELECT `id` , `user_id` , `order_id` , `payment_type` , `amount_fen` , CHANNEL , `trade_no` , STATUS , `remark` , `create_time` FROM `payment_record` WHERE ( `order_id` = ? )
-INFO  [benign] cabinet (rows=10): execs=3845540 no_idx=618 rows/exec=2.8 - table only 10 rows
+INFO  [benign] cabinet (rows=10): execs=3845572 no_idx=618 rows/exec=2.8 - table only 10 rows
         shape: SELECT `id` , `cabinet_no` , `station_id` , `cell_count` , STATUS , `secret` , `last_boot_id` , `last_event_seq` , `last_heartbeat_time` , `create_time` , `update_time` FROM `cabinet` WHERE ( `station
-INFO  [REAL-GAP(history)] payment_record (rows=7875): execs=65 no_idx=45 rows/exec=5605.5 - 5605.5 rows/exec on a 7875-row table
+INFO  [REAL-GAP(history)] payment_record (rows=7875): execs=83 no_idx=46 rows/exec=4488.2 - 4488.2 rows/exec on a 7875-row table
         shape: SELECT `id` , `user_id` , `order_id` , `payment_type` , `amount_fen` , CHANNEL , `trade_no` , STATUS , `remark` , `create_time` FROM `payment_record` WHERE ( `order_id` IN (...) )
-INFO  [benign] cabinet (rows=10): execs=27374 no_idx=27374 rows/exec=10.6 - table only 10 rows
+INFO  [benign] cabinet (rows=10): execs=27429 no_idx=27429 rows/exec=10.6 - table only 10 rows
         shape: SELECT `id` , `cabinet_no` , `station_id` , `cell_count` , STATUS , `secret` , `last_boot_id` , `last_event_seq` , `last_heartbeat_time` , `create_time` , `update_time` FROM `cabinet`
-INFO  [benign] alarm (rows=4416): execs=1745 no_idx=45 rows/exec=157.2 - 157.2 rows/exec on a 4416-row table
+INFO  [benign] alarm (rows=4416): execs=1758 no_idx=45 rows/exec=156.2 - 156.2 rows/exec on a 4416-row table
         shape: SELECT `id` , `device_type` , `device_no` , `alarm_type` , `content` , `handled` , HANDLER , `create_time` , `handled_time` FROM `alarm` WHERE ( `handled` = ? ) ORDER BY `create_time` DESC LIMIT ?
 INFO  [unclassified] execs=78 no_idx=78 rows/exec=2232.1 - FROM clause not inside the captured digest window
         shape: SELECT `id` , `event_key` , `order_id` , `order_no` , `station_id` , `agent_id` , `event_type` , `base_type` , `base_amount_fen` , `agent_share_fen` , `platform_share_fen` , `subsidy_fen` , `statement
-INFO  [REAL-GAP(history)] swap_order (rows=5177): execs=38 no_idx=30 rows/exec=4459.6 - 4459.6 rows/exec on a 5177-row table
+INFO  [REAL-GAP(history)] swap_order (rows=5177): execs=46 no_idx=30 rows/exec=3684 - 3684 rows/exec on a 5177-row table
         shape: SELECT COUNT ( * ) AS `total` FROM `swap_order` WHERE ( STATUS = ? AND `complete_time` >= ? )
 INFO  [unclassified] execs=6 no_idx=6 rows/exec=11664.0 - FROM clause not inside the captured digest window
         shape: SELECT `id` , `order_no` , `order_type` , `user_id` , `station_id` , `cabinet_id` , `cell_id` , `take_battery_id` , `return_battery_id` , `user_plan_id` , STATUS , `fee_fen` , `pay_type` , `open_comma
@@ -25,7 +25,7 @@ INFO  [unclassified] execs=78 no_idx=59 rows/exec=509.0 - FROM clause not inside
         shape: SELECT `id` , `order_no` , `order_type` , `user_id` , `station_id` , `cabinet_id` , `cell_id` , `take_battery_id` , `return_battery_id` , `user_plan_id` , STATUS , `fee_fen` , `pay_type` , `open_comma
 INFO  [unclassified] execs=78 no_idx=59 rows/exec=509.0 - FROM clause not inside the captured digest window
         shape: SELECT `id` , `order_no` , `order_type` , `user_id` , `station_id` , `cabinet_id` , `cell_id` , `take_battery_id` , `return_battery_id` , `user_plan_id` , STATUS , `fee_fen` , `pay_type` , `open_comma
-INFO  [REAL-GAP(history)] alarm (rows=4416): execs=108 no_idx=8 rows/exec=317.2 - 317.2 rows/exec on a 4416-row table
+INFO  [REAL-GAP(history)] alarm (rows=4416): execs=148 no_idx=8 rows/exec=236.9 - 236.9 rows/exec on a 4416-row table
         shape: SELECT `id` , `device_type` , `device_no` , `alarm_type` , `content` , `handled` , HANDLER , `create_time` , `handled_time` FROM `alarm` ORDER BY `create_time` DESC LIMIT ?
 INFO  [REAL-GAP(history)] payment_record (rows=7875): execs=4 no_idx=3 rows/exec=6072.3 - 6072.3 rows/exec on a 7875-row table
         shape: SELECT COUNT ( * ) FROM `payment_record` WHERE `order_id` = ?
@@ -55,9 +55,9 @@ PASS  W2 none ran without an index (alarm list with no handled filter (the all t
 PASS  W2 rows examined per execution collapsed (alarm list with no handled filter (the all tab)) (20 rows/exec, threshold 40, pre-fix ~4032)
 
 --- unbounded reads: SELECT with neither WHERE nor LIMIT ---
-INFO  [historical] execs=6 rows/exec=5832.0 last_seen=2026-09-19 02:01:24.249772 (1317min ago)
+INFO  [historical] execs=6 rows/exec=5832.0 last_seen=2026-09-19 02:01:24.249772 (1343min ago)
         shape: SELECT `id` , `order_no` , `order_type` , `user_id` , `station_id` , `cabinet_id` , `cell_id` , `take_battery_id` , `return_battery_id` , `user_plan_id` , STATUS , `fee_fen` , `pay_type` , `open_comma
-INFO  [historical] execs=2 rows/exec=3854.0 last_seen=2026-09-19 02:51:25.182844 (1267min ago)
+INFO  [historical] execs=2 rows/exec=3854.0 last_seen=2026-09-19 02:51:25.182844 (1293min ago)
         shape: SELECT `id` , `device_type` , `device_no` , `alarm_type` , `content` , `handled` , HANDLER , `create_time` , `handled_time` FROM `alarm` ORDER BY `create_time` DESC
 PASS  no unbounded SELECT is currently being executed (seen within 30 min) (0 active, 2 historical)
 

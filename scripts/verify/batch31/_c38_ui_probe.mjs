@@ -18,6 +18,7 @@
  */
 
 import { launch, collectErrors, login, sleep } from "./_cdp.mjs";
+import { pathToFileURL } from "node:url";
 
 const APP_URL = process.env.APP_URL ?? "http://127.0.0.1:4173";
 const ADMIN_USER = process.env.ADMIN_USER ?? "admin";
@@ -176,13 +177,24 @@ function probeExpression(scopeExpr = "document") {
     headers.forEach((th, index) => {
       const cell = th.querySelector('.cell');
       const headerBox = th.getBoundingClientRect();
-      const bodyBox = bodyCells[index] ? bodyCells[index].getBoundingClientRect() : null;
+      const bodyCell = bodyCells[index] ?? null;
+      const bodyBox = bodyCell ? bodyCell.getBoundingClientRect() : null;
+      // Two levels, on purpose. The cell-level boxes catch a header whose text is drawn away
+      // from its own body column even when the <th>/<td> boxes still line up - a CSS transform
+      // on the inner .cell moves the glyphs without touching layout, which is exactly how the
+      // batch43 negative control exposed that the first version of this check could be fooled.
+      const bodyCellInner = bodyCell ? bodyCell.querySelector('.cell') : null;
+      const cellInnerBox = cell ? cell.getBoundingClientRect() : null;
+      const bodyCellInnerBox = bodyCellInner ? bodyCellInner.getBoundingClientRect() : null;
       alignment.push({
         table: tableIndex,
         index,
         label: (th.innerText || '').trim().slice(0, 24),
         deltaLeft: bodyBox ? Math.round(bodyBox.left - headerBox.left) : null,
         deltaWidth: bodyBox ? Math.round(bodyBox.width - headerBox.width) : null,
+        deltaCellLeft: cellInnerBox && bodyCellInnerBox
+          ? Math.round(bodyCellInnerBox.left - cellInnerBox.left)
+          : null,
         headerTextClipped: cell ? cell.scrollWidth > cell.clientWidth + 1 : false,
         headerTextHeight: cell ? Math.round(cell.getBoundingClientRect().height) : null,
       });
@@ -463,7 +475,7 @@ async function main() {
       report.pages.push(raw);
 
       const scrollTables = raw.tables.filter((t) => t.horizontallyScrollable);
-      const misaligned = raw.alignment.filter((c) => c.deltaLeft !== null && Math.abs(c.deltaLeft) > 2);
+      const misaligned = raw.alignment.filter((c) => (c.deltaLeft !== null && Math.abs(c.deltaLeft) > 2) || (c.deltaCellLeft !== null && Math.abs(c.deltaCellLeft) > 2));
       const headerClipped = raw.alignment.filter((c) => c.headerTextClipped);
       console.log("");
       console.log(`--- ${path} (${title}) ---`);
@@ -547,7 +559,7 @@ async function main() {
       report.dialogs = report.dialogs ?? [];
       report.dialogs.push(raw);
 
-      const misaligned = raw.alignment.filter((c) => c.deltaLeft !== null && Math.abs(c.deltaLeft) > 2);
+      const misaligned = raw.alignment.filter((c) => (c.deltaLeft !== null && Math.abs(c.deltaLeft) > 2) || (c.deltaCellLeft !== null && Math.abs(c.deltaCellLeft) > 2));
       const headerClipped = raw.alignment.filter((c) => c.headerTextClipped);
       console.log("");
       console.log(`--- dialog: ${d.title} (${d.path}) ---`);
@@ -589,7 +601,7 @@ async function main() {
     const lowText = report.pages.reduce((sum, p) => sum + p.lowContrastText.length, 0);
     const textScanned = report.pages.reduce((sum, p) => sum + p.textScanned, 0);
     const misaligned = report.pages.reduce(
-      (sum, p) => sum + p.alignment.filter((c) => c.deltaLeft !== null && Math.abs(c.deltaLeft) > 2).length,
+      (sum, p) => sum + p.alignment.filter((c) => (c.deltaLeft !== null && Math.abs(c.deltaLeft) > 2) || (c.deltaCellLeft !== null && Math.abs(c.deltaCellLeft) > 2)).length,
       0,
     );
     const headerClipped = report.pages.reduce(
@@ -603,7 +615,7 @@ async function main() {
     const dialogLowText = dialogReady.reduce((sum, d) => sum + d.lowContrastText.length, 0);
     const dialogLowTag = dialogReady.reduce((sum, d) => sum + d.lowContrastTags.length, 0);
     const dialogMisaligned = dialogReady.reduce(
-      (sum, d) => sum + d.alignment.filter((c) => c.deltaLeft !== null && Math.abs(c.deltaLeft) > 2).length,
+      (sum, d) => sum + d.alignment.filter((c) => (c.deltaLeft !== null && Math.abs(c.deltaLeft) > 2) || (c.deltaCellLeft !== null && Math.abs(c.deltaCellLeft) > 2)).length,
       0,
     );
     const dialogNotReady = dialogs.filter((d) => d.ready === false).length;
@@ -648,7 +660,16 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.log(`FATAL ${error.stack ?? error.message}`);
-  process.exit(1);
-});
+// Run the sweep only when this file is executed directly. The batch43 negative-control script
+// imports it to reuse the EXACT measurement code (that is the whole point of the control: if it
+// re-implemented the checks, passing it would prove nothing about this gate), so importing must
+// not kick off a full page sweep as a side effect.
+const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isDirectRun) {
+  main().catch((error) => {
+    console.log(`FATAL ${error.stack ?? error.message}`);
+    process.exit(1);
+  });
+}
+
+export { probeExpression, TAG_CONTRAST_MIN, PAGES };
