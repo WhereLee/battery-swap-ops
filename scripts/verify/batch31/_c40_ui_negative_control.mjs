@@ -118,6 +118,24 @@ const CONTROLS = [
       || (c.deltaCellLeft !== null && Math.abs(c.deltaCellLeft) > 2)),
     describe: (raw) => `${raw.alignment.filter((c) => (c.deltaLeft !== null && Math.abs(c.deltaLeft) > 2) || (c.deltaCellLeft !== null && Math.abs(c.deltaCellLeft) > 2)).length} misaligned columns`,
   },
+  {
+    name: "C5 empty measurement scope",
+    page: "/dashboard",
+    // Not a visual defect - a MEASUREMENT defect. The dialog pass resolves its scope by
+    // expression, so a wrong expression measures an empty subtree and every count comes back
+    // zero, which reads exactly like a clean page. This control points the probe at a freshly
+    // created empty div and requires the scope self-check to notice that nothing was measured.
+    // Without it the self-check itself would be an untested assertion.
+    inject: () => {
+      const div = document.createElement('div');
+      div.id = 'negctl';
+      document.body.appendChild(div);
+      return true;
+    },
+    scopeExpr: "document.getElementById('negctl')",
+    detected: (raw) => raw.scopeElements === 0,
+    describe: (raw) => `scopeElements=${raw.scopeElements}`,
+  },
 ];
 
 async function main() {
@@ -147,7 +165,9 @@ async function main() {
 
       const injected = await session.evaluate(`(${control.inject.toString()})()`);
       await sleep(500);
-      const after = JSON.parse(await session.evaluate(probeExpression("document")));
+      // C5 measures a deliberately empty scope, so it passes its own scope expression instead
+      // of the document; every other control measures the whole page.
+      const after = JSON.parse(await session.evaluate(probeExpression(control.scopeExpr ?? "document")));
       const detected = control.detected(after) === true;
 
       console.log("");

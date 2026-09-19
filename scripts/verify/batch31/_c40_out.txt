@@ -25,7 +25,13 @@ INFO  baseline (no injection): 0 misaligned columns
 INFO  after injection:         11 misaligned columns
 PASS  C4 table header misalignment: clean page reports nothing (0 misaligned columns)
 PASS  C4 table header misalignment: injected defect is DETECTED (11 misaligned columns)
+
+--- C5 empty measurement scope on /dashboard ---
+INFO  baseline (no injection): scopeElements=22
+INFO  after injection:         scopeElements=0
+PASS  C5 empty measurement scope: clean page reports nothing (scopeElements=22)
+PASS  C5 empty measurement scope: injected defect is DETECTED (scopeElements=0)
 PASS  after removing all injections the page measures clean again (lowContrastTags=0 clipped=0)
 
-=== C40 summary: PASS=10 FAIL=0 ===
+=== C40 summary: PASS=12 FAIL=0 ===
 GATE-NEGCTL PASS

@@ -429,6 +429,14 @@ function probeExpression(scopeExpr = "document") {
     lowContrastTags: tags.filter((t) => t.contrast !== null && t.contrast < ${TAG_CONTRAST_MIN}),
     zeroWidthTags: tags.filter((t) => t.width < 12 || t.height < 12),
     sampleTags: tags.slice(0, 6),
+    // Self-check for the scope itself. Every other field is a COUNT OF PROBLEMS, so a scope
+    // that silently measures nothing reports zero problems and reads as a pass - the most
+    // dangerous shape a gate can have, and the risk declared in the batch41 and batch43 records
+    // (the dialog pass resolves its scope by expression; get that wrong and it measures an empty
+    // subtree for ever, green). This counts what was actually LOOKED AT, and the gate treats
+    // zero as a failure rather than as a pass.
+    scopeElements: tags.length + textSamples.length + alignment.length + clipped.length
+      + tables.length + dashColumns.length,
   });
 })()`;
 }
@@ -481,6 +489,7 @@ async function main() {
       console.log(`--- ${path} (${title}) ---`);
       console.log(`PASS  rendered (title element present)`);
       console.log(`INFO  viewport=${raw.viewport.w}x${raw.viewport.h} document=${raw.document.scrollWidth}x${raw.document.scrollHeight} contentHeight=${raw.contentHeight} scrollers=[${raw.scrollers.map((s) => `${s.tag}.${s.cls.split(" ")[0]}:${s.clientHeight}<${s.scrollHeight}`).join(" ")}]`);
+      console.log(`${raw.scopeElements > 0 ? "PASS" : "FAIL"}  measurement scope is non-empty (${raw.scopeElements} elements measured - a scope that measures nothing would otherwise report zero problems)`);
       console.log(`${raw.pageHorizontalOverflow ? "FAIL" : "PASS"}  page-level horizontal overflow ${raw.pageHorizontalOverflow ? "(body scrolls sideways)" : "(none)"}`);
       console.log(`${scrollTables.length === 0 ? "PASS" : "WARN"}  tables needing internal horizontal scroll: ${scrollTables.length}/${raw.tables.length} ${scrollTables.map((t) => `[cols=${t.columns} ${t.wrapperClientWidth}<${t.wrapperScrollWidth}]`).join(" ")}`);
       console.log(`${raw.clippedCount === 0 ? "PASS" : "FAIL"}  table cells clipped NOT by design: ${raw.clippedCount} (intentional ellipsis with tooltip: ${raw.intentionalEllipsisCount})`);
@@ -564,6 +573,7 @@ async function main() {
       console.log("");
       console.log(`--- dialog: ${d.title} (${d.path}) ---`);
       console.log(`PASS  opened and visible`);
+      console.log(`${raw.scopeElements > 0 ? "PASS" : "FAIL"}  dialog scope is non-empty (${raw.scopeElements} elements measured)`);
       console.log(`${raw.clippedCount === 0 ? "PASS" : "FAIL"}  dialog cells clipped NOT by design: ${raw.clippedCount}`);
       raw.clipped.slice(0, 4).forEach((c) => console.log(`      clipped: "${c.text}" (${c.clientWidth}<${c.scrollWidth}px)`));
       console.log(`${misaligned.length === 0 ? "PASS" : "FAIL"}  dialog tables aligned: ${raw.alignment.length} columns, ${misaligned.length} misaligned`);
@@ -619,6 +629,9 @@ async function main() {
       0,
     );
     const dialogNotReady = dialogs.filter((d) => d.ready === false).length;
+    // A scope that measured nothing is a failed measurement, not a clean one.
+    const emptyScopes = report.pages.filter((p) => !(p.scopeElements > 0)).length
+      + dialogReady.filter((d) => !(d.scopeElements > 0)).length;
     const nonTextWeak = report.pages.reduce((sum, p) => sum + p.nonText.filter((n) => n.ratio < 3).length, 0);
     const nonTextMeasured = report.pages.reduce((sum, p) => sum + p.nonText.length, 0);
     console.log("");
@@ -629,6 +642,7 @@ async function main() {
     console.log(`${lowContrast === 0 ? "PASS" : "FAIL"}  every visible tag reaches ${TAG_CONTRAST_MIN}:1 contrast (${lowContrast} below)`);
     console.log(`${lowText === 0 ? "PASS" : "FAIL"}  every text element reaches its WCAG threshold (${lowText} below, ${textScanned} elements scanned)`);
     console.log(`${zeroSize === 0 ? "PASS" : "FAIL"}  no zero-sized visible tag (${zeroSize})`);
+    console.log(`${emptyScopes === 0 ? "PASS" : "FAIL"}  every measurement scope contained elements (${emptyScopes} empty)`);
     console.log(`${dialogNotReady === 0 && dialogClipped + dialogLowText + dialogLowTag + dialogMisaligned === 0 ? "PASS" : "FAIL"}  dialogs: ${dialogReady.length} measured (${report.dialogSkips ?? 0} skipped - opener absent), ${dialogNotReady} failed to open, ${dialogClipped} clipped, ${dialogMisaligned} misaligned, ${dialogLowTag} low-contrast tags, ${dialogLowText} low-contrast text`);
     console.log(`INFO  non-text boundaries (WCAG 1.4.11): ${nonTextMeasured} measured, ${nonTextWeak} below 3:1 - reported, deliberately NOT a gate condition`);
     console.log(`${errors.consoleErrors.length === 0 ? "PASS" : "FAIL"}  console errors during probe: ${errors.consoleErrors.length}`);
@@ -640,13 +654,13 @@ async function main() {
     report.httpErrors = errors.httpErrors;
     report.totals = {
       clipped, lowContrast, lowText, textScanned, zeroSize, overflowPages: overflow.length, misaligned, headerClipped,
-      dialogsMeasured: dialogReady.length, dialogSkips: report.dialogSkips ?? 0, dialogClipped, dialogLowText, dialogLowTag,
+      dialogsMeasured: dialogReady.length, dialogSkips: report.dialogSkips ?? 0, emptyScopes, dialogClipped, dialogLowText, dialogLowTag,
       dialogMisaligned, dialogNotReady, nonTextMeasured, nonTextWeak,
     };
 
     const hardFailures = report.pages.filter((p) => !p.ready).length + failures
       + overflow.length + clipped + lowContrast + lowText + zeroSize + misaligned + headerClipped
-      + dialogNotReady + dialogClipped + dialogLowText + dialogLowTag + dialogMisaligned
+      + dialogNotReady + dialogClipped + dialogLowText + dialogLowTag + dialogMisaligned + emptyScopes
       + errors.consoleErrors.length + errors.httpErrors.length;
     console.log("");
     console.log(`=== C38 summary: pages=${report.pages.length} dialogs=${dialogReady.length} hardFailures=${hardFailures} ===`);
