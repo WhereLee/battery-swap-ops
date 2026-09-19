@@ -5,6 +5,7 @@ import com.swapops.contract.OrderStatus;
 import com.swapops.server.admin.data.DataScopeSupport;
 import com.swapops.server.alarm.dao.AlarmDao;
 import com.swapops.server.alarm.entity.AlarmEntity;
+import com.swapops.server.asset.service.AssetAdminService;
 import com.swapops.server.common.RRException;
 import com.swapops.server.common.action.ActionsSupport;
 import com.swapops.server.common.utils.PageResult;
@@ -22,6 +23,7 @@ import com.swapops.server.order.dao.SwapOrderDao;
 import com.swapops.server.order.entity.PaymentRecordEntity;
 import com.swapops.server.order.entity.RefundRecordEntity;
 import com.swapops.server.order.entity.SwapOrderEntity;
+import com.swapops.server.order.service.SwapOrderService;
 import com.swapops.server.order.service.pay.RefundService;
 import com.swapops.server.web.view.AdminViews;
 import com.swapops.server.workorder.entity.WorkOrderEntity;
@@ -67,11 +69,14 @@ public class AdminWorkflowViewService {
     private final PaymentRecordDao paymentRecordDao;
     private final RefundRecordDao refundRecordDao;
     private final RefundService refundService;
+    private final SwapOrderService swapOrderService;
+    private final AssetAdminService assetAdminService;
 
     public AdminWorkflowViewService(WorkOrderService workOrderService, AlarmDao alarmDao, CabinetDao cabinetDao,
                                     CellDao cellDao, BatteryDao batteryDao, CommandLogDao commandLogDao,
                                     SwapOrderDao swapOrderDao, PaymentRecordDao paymentRecordDao,
-                                    RefundRecordDao refundRecordDao, RefundService refundService) {
+                                    RefundRecordDao refundRecordDao, RefundService refundService,
+                                    SwapOrderService swapOrderService, AssetAdminService assetAdminService) {
         this.workOrderService = workOrderService;
         this.alarmDao = alarmDao;
         this.cabinetDao = cabinetDao;
@@ -82,6 +87,8 @@ public class AdminWorkflowViewService {
         this.paymentRecordDao = paymentRecordDao;
         this.refundRecordDao = refundRecordDao;
         this.refundService = refundService;
+        this.swapOrderService = swapOrderService;
+        this.assetAdminService = assetAdminService;
     }
 
     // ---------- 工单 ----------
@@ -121,6 +128,31 @@ public class AdminWorkflowViewService {
         }
         return new AdminViews.AlarmBriefVO(alarm.getId(), alarm.getAlarmType(), alarm.getDeviceType(),
                 alarm.getDeviceNo(), alarm.getContent(), alarm.getHandled(), alarm.getCreateTime());
+    }
+
+    // ---------- 柜列表 ----------
+
+    /**
+     * 柜列表视图（S8 批次31）：柜详情此前只能从工单/订单钻取，运营要先"逛一遍柜"再钻取。
+     * 直接复用 {@code AssetAdminService.pageCabinets}（已含站点范围过滤与 secret 脱敏——
+     * 脱敏是 S5 云部署冒烟暴露的缺陷修复，不在本层重复实现），只做 Entity → VO 的字段收口。
+     */
+    public PageResult<AdminViews.CabinetVO> cabinetPage(Integer page, Integer limit, Long stationId,
+                                                        Integer status, String cabinetNo) {
+        PageResult<CabinetEntity> raw = assetAdminService.pageCabinets(page, limit, stationId, status, cabinetNo);
+        List<AdminViews.CabinetVO> views = new ArrayList<>(raw.getList().size());
+        long now = System.currentTimeMillis();
+        for (CabinetEntity cabinet : raw.getList()) {
+            views.add(toCabinetVO(cabinet, now));
+        }
+        return PageResult.of(views, raw.getTotal(), raw.getPage(), raw.getLimit());
+    }
+
+    private AdminViews.CabinetVO toCabinetVO(CabinetEntity cabinet, long now) {
+        return new AdminViews.CabinetVO(cabinet.getId(), cabinet.getCabinetNo(), cabinet.getStationId(),
+                cabinet.getCellCount(), cabinet.getStatus(), cabinet.getLastBootId(), cabinet.getLastEventSeq(),
+                cabinet.getLastHeartbeatTime(),
+                cabinet.getLastHeartbeatTime() == null ? null : now - cabinet.getLastHeartbeatTime());
     }
 
     // ---------- 柜详情 ----------
@@ -187,12 +219,52 @@ public class AdminWorkflowViewService {
         }
 
         long now = System.currentTimeMillis();
-        AdminViews.CabinetVO cabinetVO = new AdminViews.CabinetVO(cabinet.getId(), cabinet.getCabinetNo(),
-                cabinet.getStationId(), cabinet.getCellCount(), cabinet.getStatus(), cabinet.getLastBootId(),
-                cabinet.getLastEventSeq(), cabinet.getLastHeartbeatTime(),
-                cabinet.getLastHeartbeatTime() == null ? null : now - cabinet.getLastHeartbeatTime());
+        AdminViews.CabinetVO cabinetVO = toCabinetVO(cabinet, now);
         return new AdminViews.CabinetDetailVO(cabinetVO, List.copyOf(cellViews), List.copyOf(alarmViews),
                 List.copyOf(orderViews), List.copyOf(commandViews));
+    }
+
+    // ---------- 订单列表 ----------
+
+    /**
+     * 订单列表视图（S8 批次31）：柜号与可退金额各一次批量查询（不做 N+1），
+     * 并给出每行的资金动作能力位（{@code refund}/{@code reversal} 由服务端二选一）。
+     *
+     * <p>可退金额走 {@code RefundService.refundableAmounts}——与订单详情同一个口径实现，
+     * 避免"列表和详情显示两个数"。这里刻意<b>不</b>把 {@code idemKey} 等内部列带出去：
+     * 域接口返回 Entity（含 idemKey），视图层收口的价值正在此。
+     */
+    public PageResult<AdminViews.OrderListItemVO> orderPage(Integer page, Integer limit, Long userId,
+                                                            Integer status, String orderNo) {
+        PageResult<SwapOrderEntity> raw = swapOrderService.pageOrders(page, limit, userId, status, orderNo);
+        List<SwapOrderEntity> orders = raw.getList();
+        Map<Long, String> cabinetNos = cabinetNosOf(orders);
+        Map<Long, Integer> refundable = refundService.refundableAmounts(
+                orders.stream().map(SwapOrderEntity::getId).toList());
+
+        List<AdminViews.OrderListItemVO> views = new ArrayList<>(orders.size());
+        for (SwapOrderEntity order : orders) {
+            int refundableFen = refundable.getOrDefault(order.getId(), 0);
+            views.add(new AdminViews.OrderListItemVO(order.getOrderNo(), order.getOrderType(), order.getUserId(),
+                    order.getStationId(), order.getCabinetId() == null ? null : cabinetNos.get(order.getCabinetId()),
+                    order.getStatus(), orderStatusDesc(order.getStatus()), order.getFeeFen(),
+                    order.getDiscountFen(), order.getPayType(), order.getCreateTime(), order.getCompleteTime(),
+                    refundableFen, ActionsSupport.order(order.getStatus(), refundableFen)));
+        }
+        return PageResult.of(views, raw.getTotal(), raw.getPage(), raw.getLimit());
+    }
+
+    /** 一页订单的柜号映射（一次 in 查询；柜被删仍可显示 null，不抛）。 */
+    private Map<Long, String> cabinetNosOf(List<SwapOrderEntity> orders) {
+        List<Long> cabinetIds = orders.stream().map(SwapOrderEntity::getCabinetId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        Map<Long, String> cabinetNos = new LinkedHashMap<>();
+        if (!cabinetIds.isEmpty()) {
+            for (CabinetEntity cabinet : cabinetDao.selectBatchIds(cabinetIds)) {
+                cabinetNos.put(cabinet.getId(), cabinet.getCabinetNo());
+            }
+        }
+        return cabinetNos;
     }
 
     // ---------- 订单详情 ----------
@@ -231,6 +303,7 @@ public class AdminWorkflowViewService {
                     refund.getReason(), refund.getStatus(), refund.getCreateTime()));
         }
 
+        int refundableFen = refundService.refundableAmount(order.getId());
         return new AdminViews.OrderDetailVO(order.getOrderNo(), order.getOrderType(), order.getUserId(),
                 order.getStationId(), cabinet == null ? null : cabinet.getCabinetNo(),
                 cell == null ? null : cell.getCellNo(), take == null ? null : take.getBatteryNo(),
@@ -238,7 +311,8 @@ public class AdminWorkflowViewService {
                 orderStatusDesc(order.getStatus()), order.getFeeFen(), order.getDiscountFen(), order.getPayType(),
                 order.getPreemptExpireTime(), order.getCreateTime(), order.getOpenTime(), order.getTakeTime(),
                 order.getReturnTime(), order.getCompleteTime(), order.getCancelTime(), order.getCloseReason(),
-                List.copyOf(paymentViews), List.copyOf(refundViews), refundService.refundableAmount(order.getId()));
+                List.copyOf(paymentViews), List.copyOf(refundViews), refundableFen,
+                ActionsSupport.order(order.getStatus(), refundableFen));
     }
 
     /** 状态描述：脏数据不抛（页面不应因一条异常码崩），未知码回退为原始值字符串。 */

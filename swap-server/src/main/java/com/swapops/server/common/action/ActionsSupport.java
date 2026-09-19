@@ -1,6 +1,8 @@
 package com.swapops.server.common.action;
 
+import com.swapops.contract.OrderStatus;
 import com.swapops.server.agent.enums.AgentActionStatus;
+import com.swapops.server.settlement.enums.SettlementStatus;
 import com.swapops.server.transfer.enums.TransferStatus;
 import com.swapops.server.workorder.enums.WorkOrderStatus;
 
@@ -79,6 +81,53 @@ public final class ActionsSupport {
     /** 告警（S3.6）：未处理可人工处置；自动恢复/已处理为终态（无动作）。 */
     public static List<String> alarm(Integer handled) {
         return handled != null && handled == 0 ? List.of("handle") : List.of();
+    }
+
+    /**
+     * 结算单（S7 WP-B）：GENERATED→确认；CONFIRMED→打款；PAID 为终态。
+     *
+     * <p>动作码与端点动作段字面一致（{@code /admin/settlement/{id}/confirm} → "confirm"、
+     * {@code /{id}/paid} → "paid"）；打款是不可逆的资金动作，故 PAID 后<b>不给任何动作</b>
+     * （迟到流水的处置是"进下一期"，不是"改这张单"，见 S8 方案 §4.4）。
+     */
+    public static List<String> settlement(Integer status) {
+        SettlementStatus parsed = settlementStatus(status);
+        if (parsed == null) {
+            return List.of();
+        }
+        return switch (parsed) {
+            case GENERATED -> List.of("confirm");
+            case CONFIRMED -> List.of("paid");
+            case PAID -> List.of();
+        };
+    }
+
+    /**
+     * 订单（S3.4 人工退款 / S7 WP-B 冲正）：<b>可退额 &gt; 0 才给动作</b>——
+     * 金额口径由 {@code RefundService} 给出，能力位只做"是否放行"的判断，不自己算钱。
+     *
+     * <p>两个通道互斥且不可由前端选：已完成订单资金已结算入账（含分账），只能走冲正
+     * （写 REFUND_REVERSAL 负向分账行）；其余状态走普通退款。让前端按状态二选一，
+     * 就是把资金规则复制到浏览器里——押金二次退款事故的同类风险。
+     */
+    public static List<String> order(Integer status, int refundableFen) {
+        if (status == null || refundableFen <= 0) {
+            return List.of();
+        }
+        return status == OrderStatus.COMPLETED.getCode() ? List.of("reversal") : List.of("refund");
+    }
+
+    /** 结算单状态解析：未知/空 → null（能力位语义是"无可执行动作"，不得因脏数据抛）。 */
+    private static SettlementStatus settlementStatus(Integer code) {
+        if (code == null) {
+            return null;
+        }
+        for (SettlementStatus value : SettlementStatus.values()) {
+            if (value.getCode() == code) {
+                return value;
+            }
+        }
+        return null;
     }
 
     /**

@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -160,19 +161,64 @@ public class RefundService {
                 .eq(RefundRecordEntity::getRefundNo, refundNo));
     }
 
-    /** 可退金额 = 该订单已收且尚未退的（基础费/押金/超时费）之和（已存在的退款单 WAIT/SUCCESS 均计入已退） */
+    /** 可退金额 = 该订单已收且尚未退的（基础费/超时费）之和（已存在的退款单 WAIT/SUCCESS 均计入已退） */
     public int refundableAmount(Long orderId) {
-        List<PaymentRecordEntity> records = paymentRecordDao.selectList(
-                new LambdaQueryWrapper<PaymentRecordEntity>().eq(PaymentRecordEntity::getOrderId, orderId));
+        if (orderId == null) {
+            return 0;
+        }
+        return accumulate(
+                paymentRecordDao.selectList(new LambdaQueryWrapper<PaymentRecordEntity>()
+                        .eq(PaymentRecordEntity::getOrderId, orderId)),
+                refundRecordDao.selectList(new LambdaQueryWrapper<RefundRecordEntity>()
+                        .eq(RefundRecordEntity::getOrderId, orderId)));
+    }
+
+    /**
+     * 批量可退金额（S8 批次31：订单列表页用）。
+     *
+     * <p>为什么必须有这个批量口：列表一行一个 {@link #refundableAmount(Long)} 就是 2×N 次查询（N+1）。
+     * 这里一次 {@code in} 取本页全部流水，再按订单内存聚合；<b>加减规则与单订单口径共用
+     * {@link #accumulate}</b>——两个入口一个口径，杜绝"列表显示可退 3 元、详情显示 5 元"。
+     * 返回的 map 对入参里每个非空 orderId 都有键（无可退流水则为 0），调用方不必再判空。
+     */
+    public Map<Long, Integer> refundableAmounts(java.util.Collection<Long> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            return java.util.Map.of();
+        }
+        List<Long> ids = orderIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return java.util.Map.of();
+        }
+        Map<Long, List<PaymentRecordEntity>> payments = new java.util.LinkedHashMap<>();
+        for (PaymentRecordEntity record : paymentRecordDao.selectList(
+                new LambdaQueryWrapper<PaymentRecordEntity>().in(PaymentRecordEntity::getOrderId, ids))) {
+            if (record.getOrderId() != null) {
+                payments.computeIfAbsent(record.getOrderId(), key -> new java.util.ArrayList<>()).add(record);
+            }
+        }
+        Map<Long, List<RefundRecordEntity>> refunds = new java.util.LinkedHashMap<>();
+        for (RefundRecordEntity record : refundRecordDao.selectList(
+                new LambdaQueryWrapper<RefundRecordEntity>().in(RefundRecordEntity::getOrderId, ids))) {
+            if (record.getOrderId() != null) {
+                refunds.computeIfAbsent(record.getOrderId(), key -> new java.util.ArrayList<>()).add(record);
+            }
+        }
+        Map<Long, Integer> result = new java.util.LinkedHashMap<>();
+        for (Long id : ids) {
+            result.put(id, accumulate(payments.getOrDefault(id, List.of()), refunds.getOrDefault(id, List.of())));
+        }
+        return result;
+    }
+
+    /** 可退口径的唯一实现：只认收费类型白名单 + 扣减已退，并夹到 0（负值不外泄）。 */
+    private int accumulate(List<PaymentRecordEntity> payments, List<RefundRecordEntity> refunds) {
         int sum = 0;
-        for (PaymentRecordEntity record : records) {
+        for (PaymentRecordEntity record : payments) {
             if (REFUNDABLE_TYPES.contains(record.getPaymentType())
                     && record.getAmountFen() != null && record.getAmountFen() > 0) {
                 sum += record.getAmountFen();
             }
         }
-        List<RefundRecordEntity> refunds = refundRecordDao.selectList(
-                new LambdaQueryWrapper<RefundRecordEntity>().eq(RefundRecordEntity::getOrderId, orderId));
         for (RefundRecordEntity refund : refunds) {
             if (refund.getAmountFen() != null && refund.getAmountFen() > 0) {
                 sum -= refund.getAmountFen();

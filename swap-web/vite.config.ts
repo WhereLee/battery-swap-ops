@@ -15,6 +15,18 @@ export default defineConfig({
       },
     },
   },
+  // `vite preview` serves the real build output (dist/) rather than source modules, so it
+  // is the closest local stand-in for the nginx deployment. It needs the same /api proxy:
+  // server.proxy does not apply to preview.
+  preview: {
+    port: 4173,
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:8400",
+        changeOrigin: true,
+      },
+    },
+  },
   build: {
     outDir: "dist",
     sourcemap: false,

@@ -102,7 +102,7 @@
 |---|---|---|
 | **29 后端地基** ✅ | `/admin/auth/me`；`ActionsSupport` + 覆盖性单测；工单数据范围修复（db/17 `station_id` + `DeviceOwnershipService` 解析 + `require()` 越域 403）；**7 个** `/admin/view/**`（VO + `@Operation`）；`PermissionCodeContractTest`；剧本 `_c32` | **已达成**：单测 473/473（+37）、`_c32` **54 PASS / 0 FAIL / 1 SKIP**（SKIP=外域工单详情，由 `WorkOrderScopeTest` 覆盖）、`clean verify` 绿（server 行覆盖 70.0%→**71.5%**）、OpenAPI **101→109 paths** |
 | **30 前端骨架** ✅ | `swap-web`（Vue 3 + Vite + TS + Element Plus + Pinia + Router + Axios）；Axios 拦截器/token/401/403/429；路由 `meta.codes` 校验 + `v-access`；布局；页面：登录、看板、告警中心（含建议单确认闭环）；`gen:api` + `type-check` + `build`；CI 新增 frontend job；**+ 分页存量缺陷修复（计划外）** | **已达成**：`type-check` 0 error、`build` EXIT=0（主入口 1117→**64 kB**）、`gen:api` 5884 行；后端 **480/480（Skipped 1→0**，`PermissionCodeContractTest` 转实跑）、server 行覆盖 **71.5% (5408/7560)**、`clean verify` BUILD SUCCESS；`_c33` **81 PASS / 0 FAIL / 1 SKIP**；浏览器实机（1440×900）登录→看板→告警翻页/改页长→建议单驳回→404→登出→守卫拦截，**控制台 error 0 条**。证据：`document/block-records/批次30-S8前端骨架与分页缺陷修复.md` |
-| **31 业务页与部署** | 工单列表+详情（五步动作链）、柜详情、订单查询/详情、结算详情；nginx 部署（dist 静态 + `/api` 反代）+ 云上验收（含 `db/17` 云上迁移）；`_c34` 页面级契约剧本 | 页面可用 + 云上映证 + 文档 + CI 绿 |
+| **31 业务页与部署** ✅ | 工单列表+详情（五步动作链）、柜列表+详情、订单列表+详情、结算列表+详情；nginx 部署（dist 静态 + `/api` 反代）+ `deploy-web.ps1`/`rollout-web.sh`；`_c34` 页面级契约 + `_c35` 真实浏览器验收 | **已达成**：`_c34` **59/59 PASS**、`_c35` **31/31 PASS**（控制台 error 0 / HTTP≥400 0）、单测 480→**494**、视图端点 7→**11**；范围补齐申报见批次31 记录 §一（柜/结算补列表，订单列表改 VO）；云上执行见 §六 |
 
 ## 7. 边界与不做（主动声明）
 

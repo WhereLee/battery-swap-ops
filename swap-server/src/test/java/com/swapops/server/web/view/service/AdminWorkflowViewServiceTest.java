@@ -72,13 +72,18 @@ class AdminWorkflowViewServiceTest {
     private RefundRecordDao refundRecordDao;
     @Mock
     private RefundService refundService;
+    @Mock
+    private com.swapops.server.order.service.SwapOrderService swapOrderService;
+    @Mock
+    private com.swapops.server.asset.service.AssetAdminService assetAdminService;
 
     private AdminWorkflowViewService service;
 
     @BeforeEach
     void setUp() {
         service = new AdminWorkflowViewService(workOrderService, alarmDao, cabinetDao, cellDao, batteryDao,
-                commandLogDao, swapOrderDao, paymentRecordDao, refundRecordDao, refundService);
+                commandLogDao, swapOrderDao, paymentRecordDao, refundRecordDao, refundService,
+                swapOrderService, assetAdminService);
     }
 
     @AfterEach
@@ -261,6 +266,71 @@ class AdminWorkflowViewServiceTest {
         assertThat(detail.refundableFen()).isEqualTo(300); // 不由前端按流水推算
         assertThat(detail.payments()).hasSize(1);
         assertThat(detail.refunds()).extracting(AdminViews.RefundVO::reason).containsExactly("ADMIN_REVERSAL");
+        // 已完成订单资金已结算入账 → 只能走冲正，不能走普通退款（通道二选一由服务端定）
+        assertThat(detail.allowedActions()).containsExactly("reversal");
+    }
+
+    @Test
+    @DisplayName("订单列表：柜号批量解析、可退金额取批量口径、进行中订单给 refund 而非 reversal")
+    void 订单列表映射与资金能力位() {
+        SwapOrderEntity opened = new SwapOrderEntity();
+        opened.setId(100L);
+        opened.setOrderNo("SWO-1");
+        opened.setOrderType("SWAP");
+        opened.setStatus(OrderStatus.OPENED.getCode());
+        opened.setStationId(7L);
+        opened.setCabinetId(11L);
+        opened.setFeeFen(300);
+        when(swapOrderService.pageOrders(1, 20, null, null, null))
+                .thenReturn(PageResult.of(List.of(opened), 1, 1, 20));
+        when(cabinetDao.selectBatchIds(any())).thenReturn(List.of(cabinet(7L)));
+        when(refundService.refundableAmounts(any())).thenReturn(java.util.Map.of(100L, 300));
+
+        AdminViews.OrderListItemVO vo = service.orderPage(1, 20, null, null, null).getList().get(0);
+
+        assertThat(vo.cabinetNo()).isEqualTo("SWAP-C-005"); // 一次 in 查询解析，不是 N+1
+        assertThat(vo.refundableFen()).isEqualTo(300);
+        assertThat(vo.statusDesc()).isEqualTo("OPENED");
+        assertThat(vo.allowedActions()).containsExactly("refund");
+    }
+
+    @Test
+    @DisplayName("订单列表：无可退金额则不给任何资金动作（能力位只放行，不自己算钱）")
+    void 订单列表无可退不给动作() {
+        SwapOrderEntity completed = new SwapOrderEntity();
+        completed.setId(101L);
+        completed.setOrderNo("SWO-2");
+        completed.setStatus(OrderStatus.COMPLETED.getCode());
+        when(swapOrderService.pageOrders(1, 20, null, null, null))
+                .thenReturn(PageResult.of(List.of(completed), 1, 1, 20));
+        when(refundService.refundableAmounts(any())).thenReturn(java.util.Map.of());
+
+        AdminViews.OrderListItemVO vo = service.orderPage(1, 20, null, null, null).getList().get(0);
+
+        assertThat(vo.refundableFen()).isZero();
+        assertThat(vo.allowedActions()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("订单列表视图不含内部列（idemKey/openCommandSeq 属实现细节，实体直出会外泄）")
+    void 订单列表视图不含内部列() {
+        List<String> components = Arrays.stream(AdminViews.OrderListItemVO.class.getRecordComponents())
+                .map(RecordComponent::getName).toList();
+
+        assertThat(components).doesNotContain("idemKey", "openCommandSeq", "userPlanId", "couponId");
+        assertThat(components).contains("orderNo", "cabinetNo", "refundableFen", "allowedActions");
+    }
+
+    @Test
+    @DisplayName("柜列表：复用资产域分页（含脱敏与站点范围），只做 Entity→VO 收口")
+    void 柜列表映射() {
+        when(assetAdminService.pageCabinets(1, 20, null, null, null))
+                .thenReturn(PageResult.of(List.of(cabinet(7L)), 1, 1, 20));
+
+        AdminViews.CabinetVO vo = service.cabinetPage(1, 20, null, null, null).getList().get(0);
+
+        assertThat(vo.cabinetNo()).isEqualTo("SWAP-C-005");
+        assertThat(vo.heartbeatAgeMs()).isNotNull().isPositive();
     }
 
     @Test

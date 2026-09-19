@@ -64,10 +64,14 @@ export function formatTurnover(rate: number | null | undefined): string {
   return rate.toFixed(2);
 }
 
-/** Money is integer fen end to end; never let a float touch it. */
+/**
+ * Money is integer fen end to end; never let a float touch it.
+ * The sign goes before the symbol ("-¥3.00") because the split ledger renders negative
+ * reversal lines and "¥-3.00" reads like a typo.
+ */
 export function formatFen(fen: number | null | undefined): string {
   if (fen === null || fen === undefined) {
     return "-";
   }
-  return `¥${(fen / 100).toFixed(2)}`;
+  return fen < 0 ? `-¥${(-fen / 100).toFixed(2)}` : `¥${(fen / 100).toFixed(2)}`;
 }

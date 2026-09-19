@@ -2,9 +2,13 @@ import { get, post, type PageResult } from "./http";
 import type {
   AlarmItemVO,
   CabinetDetailVO,
+  CabinetVO,
   DashboardVO,
   MeVO,
   OrderDetailVO,
+  OrderListItemVO,
+  SettlementDetailVO,
+  SettlementVO,
   SuggestionVO,
   WorkOrderDetailVO,
   WorkOrderVO,
@@ -54,6 +58,39 @@ export function fetchOrderDetail(orderNo: string): Promise<OrderDetailVO> {
   return get<OrderDetailVO>(`/admin/view/order/${encodeURIComponent(orderNo)}`);
 }
 
+export function fetchOrderPage(params: {
+  page?: number;
+  limit?: number;
+  userId?: number;
+  status?: number;
+  orderNo?: string;
+}): Promise<PageResult<OrderListItemVO>> {
+  return get<PageResult<OrderListItemVO>>("/admin/view/order", params);
+}
+
+export function fetchCabinetPage(params: {
+  page?: number;
+  limit?: number;
+  stationId?: number;
+  status?: number;
+  cabinetNo?: string;
+}): Promise<PageResult<CabinetVO>> {
+  return get<PageResult<CabinetVO>>("/admin/view/cabinet", params);
+}
+
+export function fetchSettlementPage(params: {
+  page?: number;
+  limit?: number;
+  agentId?: number;
+  status?: number;
+}): Promise<PageResult<SettlementVO>> {
+  return get<PageResult<SettlementVO>>("/admin/view/settlement", params);
+}
+
+export function fetchSettlementDetail(id: number): Promise<SettlementDetailVO> {
+  return get<SettlementDetailVO>(`/admin/view/settlement/${id}`);
+}
+
 // ---------- actions (domain endpoints; the view layer is read-only) ----------
 
 export function handleAlarm(id: number): Promise<unknown> {
@@ -82,4 +119,26 @@ export function workOrderStep(
   params?: { severity?: string; handlerId?: number; remark?: string },
 ): Promise<WorkOrderVO> {
   return post<WorkOrderVO>(`/admin/work-order/${id}/${action}`, undefined, params);
+}
+
+/**
+ * Settlement statement state machine. Action codes come from the backend
+ * (`SettlementVO.allowedActions`: confirm on GENERATED, paid on CONFIRMED, nothing on PAID).
+ */
+export function settlementStep(id: number, action: "confirm" | "paid"): Promise<SettlementVO> {
+  return post<SettlementVO>(`/admin/settlement/${id}/${action}`);
+}
+
+/**
+ * Money path: the backend decides which of the two is legal (see OrderDetailVO.allowedActions).
+ * `refund` is for in-flight orders, `reversal` for completed ones — never pick client-side.
+ */
+export function refundOrder(orderNo: string, amountFen?: number): Promise<unknown> {
+  return post<unknown>(`/admin/refund/${encodeURIComponent(orderNo)}`, undefined,
+    amountFen ? { amountFen } : undefined);
+}
+
+export function reversalOrder(orderNo: string, amountFen?: number): Promise<unknown> {
+  return post<unknown>(`/admin/refund/${encodeURIComponent(orderNo)}/reversal`, undefined,
+    amountFen ? { amountFen } : undefined);
 }

@@ -1,6 +1,8 @@
 package com.swapops.server.common.action;
 
+import com.swapops.contract.OrderStatus;
 import com.swapops.server.agent.enums.AgentActionStatus;
+import com.swapops.server.settlement.enums.SettlementStatus;
 import com.swapops.server.transfer.enums.TransferStatus;
 import com.swapops.server.workorder.enums.WorkOrderStatus;
 import org.junit.jupiter.api.DisplayName;
@@ -75,6 +77,38 @@ class ActionsSupportTest {
     }
 
     @Test
+    @DisplayName("结算单：GENERATED 可确认、CONFIRMED 可打款、PAID 终态无动作（打款不可逆）")
+    void 结算单映射() {
+        assertThat(ActionsSupport.settlement(SettlementStatus.GENERATED.getCode())).containsExactly("confirm");
+        assertThat(ActionsSupport.settlement(SettlementStatus.CONFIRMED.getCode())).containsExactly("paid");
+        assertThat(ActionsSupport.settlement(SettlementStatus.PAID.getCode())).isEmpty();
+        assertThat(ActionsSupport.settlement(null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("结算单覆盖性：每个状态都被显式登记（新增态时编译器迫使本处补分支）")
+    void 结算单覆盖性() {
+        for (SettlementStatus status : SettlementStatus.values()) {
+            List<String> actions = ActionsSupport.settlement(status.getCode());
+            if (status == SettlementStatus.PAID) {
+                assertThat(actions).as("终态 %s 不应有动作", status).isEmpty();
+            } else {
+                assertThat(actions).as("状态 %s 必须登记可执行动作", status).isNotEmpty();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("订单资金动作：可退额>0 才放行；已完成单给 reversal，其余给 refund（通道由服务端二选一）")
+    void 订单资金动作映射() {
+        assertThat(ActionsSupport.order(OrderStatus.COMPLETED.getCode(), 300)).containsExactly("reversal");
+        assertThat(ActionsSupport.order(OrderStatus.OPENED.getCode(), 300)).containsExactly("refund");
+        assertThat(ActionsSupport.order(OrderStatus.COMPLETED.getCode(), 0)).isEmpty();
+        assertThat(ActionsSupport.order(OrderStatus.OPENED.getCode(), 0)).isEmpty();
+        assertThat(ActionsSupport.order(null, 300)).isEmpty();
+    }
+
+    @Test
     @DisplayName("脏值：null / 未知 code 一律返回空且不抛（脏数据不得让页面崩）")
     void 脏值安全() {
         for (int code : new int[]{-1, 0, 999}) {
@@ -82,10 +116,13 @@ class ActionsSupportTest {
                 ActionsSupport.workOrder(code);
                 ActionsSupport.agentAction(code);
                 ActionsSupport.transfer(code);
+                ActionsSupport.settlement(code);
+                ActionsSupport.order(code, 100);
             }).doesNotThrowAnyException();
             assertThat(ActionsSupport.workOrder(code)).isEmpty();
             assertThat(ActionsSupport.agentAction(code)).isEmpty();
             assertThat(ActionsSupport.transfer(code)).isEmpty();
+            assertThat(ActionsSupport.settlement(code)).isEmpty();
         }
     }
 }

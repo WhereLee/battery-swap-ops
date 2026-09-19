@@ -4,6 +4,7 @@ import com.swapops.server.admin.annotation.DataFilter;
 import com.swapops.server.common.Result;
 import com.swapops.server.common.utils.PageResult;
 import com.swapops.server.web.view.AdminViews;
+import com.swapops.server.web.view.service.AdminFinanceViewService;
 import com.swapops.server.web.view.service.AdminObservationViewService;
 import com.swapops.server.web.view.service.AdminWorkflowViewService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -23,8 +24,8 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>数据范围纪律：标注 {@code @DataFilter} 的端点，其查询路径必然调用
  * {@code DataScopeSupport.applyStation/requireStationAccess}（切面做空转自检）。
- * 告警页与建议单页<b>有意不标注</b>——{@code alarm}/{@code agent_action} 两表无站点归属列
- * （系统级/跨站级资源，全局口径），标注只会让自检误报"空转"，见 S8 方案 §4.8。
+ * 告警页、建议单页与结算页<b>有意不标注</b>——{@code alarm}/{@code agent_action}/{@code settlement_statement}
+ * 三表无站点归属列（系统级/跨站级/代理维度资源，全局口径），标注只会让自检误报"空转"，见 S8 方案 §4.8。
  */
 @Tag(name = "管理端视图（BFF）", description = "面向页面的只读聚合 + 能力位；前端一次请求拿一页所需数据")
 @RestController
@@ -33,11 +34,14 @@ public class AdminViewController {
 
     private final AdminObservationViewService observationViewService;
     private final AdminWorkflowViewService workflowViewService;
+    private final AdminFinanceViewService financeViewService;
 
     public AdminViewController(AdminObservationViewService observationViewService,
-                               AdminWorkflowViewService workflowViewService) {
+                               AdminWorkflowViewService workflowViewService,
+                               AdminFinanceViewService financeViewService) {
         this.observationViewService = observationViewService;
         this.workflowViewService = workflowViewService;
+        this.financeViewService = financeViewService;
     }
 
     @Operation(summary = "看板视图（满电保有率/站点可用率/周转率）")
@@ -98,5 +102,46 @@ public class AdminViewController {
     @DataFilter("view-order-detail")
     public Result<AdminViews.OrderDetailVO> orderDetail(@PathVariable String orderNo) {
         return Result.ok(workflowViewService.orderDetail(orderNo));
+    }
+
+    @Operation(summary = "订单分页视图（柜号/可退金额/资金动作能力位，不含内部列）")
+    @GetMapping("/order")
+        @PreAuthorize("hasAuthority('admin:order:read')")
+    @DataFilter("view-order-page")
+    public Result<PageResult<AdminViews.OrderListItemVO>> orderPage(@RequestParam(required = false) Integer page,
+                                                                    @RequestParam(required = false) Integer limit,
+                                                                    @RequestParam(required = false) Long userId,
+                                                                    @RequestParam(required = false) Integer status,
+                                                                    @RequestParam(required = false) String orderNo) {
+        return Result.ok(workflowViewService.orderPage(page, limit, userId, status, orderNo));
+    }
+
+    @Operation(summary = "柜分页视图（柜列表，密钥脱敏 + 站点范围过滤）")
+    @GetMapping("/cabinet")
+        @PreAuthorize("hasAuthority('admin:asset:read')")
+    @DataFilter("view-cabinet-page")
+    public Result<PageResult<AdminViews.CabinetVO>> cabinetPage(@RequestParam(required = false) Integer page,
+                                                                @RequestParam(required = false) Integer limit,
+                                                                @RequestParam(required = false) Long stationId,
+                                                                @RequestParam(required = false) Integer status,
+                                                                @RequestParam(required = false) String cabinetNo) {
+        return Result.ok(workflowViewService.cabinetPage(page, limit, stationId, status, cabinetNo));
+    }
+
+    @Operation(summary = "结算单分页视图（带确认/打款能力位）")
+    @GetMapping("/settlement")
+        @PreAuthorize("hasAuthority('admin:settlement:read')")
+    public Result<PageResult<AdminViews.SettlementVO>> settlementPage(@RequestParam(required = false) Integer page,
+                                                                      @RequestParam(required = false) Integer limit,
+                                                                      @RequestParam(required = false) Long agentId,
+                                                                      @RequestParam(required = false) Integer status) {
+        return Result.ok(financeViewService.settlementPage(page, limit, agentId, status));
+    }
+
+    @Operation(summary = "结算单详情视图（单头 + 分账流水）")
+    @GetMapping("/settlement/{id}")
+        @PreAuthorize("hasAuthority('admin:settlement:read')")
+    public Result<AdminViews.SettlementDetailVO> settlementDetail(@PathVariable Long id) {
+        return Result.ok(financeViewService.settlementDetail(id));
     }
 }

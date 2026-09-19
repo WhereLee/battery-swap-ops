@@ -233,4 +233,38 @@ class RefundServiceTest {
         record.setAmountFen(amountFen);
         return record;
     }
+
+    @Test
+    @DisplayName("批量可退（S8 批次31 列表用）：按订单分组、口径与单订单一致、入参每个 id 都有键")
+    void 批量可退金额() {
+        when(paymentRecordDao.selectList(any())).thenReturn(List.of(
+                payment(7L, 99L, PaymentType.BALANCE_FEE, 300),
+                payment(7L, 99L, PaymentType.DEPOSIT, 9900),
+                payment(7L, 100L, PaymentType.OVERDUE_FEE, 200),
+                payment(7L, 101L, PaymentType.DEPOSIT, 9900)));
+        when(refundRecordDao.selectList(any())).thenReturn(List.of(refund(99L, 100)));
+
+        java.util.Map<Long, Integer> amounts = service.refundableAmounts(List.of(99L, 100L, 101L));
+
+        assertThat(amounts).containsEntry(99L, 200);  // 300 - 100（押金不计入）
+        assertThat(amounts).containsEntry(100L, 200); // 仅超时费
+        assertThat(amounts).containsEntry(101L, 0);   // 仅押金 → 0，仍然有键
+    }
+
+    @Test
+    @DisplayName("批量可退：空入参/全 null 不查库，直接返回空 map（列表页无行时不产生 SQL）")
+    void 批量可退空入参() {
+        assertThat(service.refundableAmounts(List.of())).isEmpty();
+        assertThat(service.refundableAmounts(java.util.Arrays.asList(null, null))).isEmpty();
+        assertThat(service.refundableAmounts(null)).isEmpty();
+        verifyNoInteractions(paymentRecordDao, refundRecordDao);
+    }
+
+    private RefundRecordEntity refund(Long orderId, int amountFen) {
+        RefundRecordEntity record = new RefundRecordEntity();
+        record.setOrderId(orderId);
+        record.setAmountFen(amountFen);
+        record.setStatus(RefundStatus.SUCCESS.name());
+        return record;
+    }
 }

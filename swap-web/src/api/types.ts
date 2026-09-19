@@ -193,6 +193,74 @@ export interface OrderDetailVO {
   payments: PaymentVO[];
   refunds: RefundVO[];
   refundableFen: number;
+  /**
+   * Money-path capability bits computed server-side: "refund" for an in-flight order,
+   * "reversal" for a completed one (its money is already settled and split, so the only
+   * legal path is a reversing ledger entry). The UI must not pick between the two itself.
+   */
+  allowedActions: string[];
+}
+
+/** Row shape of GET /admin/view/order — the list never carries internal columns (idemKey etc.). */
+export interface OrderListItemVO {
+  orderNo: string;
+  orderType: string;
+  userId: number;
+  stationId: number | null;
+  cabinetNo: string | null;
+  status: number;
+  statusDesc: string;
+  feeFen: number | null;
+  discountFen: number | null;
+  payType: string | null;
+  createTime: number;
+  completeTime: number | null;
+  refundableFen: number;
+  allowedActions: string[];
+}
+
+export interface SettlementVO {
+  id: number;
+  statementNo: string;
+  agentId: number | null;
+  agentName: string | null;
+  periodStart: number;
+  periodEnd: number;
+  orderCount: number | null;
+  baseAmountFen: number | null;
+  agentAmountFen: number | null;
+  platformAmountFen: number | null;
+  subsidyFen: number | null;
+  status: number;
+  generatedBy: string | null;
+  confirmedBy: string | null;
+  paidBy: string | null;
+  generatedTime: number | null;
+  confirmedTime: number | null;
+  paidTime: number | null;
+  remark: string | null;
+  createTime: number | null;
+  updateTime: number | null;
+  allowedActions: string[];
+}
+
+/** One append-only split-ledger line; REFUND_REVERSAL lines are negative. */
+export interface SettlementLineVO {
+  id: number;
+  orderNo: string;
+  stationId: number | null;
+  eventType: string;
+  baseType: string;
+  baseAmountFen: number | null;
+  agentShareFen: number | null;
+  platformShareFen: number | null;
+  subsidyFen: number | null;
+  createTime: number;
+}
+
+export interface SettlementDetailVO {
+  statement: SettlementVO;
+  lines: SettlementLineVO[];
 }
 
 /** Human-readable labels shared by pages; the codes themselves come from the backend. */
@@ -227,6 +295,81 @@ export const WORK_ORDER_ACTION_LABEL: Record<string, string> = {
   start: "开始处置",
   verify: "验收",
   close: "关闭",
+};
+
+/** OrderStatus codes (swap-contract OrderStatus). */
+export const ORDER_STATUS: Record<number, string> = {
+  1: "待开仓",
+  2: "已开仓",
+  3: "已取待还",
+  4: "逾期占用",
+  5: "已完成",
+  6: "已取消",
+  7: "超时关闭",
+  8: "异常",
+};
+
+/** SettlementStatus codes (settlement/enums/SettlementStatus). */
+export const SETTLEMENT_STATUS: Record<number, string> = {
+  1: "已生成",
+  2: "已确认",
+  3: "已打款",
+};
+
+export const SETTLEMENT_ACTION_LABEL: Record<string, string> = {
+  confirm: "确认结算单",
+  paid: "标记已打款",
+};
+
+/** Order money-path action codes returned in OrderDetailVO.allowedActions. */
+export const ORDER_ACTION_LABEL: Record<string, string> = {
+  refund: "人工退款",
+  reversal: "冲正退款",
+};
+
+/** CellStatus codes (swap-contract CellStatus). */
+export const CELL_STATUS: Record<number, string> = {
+  1: "空闲",
+  2: "占用",
+  3: "故障",
+  4: "停用",
+};
+
+/** CommandStatus codes (swap-contract CommandStatus) — read-only command ledger. */
+export const COMMAND_STATUS: Record<number, string> = {
+  1: "待到位",
+  2: "已销账",
+  3: "下发失败",
+  4: "重试超限",
+  5: "已被取代",
+  6: "设备故障中断",
+};
+
+/** Split-ledger event types (settlement/service/SettlementService). */
+export const SETTLEMENT_EVENT_TYPE: Record<string, string> = {
+  ORDER: "订单分账",
+  REFUND_REVERSAL: "退款冲正",
+  ARREARS_SETTLE: "欠费补缴",
+};
+
+/** Split base types: how the split base was derived (cash / plan / reversal...). */
+export const SETTLEMENT_BASE_TYPE: Record<string, string> = {
+  CASH: "实收+券抵扣",
+  PLAN_TIMES: "次卡折算",
+  PLAN_MONTHLY: "月卡（不计次）",
+  REVERSAL: "冲正",
+  ARREARS: "补缴",
+};
+
+/**
+ * refund_record.reason values actually written by the backend (three call sites:
+ * AdminRefundController#refund, AdminRefundController#reversal, RefundCompensationTask).
+ * Deposit returns do NOT go through refund_record — they are direct wallet credits.
+ */
+export const REFUND_REASON: Record<string, string> = {
+  ADMIN_MANUAL: "人工退款",
+  ADMIN_REVERSAL: "冲正退款",
+  ORDER_EXCEPTION: "订单异常自动退",
 };
 
 /**

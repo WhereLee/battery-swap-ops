@@ -86,9 +86,11 @@ public final class AdminViews {
     }
 
     /**
-     * 订单详情：基础字段 + 时间线 + 支付/退款流水 + 可退金额。
+     * 订单详情：基础字段 + 时间线 + 支付/退款流水 + 可退金额 + 资金动作能力位。
      * {@code refundableFen} 由资金口径给出，前端据此决定是否显示退款入口（<b>不由前端推算可退额</b>——
      * 押金双退事故的根因就是"可退额度由流水反推"，口径必须留在服务端）。
+     * {@code allowedActions} 同理：{@code refund}（普通退款）与 {@code reversal}（已完成单冲正）
+     * 二选一由服务端判定，前端只判断"这个码在不在列表里"。
      */
     public record OrderDetailVO(String orderNo, String orderType, Long userId, Long stationId,
                                 String cabinetNo, Integer cellNo, String takeBatteryNo, String returnBatteryNo,
@@ -96,6 +98,40 @@ public final class AdminViews {
                                 String payType, Long preemptExpireTime, Long createTime, Long openTime,
                                 Long takeTime, Long returnTime, Long completeTime, Long cancelTime,
                                 String closeReason, List<PaymentVO> payments, List<RefundVO> refunds,
-                                int refundableFen) {
+                                int refundableFen, List<String> allowedActions) {
+    }
+
+    /**
+     * 订单列表条目：柜号由视图层批量解析（一次 in 查询，不做 N+1）；
+     * <b>不含</b> {@code idemKey}／{@code openCommandSeq}／{@code userPlanId} 等内部列——
+     * 这正是列表也走视图层而不是 Entity 直出的理由（S8 方案 §4.2）。
+     */
+    public record OrderListItemVO(String orderNo, String orderType, Long userId, Long stationId, String cabinetNo,
+                                  Integer status, String statusDesc, Integer feeFen, Integer discountFen,
+                                  String payType, Long createTime, Long completeTime,
+                                  int refundableFen, List<String> allowedActions) {
+    }
+
+    /**
+     * 结算单条目（S7 WP-B）：金额一律整数分；{@code agentName} 由视图层批量解析（列表不 N+1）。
+     * 结算维度是<b>代理商</b>而非站点，属全局口径资源，故不打 {@code @DataFilter}
+     * （与 alarm/agent_action 同处理，见 S8 方案 §4.8）。
+     */
+    public record SettlementVO(Long id, String statementNo, Long agentId, String agentName,
+                               Long periodStart, Long periodEnd, Integer orderCount,
+                               Integer baseAmountFen, Integer agentAmountFen, Integer platformAmountFen,
+                               Integer subsidyFen, Integer status, String generatedBy, String confirmedBy,
+                               String paidBy, Long generatedTime, Long confirmedTime, Long paidTime,
+                               String remark, Long createTime, Long updateTime, List<String> allowedActions) {
+    }
+
+    /** 分账流水行（append-only；{@code REFUND_REVERSAL} 为负向行，金额字段可负）。 */
+    public record SettlementLineVO(Long id, String orderNo, Long stationId, String eventType, String baseType,
+                                   Integer baseAmountFen, Integer agentShareFen, Integer platformShareFen,
+                                   Integer subsidyFen, Long createTime) {
+    }
+
+    /** 结算单详情：单头 + 挂在该单下的全部分账流水（原本前端要串 2 个接口且都是 Map/Entity）。 */
+    public record SettlementDetailVO(SettlementVO statement, List<SettlementLineVO> lines) {
     }
 }

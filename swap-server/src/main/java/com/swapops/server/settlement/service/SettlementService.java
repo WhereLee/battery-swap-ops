@@ -2,8 +2,12 @@ package com.swapops.server.settlement.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.swapops.server.common.RRException;
 import com.swapops.server.common.id.SnowflakeIdGenerator;
+import com.swapops.server.common.utils.PageParams;
+import com.swapops.server.common.utils.PageResult;
 import com.swapops.server.order.entity.RefundRecordEntity;
 import com.swapops.server.order.entity.SwapOrderEntity;
 import com.swapops.server.settlement.dao.AgentDao;
@@ -299,6 +303,22 @@ public class SettlementService {
                 .last("LIMIT 200"));
     }
 
+    /**
+     * 结算单分页（S8 批次31 管理台列表）：与 {@link #listStatements} 同序（id 倒序），
+     * 但走真实分页（COUNT + LIMIT 由 PaginationInnerInterceptor 注入）——
+     * 列表页不能再用"拉 200 条截断"的口径冒充分页（批次30 的假分页缺陷教训）。
+     */
+    public com.swapops.server.common.utils.PageResult<SettlementStatementEntity> pageStatements(
+            Integer page, Integer limit, Long agentId, Integer status) {
+        IPage<SettlementStatementEntity> result = statementDao.selectPage(
+                new Page<>(PageParams.page(page), PageParams.limit(limit)),
+                new LambdaQueryWrapper<SettlementStatementEntity>()
+                        .eq(agentId != null, SettlementStatementEntity::getAgentId, agentId)
+                        .eq(status != null, SettlementStatementEntity::getStatus, status)
+                        .orderByDesc(SettlementStatementEntity::getId));
+        return PageResult.of(result);
+    }
+
     public Map<String, Object> statementDetail(Long id) {
         SettlementStatementEntity statement = requireStatement(id);
         List<OrderSettlementEntity> lines = orderSettlementDao.selectList(
@@ -377,8 +397,13 @@ public class SettlementService {
         bucket.merge(key, value, (a, b) -> (Integer) a + (Integer) b);
     }
 
+    /** 结算单按 id 读取（S8 批次31 视图层用）：不存在返回 null，由调用方决定是 400 还是空视图。 */
+    public SettlementStatementEntity statementById(Long id) {
+        return id == null ? null : statementDao.selectById(id);
+    }
+
     private SettlementStatementEntity requireStatement(Long id) {
-        SettlementStatementEntity statement = statementDao.selectById(id);
+        SettlementStatementEntity statement = statementById(id);
         if (statement == null) {
             throw new RRException("结算单不存在: " + id);
         }
