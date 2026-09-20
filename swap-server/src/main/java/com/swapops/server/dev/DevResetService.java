@@ -107,6 +107,12 @@ public class DevResetService {
         // ---- 阶段一：清场（收敛的前提——先统一脱仓/清引用，再统一绑定） ----
         // ① 全部电池脱仓、清持有人、回充电态（种子电池随后回满电位）
         int detached = batteryDao.update(null, new LambdaUpdateWrapper<BatteryEntity>()
+                // 批次43 补（实机探针发现）：这里**必须**有恒真条件。批次30 给 MyBatis-Plus 挂了
+                // BlockAttackInnerInterceptor（防误操作全表 UPDATE/DELETE），而本语句原先只有 SET、
+                // 没有 WHERE ⇒ 每次 /dev/device/reset 都抛 "Prohibition of table update operation" → 500。
+                // 同文件其它全表清理（欠费/券/站内信/结算单）都写了 `.gt(id, 0)`，唯独这条漏了——
+                // 也就是说"加了拦截器"这件事当年没有回归到这条路径上。
+                .gt(BatteryEntity::getId, 0L)
                 .set(BatteryEntity::getCellId, null)
                 .set(BatteryEntity::getHolderUserId, null)
                 .set(BatteryEntity::getStatus, BatteryStatus.CHARGING.getCode())
@@ -228,6 +234,8 @@ public class DevResetService {
 
     private int resetWallets(long now) {
         int rows = walletDao.update(null, new LambdaUpdateWrapper<WalletEntity>()
+                // 同 ①：全表重置钱包也要有恒真条件，否则被 BlockAttackInnerInterceptor 拦下（批次43 补实测）。
+                .gt(WalletEntity::getUserId, 0L)
                 .set(WalletEntity::getBalanceFen, 20000)
                 .set(WalletEntity::getDepositFen, 9900)
                 .set(WalletEntity::getUpdateTime, now));
@@ -245,6 +253,8 @@ public class DevResetService {
 
     private int resetPlans(long now) {
         return userPlanDao.update(null, new LambdaUpdateWrapper<UserPlanEntity>()
+                // 同 ①：全表重置套餐也要恒真条件（批次43 补，全仓扫描后确认这是最后一处无谓词语句）。
+                .gt(UserPlanEntity::getId, 0L)
                 .set(UserPlanEntity::getRemainingTimes, 5)
                 .set(UserPlanEntity::getStatus, UserPlanStatus.ACTIVE.getCode())
                 .set(UserPlanEntity::getEndTime, now + 365L * 24 * 3600 * 1000)

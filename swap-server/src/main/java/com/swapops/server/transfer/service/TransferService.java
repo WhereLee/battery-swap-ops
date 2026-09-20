@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.swapops.contract.BatteryStatus;
 import com.swapops.contract.CellStatus;
+import com.swapops.server.admin.data.DataScopeGuard;
+import com.swapops.server.admin.data.DataScopeSupport;
 import com.swapops.server.asset.dao.StationDao;
 import com.swapops.server.asset.entity.StationEntity;
 import com.swapops.server.common.RRException;
@@ -35,6 +37,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 站间调拨（S4.2，启发式）：供需建议（就近配对）→ 任务状态机 → 逐电池出/入库台账跟踪。
@@ -74,6 +77,16 @@ public class TransferService {
     // ---------- 供需建议（只读，不落库） ----------
 
     public List<Map<String, Object>> recommend() {
+        // 建议列表的范围口径（F-01）：**缺电侧（调入站）必须在调用者范围内**——站点范围的站长
+        // 只关心"我这个站缺多少、可以从哪调"；候选调出站允许在范围外（调拨的意义就是从别站调电），
+        // 因此这里只暴露别站的**满电数量**这一个聚合值，不暴露任何明细。范围为空 ⇒ 空列表。
+        Set<Long> stationIds = DataScopeSupport.stationIdsOrNull();
+        if (stationIds != null) {
+            DataScopeGuard.markApplied();
+            if (stationIds.isEmpty()) {
+                return List.of();
+            }
+        }
         List<StationEntity> stations = stationDao.selectList(new LambdaQueryWrapper<StationEntity>()
                 .eq(StationEntity::getStatus, 1).orderByAsc(StationEntity::getId));
         List<StationAvail> avails = new ArrayList<>();
@@ -160,6 +173,10 @@ public class TransferService {
         if (count == null || count < 1 || count > properties.getMaxPerTask()) {
             throw new RRException("调拨数量需在 1~" + properties.getMaxPerTask() + " 之间");
         }
+        // 批次43 补（独立审计 F-01，P0）：调拨模块此前完全没有数据范围校验，站点只从请求参数取，
+        // 站点范围身份可以对任意站点建单并把电池物理取走。规则：**调出站必须在调用者范围内**
+        // （电池是从这里拿走的），调入站允许在范围外——这正是调拨的意义（本站缺电，从别站调）。
+        DataScopeSupport.requireStationAccess(fromStationId);
         StationEntity from = requireActiveStation(fromStationId);
         requireActiveStation(toStationId);
 
@@ -239,6 +256,8 @@ public class TransferService {
     @Transactional
     public Map<String, Object> out(Long id, String batteryNo, String operator) {
         TransferTaskEntity task = require(id);
+        // 出库是"把电池从调出站仓里搬走"的物理动作 ⇒ 必须对**调出站**有范围（F-01）。
+        DataScopeSupport.requireStationAccess(task.getFromStation());
         TransferStatus status = TransferStatus.fromCode(task.getStatus());
         if (status != TransferStatus.APPROVED && status != TransferStatus.EXECUTING) {
             throw new RRException("任务未审批或已结束，不能出库: " + status);
@@ -289,6 +308,8 @@ public class TransferService {
     @Transactional
     public Map<String, Object> in(Long id, String batteryNo, Long cellId, String operator) {
         TransferTaskEntity task = require(id);
+        // 入库是"把电池放进调入站仓里"的物理动作 ⇒ 对**调入站**校验（F-01）。
+        DataScopeSupport.requireStationAccess(task.getToStation());
         if (TransferStatus.fromCode(task.getStatus()) != TransferStatus.EXECUTING) {
             throw new RRException("任务未处于执行中，不能入库");
         }
@@ -340,11 +361,23 @@ public class TransferService {
     }
 
     public PageResult<TransferTaskEntity> page(Integer page, Integer limit, Integer status) {
+        LambdaQueryWrapper<TransferTaskEntity> wrapper = new LambdaQueryWrapper<TransferTaskEntity>()
+                .eq(status != null, TransferTaskEntity::getStatus, status)
+                .orderByDesc(TransferTaskEntity::getCreateTime);
+        // 列表范围（F-01）：调拨任务跨两个站，调用者在**任一侧**范围内即可见；范围为空 = 看不到任何任务。
+        Set<Long> stationIds = DataScopeSupport.stationIdsOrNull();
+        if (stationIds != null) {
+            DataScopeGuard.markApplied();
+            if (stationIds.isEmpty()) {
+                wrapper.eq(TransferTaskEntity::getId, -1L);
+            } else {
+                wrapper.and(w -> w.in(TransferTaskEntity::getFromStation, stationIds)
+                        .or()
+                        .in(TransferTaskEntity::getToStation, stationIds));
+            }
+        }
         IPage<TransferTaskEntity> result = taskDao.selectPage(
-                new Page<>(PageParams.page(page), PageParams.limit(limit)),
-                new LambdaQueryWrapper<TransferTaskEntity>()
-                        .eq(status != null, TransferTaskEntity::getStatus, status)
-                        .orderByDesc(TransferTaskEntity::getCreateTime));
+                new Page<>(PageParams.page(page), PageParams.limit(limit)), wrapper);
         return PageResult.of(result);
     }
 
@@ -365,7 +398,27 @@ public class TransferService {
         if (task == null) {
             throw new RRException("调拨任务不存在: " + id);
         }
+        requireTaskParticipant(task);
         return task;
+    }
+
+    /**
+     * 参与者可见性（批次43 补 F-01）：任务跨调出/调入两站，调用者只要在任一侧范围内即可读/审批/取消。
+     * 物理动作（out/in）另有更严的"单侧"校验，见各自方法。
+     *
+     * <p>口径说明：**谁有权审批/取消**是业务口径（这里按"参与方即可"），已在批次43 记录里如实申报，
+     * 如需收紧为"仅调出站"是一行改动。
+     */
+    private void requireTaskParticipant(TransferTaskEntity task) {
+        Set<Long> stationIds = DataScopeSupport.stationIdsOrNull();
+        if (stationIds == null) {
+            return;
+        }
+        DataScopeGuard.markApplied();
+        if (stationIds.contains(task.getFromStation()) || stationIds.contains(task.getToStation())) {
+            return;
+        }
+        throw new RRException(403, "无权访问该调拨任务（数据范围受限）: " + task.getTaskNo());
     }
 
     private TransferTaskItemEntity requireItem(String taskNo, String batteryNo) {

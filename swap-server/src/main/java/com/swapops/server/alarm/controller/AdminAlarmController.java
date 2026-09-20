@@ -39,7 +39,10 @@ public class AdminAlarmController {
         @PreAuthorize("hasAuthority('admin:alarm:read')")
     public Result<List<Map<String, Object>>> list(@RequestParam(required = false) Integer handled,
                                                   @RequestParam(required = false, defaultValue = "100") Integer limit) {
-        List<AlarmEntity> alarms = alarmService.list(handled == null ? 0 : handled, limit);
+        // 批次43 补（独立审计 F-12）：limit 此前只有上界没有下界，limit=-1 会拼出 `LIMIT -1`
+        // → SQL 语法错 → 500（不是注入，Integer 转换挡住了注入，但把参数错误暴露成了服务端错误）。
+        int bounded = limit == null ? 100 : Math.max(1, Math.min(limit, 500));
+        List<AlarmEntity> alarms = alarmService.list(handled == null ? 0 : handled, bounded);
         return Result.ok(alarms.stream().map(this::view).toList());
     }
 

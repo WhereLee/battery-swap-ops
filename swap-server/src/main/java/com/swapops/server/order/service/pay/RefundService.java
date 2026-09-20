@@ -8,6 +8,7 @@ import com.swapops.server.common.retry.DeadlockRetryExecutor;
 import com.swapops.server.order.dao.RefundRecordDao;
 import com.swapops.server.order.entity.PaymentRecordEntity;
 import com.swapops.server.order.entity.RefundRecordEntity;
+import com.swapops.server.order.entity.SwapOrderEntity;
 import com.swapops.server.order.enums.PaymentType;
 import com.swapops.server.order.enums.RefundStatus;
 import com.swapops.server.order.service.PaymentRecordService;
@@ -85,29 +86,55 @@ public class RefundService {
      * 发起退款（幂等）：同 (orderId, reason) 重复调用直接返回既有记录，不二次入账。
      * 金额上限=可退金额（已收未退）；超额直接拒绝（防人工超额/双通道双退）。
      * 执行异常不抛出：记日志 + 延迟重投（补偿任务/人工可反复触达）。
+     *
+     * <p><b>批次43 补（独立审计 P1-1，两个独立审查者都命中）</b>：可退上限原来是<b>事务外的
+     * "先查后插"聚合读</b>，幂等闸只按 {@code (order_id, reason)}。于是"补偿任务 ORDER_EXCEPTION"
+     * 与"管理端 ADMIN_MANUAL"并发打同一张异常单时，两者都读到可退 300、reason 不同不撞唯一键，
+     * 各自入账 ⇒ <b>收 300 退 600</b>。现在把"取号 + 上限校验 + 落单"整段放进一个事务，
+     * 并且<b>先对订单行做当前读（FOR UPDATE）</b>作为串行化点：
+     * <ul>
+     *   <li>同一订单的并发退款在此串行，后者拿到锁后重新计算可退额，超额被拒；</li>
+     *   <li>锁读是事务里第一条语句，因此后续"可退额"的一致性读读视图建立在<b>拿到锁之后</b>，
+     *       能看到前一个事务已提交的退款行（REPEATABLE READ 下这一点是必须的，否则重算仍读旧快照）。</li>
+     * </ul>
+     * 订单行必然存在（退款以订单为前提），所以锁点不会落空；无支付流水的订单可退额为 0，任何正数金额都会被拒。
      */
     public RefundRecordEntity refund(Long orderId, Long userId, int amountFen, String reason) {
-        int refundable = refundableAmount(orderId);
-        if (amountFen > refundable) {
-            throw new com.swapops.server.common.RRException(
-                    "退款金额超过可退金额（可退 " + refundable + " 分）: " + amountFen);
-        }
         // 死锁重试（插入/流水更新可能与其他补偿并发触发 1213；动作本身幂等，重试安全）
         return deadlockRetryExecutor.execute(() -> doRefund(orderId, userId, amountFen, reason));
     }
 
     private RefundRecordEntity doRefund(Long orderId, Long userId, int amountFen, String reason) {
+        // 取号/校验/落单同事务，入口处对订单行加锁（见方法注释：这是并发双退的串行化点）。
+        RefundRecordEntity record = transactionTemplate.execute(status -> insertRefundUnderLock(orderId, userId, amountFen, reason));
+        if (record == null) {
+            throw new com.swapops.server.common.RRException("退款单落库失败: orderId=" + orderId);
+        }
+        if (RefundStatus.WAIT.name().equals(record.getStatus())) {
+            log.warn("退款单处于 WAIT，重驱动执行 refundNo={} orderId={}", record.getRefundNo(), orderId);
+            applyAndScheduleRetryOnFailure(record);
+            return refundRecordDao.selectById(record.getId());
+        }
+        return record;
+    }
+
+    /**
+     * 事务内：锁订单行 → 幂等命中即返回 → 重算可退额并校验 → 落 WAIT 单。
+     * 并发同 (orderId, reason) 也会被订单行锁串行，唯一键只作为最后一道兜底。
+     */
+    private RefundRecordEntity insertRefundUnderLock(Long orderId, Long userId, int amountFen, String reason) {
+        lockOrderRow(orderId);
         RefundRecordEntity existing = findByOrderReason(orderId, reason);
         if (existing != null) {
             // 命中既有单不再直接返回：WAIT 表示上一轮"资金动作 + CAS"没有整段落定（进程被杀、
             // 死锁、下游异常），单子还悬着——用户没拿到钱而 refundableAmount 已把它算作"已退"。
-            // 这里显式重驱动（apply 幂等且同事务），重试耗尽/管理端重复发起都能自愈。
-            if (RefundStatus.WAIT.name().equals(existing.getStatus())) {
-                log.warn("退款单处于 WAIT，重驱动执行 refundNo={} orderId={}", existing.getRefundNo(), orderId);
-                applyAndScheduleRetryOnFailure(existing);
-                return refundRecordDao.selectById(existing.getId());
-            }
+            // 这里交给调用方显式重驱动（apply 幂等且同事务），重试耗尽/管理端重复发起都能自愈。
             return existing;
+        }
+        int refundable = refundableAmount(orderId);
+        if (amountFen > refundable) {
+            throw new com.swapops.server.common.RRException(
+                    "退款金额超过可退金额（可退 " + refundable + " 分）: " + amountFen);
         }
         long now = System.currentTimeMillis();
         RefundRecordEntity record = new RefundRecordEntity();
@@ -125,10 +152,16 @@ public class RefundService {
         try {
             refundRecordDao.insert(record);
         } catch (DuplicateKeyException e) {
-            return findByOrderReason(orderId, reason); // 并发重复：幂等返回
+            return findByOrderReason(orderId, reason); // 兜底：理论上已被订单行锁挡住
         }
-        applyAndScheduleRetryOnFailure(record);
-        return refundRecordDao.selectById(record.getId());
+        return record;
+    }
+
+    /** 订单行当前读（FOR UPDATE）：同一订单的退款串行化点。 */
+    private void lockOrderRow(Long orderId) {
+        swapOrderDao.selectOne(new LambdaQueryWrapper<SwapOrderEntity>()
+                .eq(SwapOrderEntity::getId, orderId)
+                .last("FOR UPDATE"));
     }
 
     /** 执行退款，失败不抛出：记日志 + 延迟重投（补偿任务/人工可反复触达，单子停在 WAIT 可自愈）。 */

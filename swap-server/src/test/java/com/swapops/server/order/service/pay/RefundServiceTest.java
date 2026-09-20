@@ -33,8 +33,10 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -246,6 +248,37 @@ class RefundServiceTest {
     // ---------- 批次32：资金动作的事务边界（P0 缺陷修复的回归网） ----------
 
     @Test
+    @DisplayName("批次43 补：落单前必须对订单行加锁（FOR UPDATE），且加锁早于插入 —— 并发双退的串行化点")
+    void 落单前锁订单行() {
+        // 纯 Mockito 测试没有 MyBatis 启动流程，而锁订单行用的是 lambda wrapper（需要实体元数据缓存）。
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+                new org.apache.ibatis.builder.MapperBuilderAssistant(
+                        new com.baomidou.mybatisplus.core.MybatisConfiguration(), ""),
+                com.swapops.server.order.entity.SwapOrderEntity.class);
+        when(refundRecordDao.selectOne(any())).thenReturn(null);
+        when(refundRecordDao.insert(any(RefundRecordEntity.class))).thenAnswer(inv -> {
+            inv.getArgument(0, RefundRecordEntity.class).setId(5L);
+            return 1;
+        });
+        when(refundRecordDao.selectById(anyLong())).thenReturn(record(RefundStatus.SUCCESS.name(), 300));
+
+        service.refund(99L, 7L, 300, "ADMIN_MANUAL");
+
+        // 结构断言：两个不同 reason 的并发退款要能被串行化，必须有一个"订单行当前读"，
+        // 且它发生在"重算可退额 + 插入退款单"之前（顺序反了就退化成原来的先查后插）。
+        @SuppressWarnings("unchecked")
+        org.mockito.ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<
+                com.swapops.server.order.entity.SwapOrderEntity>> lockCaptor =
+                org.mockito.ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class);
+        verify(swapOrderDao).selectOne(lockCaptor.capture());
+        assertThat(lockCaptor.getValue().getSqlSegment()).contains("FOR UPDATE");
+
+        org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(swapOrderDao, refundRecordDao);
+        inOrder.verify(swapOrderDao).selectOne(any());
+        inOrder.verify(refundRecordDao).insert(any(RefundRecordEntity.class));
+    }
+
+    @Test
     @DisplayName("事务边界：退款成功走提交（不是自动提交的各写各的）")
     void 退款成功提交事务() {
         when(refundRecordDao.selectOne(any())).thenReturn(null);
@@ -258,8 +291,10 @@ class RefundServiceTest {
 
         service.refund(99L, 7L, 300, "ADMIN_MANUAL");
 
-        verify(transactionManager).getTransaction(any());
-        verify(transactionManager).commit(any());
+        // 批次43 补：现在有两个事务——①"锁订单行 + 上限校验 + 落 WAIT 单"，②"资金动作 + CAS"。
+        // 前者必须先提交（否则重投/补偿看不到单子），后者才是资金入账边界。
+        verify(transactionManager, times(2)).getTransaction(any());
+        verify(transactionManager, times(2)).commit(any());
         verify(transactionManager, never()).rollback(any());
     }
 
@@ -276,8 +311,8 @@ class RefundServiceTest {
 
         RefundRecordEntity result = service.refund(99L, 7L, 300, "ADMIN_MANUAL");
 
+        // 资金动作那一段必须回滚（加款随之撤销）；落单那一段正常提交，单子留在 WAIT 等重驱动。
         verify(transactionManager).rollback(any());
-        verify(transactionManager, never()).commit(any());
         assertThat(result.getStatus()).as("回滚后单子仍在 WAIT").isEqualTo(RefundStatus.WAIT.name());
         verify(delayQueueService).enqueue(anyString(), anyString(), anyString(), anyLong());
     }
@@ -292,7 +327,7 @@ class RefundServiceTest {
         RefundRecordEntity result = service.refund(99L, 7L, 300, "ADMIN_MANUAL");
 
         verify(walletService).addBalance(7L, 300);
-        verify(transactionManager).commit(any());
+        verify(transactionManager, atLeastOnce()).commit(any());
         assertThat(result.getStatus()).isEqualTo(RefundStatus.SUCCESS.name());
     }
 
@@ -305,7 +340,9 @@ class RefundServiceTest {
 
         assertThat(result.getStatus()).isEqualTo(RefundStatus.SUCCESS.name());
         verifyNoInteractions(walletService);
-        verify(transactionManager, never()).getTransaction(any());
+        // 批次43 补：命中 SUCCESS 终态时不再走资金动作，但仍有一次"锁 + 幂等查重"的事务。
+        verify(transactionManager, times(1)).getTransaction(any());
+        verify(walletService, never()).addBalance(anyLong(), anyInt());
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.swapops.server.charge.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.swapops.server.admin.data.DataScopeSupport;
 import com.swapops.server.charge.dao.ChargePolicyDao;
 import com.swapops.server.charge.entity.ChargePolicyEntity;
 import com.swapops.server.charge.form.ChargePolicyForm;
@@ -18,6 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 充电策略（S4.3）：窗口校验（连续覆盖 0~24、不重叠）→ 版本+1 → 下发柜侧 → 落版本历史。
@@ -48,6 +50,9 @@ public class ChargePolicyService {
         if (cabinet == null) {
             throw new RRException("柜不存在: " + form.getCabinetNo());
         }
+        // 批次43 补（独立审计 F-03）：柜是按"请求参数里的 cabinetNo"定位的，站点范围身份
+        // （OPS+STATION）此前可以给域外站点的柜下发真实充电策略指令。
+        DataScopeSupport.requireStationAccess(cabinet.getStationId());
         List<ChargePolicyForm.Window> windows = validateWindows(form.getWindows());
         int priority = validatePriority(form.getPriority());
         int version = latestVersion(form.getCabinetNo()) + 1;
@@ -75,6 +80,8 @@ public class ChargePolicyService {
         if (policy == null) {
             throw new RRException("策略不存在: " + id);
         }
+        // 重投同样是一次真实下发：按策略所属柜判定站点范围（批次43 补 F-03）。
+        requireCabinetAccess(policy.getCabinetNo());
         if (policy.getStatus() != null && policy.getStatus() == 1) {
             throw new RRException("策略已生效，无需重投（改策略请提交新版本）");
         }
@@ -101,10 +108,52 @@ public class ChargePolicyService {
     }
 
     public List<ChargePolicyEntity> list(String cabinetNo) {
-        return policyDao.selectList(new LambdaQueryWrapper<ChargePolicyEntity>()
-                .eq(cabinetNo != null && !cabinetNo.isBlank(), ChargePolicyEntity::getCabinetNo, cabinetNo)
+        // 列表同样要接范围：站点范围身份此前可以看到任意站点柜子的策略史（F-03）。
+        // 约束落在查询上（不是"先查全量再过滤"），且范围为空时直接返回空集（fail-closed）。
+        Set<Long> stationIds = DataScopeSupport.stationIdsOrNull();
+        LambdaQueryWrapper<ChargePolicyEntity> wrapper = new LambdaQueryWrapper<>();
+        boolean hasCabinet = cabinetNo != null && !cabinetNo.isBlank();
+        if (stationIds != null) {
+            if (hasCabinet) {
+                requireCabinetAccess(cabinetNo);
+            } else {
+                List<String> scopedNos = scopedCabinetNos(stationIds);
+                if (scopedNos.isEmpty()) {
+                    return List.of();
+                }
+                wrapper.in(ChargePolicyEntity::getCabinetNo, scopedNos);
+            }
+        }
+        wrapper.eq(hasCabinet, ChargePolicyEntity::getCabinetNo, cabinetNo)
                 .orderByDesc(ChargePolicyEntity::getId)
-                .last("LIMIT 20"));
+                .last("LIMIT 20");
+        return policyDao.selectList(wrapper);
+    }
+
+    /** 站点范围校验（批次43 补 F-03）：按柜号定位资源，越域 403；柜不存在也按"无归属"拒绝。 */
+    private void requireCabinetAccess(String cabinetNo) {
+        if (cabinetNo == null || cabinetNo.isBlank()) {
+            return;
+        }
+        if (DataScopeSupport.stationIdsOrNull() == null) {
+            return;
+        }
+        CabinetEntity cabinet = cabinetDao.selectOne(new LambdaQueryWrapper<CabinetEntity>()
+                .eq(CabinetEntity::getCabinetNo, cabinetNo));
+        DataScopeSupport.requireStationAccess(cabinet == null ? null : cabinet.getStationId());
+    }
+
+    /** 站点范围内可见的柜号集合（可能为空 = 该身份看不到任何柜）。 */
+    private List<String> scopedCabinetNos(Set<Long> stationIds) {
+        if (stationIds.isEmpty()) {
+            return List.of();
+        }
+        return cabinetDao.selectList(new LambdaQueryWrapper<CabinetEntity>()
+                        .in(CabinetEntity::getStationId, stationIds))
+                .stream()
+                .map(CabinetEntity::getCabinetNo)
+                .filter(no -> no != null && !no.isBlank())
+                .toList();
     }
 
     // ---------- 内部 ----------

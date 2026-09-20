@@ -2,7 +2,6 @@ package com.swapops.server.dev;
 
 import com.swapops.server.common.RRException;
 import com.swapops.server.common.Result;
-import com.swapops.server.common.ratelimit.ClientIpResolver;
 import com.swapops.server.order.entity.PayOrderEntity;
 import com.swapops.server.order.service.pay.PayOrderService;
 import com.swapops.server.order.service.pay.PaySignatureService;
@@ -29,9 +28,11 @@ import java.util.regex.Pattern;
  *   <li><b>反射型 XSS</b>：{@code page()} 原来把路径变量原样拼进 HTML。现在先按单号字符集白名单校验，
  *       再做 HTML 转义——两道都要，校验挡畸形输入、转义挡"合法字符集内的恶意内容"（如引号）。</li>
  *   <li><b>无鉴权造币入口</b>：{@code notify()} 用服务端密钥自签即入账，任何能访问到服务的人只要知道
- *       tradeNo 就能把充值单"付成功"。现在只接受<b>回环地址</b>的调用（联调的浏览器/脚本/模拟器都在同机），
- *       并且客户端地址走 {@link ClientIpResolver}——它是受信代理感知的，因此"经 nginx 反代进来的远程
- *       请求"不会被误判为本机（这正是批次33 建立的同一条边界）。</li>
+ *       tradeNo 就能把充值单"付成功"。现在只接受<b>回环地址</b>的调用（联调的浏览器/脚本/模拟器都在同机）。
+ *       <b>批次43 补（F-15）</b>：这条限制原先是调用 {@code ClientIpResolver} 判定的，而该解析器在
+ *       "trusted-proxies 为空 + 前面有反代"（正是仓库默认配置 + 云上 nginx 形态）时返回直连对端
+ *       127.0.0.1，于是<b>远程调用被判成本机、闸门 fail-open</b>——与本节注释声称的相反。
+ *       现在判定改为 {@link DevLoopbackGuard}（不依赖任何限流配置）。</li>
  * </ol>
  * 每次 mock 入账都打一条 WARN 日志，便于事后分辨"这笔钱是真实渠道还是 mock 点的"。
  */
@@ -49,21 +50,28 @@ public class PayMockController {
     private final PayOrderService payOrderService;
     private final PaySignatureService paySignatureService;
     private final com.swapops.server.payrecon.service.ChannelReconService channelReconService;
-    private final ClientIpResolver clientIpResolver;
+    private final DevLoopbackGuard loopbackGuard;
 
     public PayMockController(PayOrderService payOrderService, PaySignatureService paySignatureService,
                              com.swapops.server.payrecon.service.ChannelReconService channelReconService,
-                             ClientIpResolver clientIpResolver) {
+                             DevLoopbackGuard loopbackGuard) {
         this.payOrderService = payOrderService;
         this.paySignatureService = paySignatureService;
         this.channelReconService = channelReconService;
-        this.clientIpResolver = clientIpResolver;
+        this.loopbackGuard = loopbackGuard;
     }
 
-    /** S7 WP-C：渠道账单导出（mock T+1 账单；anomaly 注入差异供剧本/演示） */
+    /**
+     * S7 WP-C：渠道账单导出（mock T+1 账单；anomaly 注入差异供剧本/演示）。
+     *
+     * <p>批次43 补（独立审计 F-08）：同一次加固只给 notify 加了回环限制，导出没有——它同样是
+     * dev 开关下"任意来源可生成渠道账单"的面，因此统一走 {@link DevLoopbackGuard}。
+     */
     @GetMapping(value = "/bill/export", produces = "text/csv;charset=UTF-8")
     public String exportBill(@RequestParam String date,
-                             @RequestParam(required = false) String anomaly) {
+                             @RequestParam(required = false) String anomaly,
+                             HttpServletRequest request) {
+        loopbackGuard.require(request, "pay/mock/bill/export");
         return channelReconService.exportBillCsv(date, anomaly);
     }
 
@@ -85,7 +93,7 @@ public class PayMockController {
     public Result<Map<String, Object>> notify(@PathVariable String tradeNo,
                                               @RequestParam(defaultValue = "SUCCESS") String result,
                                               HttpServletRequest request) {
-        requireLoopback(request);
+        String client = loopbackGuard.require(request, "pay/mock/notify");
         requireTradeNo(tradeNo);
         if (!RESULT_PATTERN.matcher(result).matches()) {
             throw new RRException("mock 支付结果只能是 SUCCESS/FAIL: " + result);
@@ -93,7 +101,7 @@ public class PayMockController {
         String sign = paySignatureService.sign(tradeNo, result);
         PayOrderEntity handled = payOrderService.handleCallback(tradeNo, result, sign);
         log.warn("[mock-pay] 由 mock 网关入账（非真实渠道） tradeNo={} result={} client={}",
-                tradeNo, result, clientIpResolver.resolve(request));
+                tradeNo, result, client);
         return Result.ok(payOrderService.view(handled));
     }
 
@@ -102,22 +110,5 @@ public class PayMockController {
         if (tradeNo == null || !TRADE_NO_PATTERN.matcher(tradeNo).matches()) {
             throw new RRException("支付单号格式非法: " + (tradeNo == null ? "null" : tradeNo));
         }
-    }
-
-    /**
-     * mock 入账只对回环开放：这是"自签即入账"的入口，一旦能远程调用就等于无成本造币。
-     * 地址用受信代理感知的解析器，避免"经反代的远程请求看起来来自 127.0.0.1"。
-     */
-    private void requireLoopback(HttpServletRequest request) {
-        String client = clientIpResolver.resolve(request);
-        if (!isLoopback(client)) {
-            log.warn("[mock-pay] 拒绝非本机调用 client={}", client);
-            throw new RRException("mock 支付网关仅限本机调用: " + client);
-        }
-    }
-
-    private boolean isLoopback(String ip) {
-        return "127.0.0.1".equals(ip) || "::1".equals(ip) || "0:0:0:0:0:0:0:1".equals(ip)
-                || "localhost".equals(ip);
     }
 }

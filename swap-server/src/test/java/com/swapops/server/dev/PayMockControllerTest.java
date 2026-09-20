@@ -1,8 +1,6 @@
 package com.swapops.server.dev;
 
 import com.swapops.server.common.RRException;
-import com.swapops.server.common.ratelimit.ClientIpResolver;
-import com.swapops.server.common.ratelimit.RateLimitProperties;
 import com.swapops.server.order.entity.PayOrderEntity;
 import com.swapops.server.order.service.pay.PayOrderService;
 import com.swapops.server.order.service.pay.PaySignatureService;
@@ -48,9 +46,8 @@ class PayMockControllerTest {
 
     @BeforeEach
     void setUp() {
-        RateLimitProperties properties = new RateLimitProperties();
         controller = new PayMockController(payOrderService, paySignatureService, channelReconService,
-                new ClientIpResolver(properties));
+                new DevLoopbackGuard());
     }
 
     private MockHttpServletRequest request(String remoteAddr, String forwardedFor) {
@@ -119,21 +116,32 @@ class PayMockControllerTest {
     }
 
     @Test
-    @DisplayName("notify：经受信代理反代时按真实客户端判定——远程请求不得因反代而伪装成本机")
+    @DisplayName("notify：反代时按真实客户端判定，且**不依赖限流配置**（缺省 trusted-proxies 也必须拒远程）")
     void 反代后的远程调用拒绝() {
-        RateLimitProperties properties = new RateLimitProperties();
-        properties.setTrustedProxies(java.util.List.of("127.0.0.1")); // 云上 nginx 形态
-        PayMockController proxyAware = new PayMockController(payOrderService, paySignatureService,
-                channelReconService, new ClientIpResolver(properties));
         givenCallbackHandled();
 
-        // 直连地址是 nginx（受信），XFF 最右段是真实客户端 → 解析出远程地址 → 拒绝
-        assertThatThrownBy(() -> proxyAware.notify("PAY-1", "SUCCESS", request("127.0.0.1", "203.0.113.7")))
+        // 云上 nginx 形态：直连地址是 nginx（127.0.0.1），XFF 最右段是真实客户端。
+        // 批次43 补（F-15）：这里刻意使用**缺省**配置——旧实现把回环判定寄生在限流解析器上，
+        // trusted-proxies 为空时它返回直连对端 127.0.0.1，于是这条请求会被判成"本机"而放行。
+        assertThatThrownBy(() -> controller.notify("PAY-1", "SUCCESS", request("127.0.0.1", "203.0.113.7")))
                 .isInstanceOf(RRException.class)
                 .hasMessageContaining("203.0.113.7");
-        // 反代转发的本机请求（链路全是受信地址）仍然放行
-        assertThat(proxyAware.notify("PAY-1", "SUCCESS", request("127.0.0.1", "127.0.0.1")).getCode())
+        // 反代转发的本机请求（XFF 最右段仍是回环）仍然放行
+        assertThat(controller.notify("PAY-1", "SUCCESS", request("127.0.0.1", "127.0.0.1")).getCode())
                 .isZero();
+    }
+
+    @Test
+    @DisplayName("bill/export 同样只对本机开放（批次43 补 F-08：同一次加固漏掉的面）")
+    void 导出账单仅本机() {
+        assertThatThrownBy(() -> controller.exportBill("2026-09-19", null, request("203.0.113.7", null)))
+                .isInstanceOf(RRException.class)
+                .hasMessageContaining("仅限本机");
+        assertThatThrownBy(() -> controller.exportBill("2026-09-19", null, request("127.0.0.1", "203.0.113.7")))
+                .isInstanceOf(RRException.class);
+        when(channelReconService.exportBillCsv("2026-09-19", null)).thenReturn("tradeNo,amount\n");
+        assertThat(controller.exportBill("2026-09-19", null, request("127.0.0.1", null)))
+                .isEqualTo("tradeNo,amount\n");
     }
 
     @Test

@@ -46,6 +46,63 @@ class AdminRefundControllerTest {
         return new AdminRefundController(swapOrderService, refundService);
     }
 
+    private void stationScoped(Long... stationIds) {
+        com.swapops.server.admin.security.AdminContext.set(
+                new com.swapops.server.admin.security.AdminContext.Principal(9L, "fin01",
+                        com.swapops.server.admin.enums.AdminRole.FINANCE, false,
+                        "STATION", java.util.Set.of(stationIds)));
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        com.swapops.server.admin.security.AdminContext.set(null);
+    }
+
+    @Test
+    @DisplayName("批次43 补（F-02）：站点范围身份不得对域外订单放款——读路径有范围，写路径此前漏了")
+    void 域外订单退款被拒() {
+        stationScoped(7L);
+        SwapOrderEntity other = order(OrderStatus.EXCEPTION.getCode());
+        other.setStationId(99L); // 域外站点
+        when(swapOrderService.findByOrderNo("SWO-1")).thenReturn(other);
+
+        assertThatThrownBy(() -> controller().refund("SWO-1", 100))
+                .isInstanceOf(RRException.class)
+                .hasMessageContaining("无权访问该站点数据");
+        verifyNoInteractions(refundService);
+    }
+
+    @Test
+    @DisplayName("批次43 补（F-02）：冲正同样按订单站点校验（它会写负向分账行）")
+    void 域外订单冲正被拒() {
+        stationScoped(7L);
+        SwapOrderEntity other = order(OrderStatus.COMPLETED.getCode());
+        other.setStationId(99L);
+        when(swapOrderService.findByOrderNo("SWO-1")).thenReturn(other);
+
+        assertThatThrownBy(() -> controller().reversal("SWO-1", 100))
+                .isInstanceOf(RRException.class)
+                .hasMessageContaining("无权访问该站点数据");
+        verifyNoInteractions(refundService);
+    }
+
+    @Test
+    @DisplayName("批次43 补（F-02）：本域订单照常放行（范围校验不误伤）")
+    void 本域订单放行() {
+        stationScoped(7L);
+        SwapOrderEntity mine = order(OrderStatus.EXCEPTION.getCode());
+        mine.setStationId(7L);
+        when(swapOrderService.findByOrderNo("SWO-1")).thenReturn(mine);
+        RefundRecordEntity record = new RefundRecordEntity();
+        record.setRefundNo("RF9");
+        record.setAmountFen(100);
+        record.setReason("ADMIN_MANUAL");
+        record.setStatus("SUCCESS");
+        when(refundService.refund(99L, 7L, 100, "ADMIN_MANUAL")).thenReturn(record);
+
+        assertThat(controller().refund("SWO-1", 100).getData()).containsEntry("refundNo", "RF9");
+    }
+
     @Test
     @DisplayName("COMPLETED 拒绝人工退款（资金已结算，指向冲正流程）")
     void 已完成拒绝退款() {

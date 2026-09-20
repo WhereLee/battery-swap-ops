@@ -1,6 +1,7 @@
 package com.swapops.server.order.controller;
 
 import com.swapops.server.admin.annotation.AdminLog;
+import com.swapops.server.admin.data.DataScopeSupport;
 import com.swapops.server.admin.enums.AdminRole;
 import com.swapops.server.admin.security.AdminContext;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -49,6 +50,9 @@ public class AdminRefundController {
         if (order == null) {
             throw new RRException("订单不存在: " + orderNo);
         }
+        // 批次43 补（独立审计 F-02）：读路径（AdminOrderController）一直有资源级范围校验，写路径漏了。
+        // 退款/冲正是真放款，站点范围身份（FINANCE+STATION）不得对域外站点的订单发起。
+        DataScopeSupport.requireStationAccess(order.getStationId());
         // S7 WP-0：已完成订单资金已结算入账（含分账），不允许走人工退款通道二次退现；如需退还走冲正流程
         if (order.getStatus() != null
                 && order.getStatus() == com.swapops.contract.OrderStatus.COMPLETED.getCode()) {
@@ -89,6 +93,8 @@ public class AdminRefundController {
                 || order.getStatus() != com.swapops.contract.OrderStatus.COMPLETED.getCode()) {
             throw new RRException("冲正退款仅适用于已完成订单（进行中/异常单走普通退款）: " + orderNo);
         }
+        // 同 refund()：冲正会写负向分账行，跨站点冲正等于改别人站点的资金账。
+        DataScopeSupport.requireStationAccess(order.getStationId());
         int amount = amountFen == null ? refundService.refundableAmount(order.getId()) : amountFen;
         if (amount <= 0) {
             throw new RRException("该订单无可退金额: " + orderNo);
