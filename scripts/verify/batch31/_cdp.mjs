@@ -118,7 +118,7 @@ async function connect(port, attempts = 40) {
  * window size: in headless it yields ~1414x800 after the scrollbar, which silently made
  * every screenshot narrower and shorter than intended).
  */
-export async function launch({ width = 1440, height = 900, port = 9333 } = {}) {
+export async function launch({ width = 1440, height = 900, port = 9333, ignoreCertErrors = false } = {}) {
   const browser = findBrowser();
   if (!browser) {
     throw new Error("no Chrome/Edge found for the browser run");
@@ -130,6 +130,10 @@ export async function launch({ width = 1440, height = 900, port = 9333 } = {}) {
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-extensions",
+    // 自签证书的站点（云端 DSH Web 是其一）会在无头模式停在证书警告页，DOM 里只有
+    // "您的连接不是私密连接"，所有断言都会莫名其妙地失败。默认保持关闭（探针跑的是
+    // 本地 http），只有明确要求的调用才忽略证书错误。
+    ...(ignoreCertErrors ? ["--ignore-certificate-errors"] : []),
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${profile}`,
     "about:blank",
