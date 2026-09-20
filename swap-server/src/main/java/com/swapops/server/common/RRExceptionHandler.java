@@ -78,6 +78,53 @@ public class RRExceptionHandler {
                 .body(Result.error(e.getStatusCode().value(), e.getReason()));
     }
 
+    /**
+     * 客户端错误按语义返回 4xx，不要落进 {@link #handleOther} 变成 500（批次43 补，AUD-22）。
+     *
+     * <p>实测触发：用 GET 打 `@PostMapping` 端点 → 500；springdoc 关闭后访问 `/api/v3/api-docs` → 500。
+     * 这两件事都不是服务端故障，但兜底分支把它们都变成了"系统繁忙"——**监控会把客户端错误当故障告警**，
+     * 排障时也会先怀疑服务。行业惯例是框架级异常各归其位：
+     * <ul>
+     *   <li>路径/静态资源不存在 → 404（springdoc 关闭时的文档端点就落这里）</li>
+     *   <li>方法不支持 → 405</li>
+     *   <li>媒体类型/参数类型/缺参 → 415 / 400</li>
+     * </ul>
+     * 兜底 {@code Exception} 只留真正未预期的异常（保持 500 + 固定文案，不外泄栈）。
+     */
+    @ExceptionHandler({
+            org.springframework.web.servlet.resource.NoResourceFoundException.class,
+            org.springframework.web.servlet.NoHandlerFoundException.class,
+    })
+    public ResponseEntity<Result<Void>> handleNotFound(Exception e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Result.error(404, "资源不存在"));
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<Result<Void>> handleMethodNotSupported(
+            org.springframework.web.HttpRequestMethodNotSupportedException e) {
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(Result.error(405, "请求方法不支持: " + e.getMethod()));
+    }
+
+    @ExceptionHandler({
+            org.springframework.web.HttpMediaTypeNotSupportedException.class,
+            org.springframework.web.HttpMediaTypeNotAcceptableException.class,
+    })
+    public ResponseEntity<Result<Void>> handleMediaType(Exception e) {
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .body(Result.error(415, "请求/响应的媒体类型不支持"));
+    }
+
+    @ExceptionHandler({
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
+            org.springframework.web.bind.MissingServletRequestParameterException.class,
+            org.springframework.web.bind.ServletRequestBindingException.class,
+    })
+    public ResponseEntity<Result<Void>> handleBadRequest(Exception e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Result.error(400, "请求参数不合法: " + e.getMessage()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> handleOther(Exception e) {
         log.error("未预期异常", e);

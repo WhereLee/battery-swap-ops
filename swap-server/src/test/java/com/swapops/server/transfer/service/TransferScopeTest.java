@@ -173,6 +173,21 @@ class TransferScopeTest {
     }
 
     @Test
+    @DisplayName("审批/取消：只有调入站在范围内 ⇒ 403（放不放货由货源方决定，行业惯例：调出方审批、调入方收货）")
+    void 审批取消按调出站从严() {
+        stationScoped(7L);
+        when(taskDao.selectById(1L)).thenReturn(task(99L, 7L)); // 调入站是我的，调出站不是
+
+        assertThatThrownBy(() -> service.approve(1L, "ops01"))
+                .isInstanceOf(RRException.class)
+                .hasMessageContaining("无权访问该站点数据");
+        assertThatThrownBy(() -> service.cancel(1L, "ops01"))
+                .isInstanceOf(RRException.class)
+                .hasMessageContaining("无权访问该站点数据");
+        verify(taskDao, never()).update(any(), any());
+    }
+
+    @Test
     @DisplayName("详情：两侧都不在范围 ⇒ 403；任一侧在范围 ⇒ 可见")
     void 详情参与者可见() {
         stationScoped(7L);

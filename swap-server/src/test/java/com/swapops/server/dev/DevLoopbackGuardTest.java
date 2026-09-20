@@ -14,10 +14,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>核心回归：<b>缺省 trusted-proxies（仓库默认）+ 反代</b> 这一组合下，旧实现把远程调用判成本机。
  * 这里的用例全部<b>不配置任何限流属性</b>，因为新闸门刻意不依赖限流配置。
  */
-@DisplayName("联调端点：本机调用闸门")
+@DisplayName("联调端点：本机调用闸门 + dev 口令")
 class DevLoopbackGuardTest {
 
-    private final DevLoopbackGuard guard = new DevLoopbackGuard();
+    /** 缺省：不配置 swap.dev.secret（= 非本机一律拒绝，fail-closed）。 */
+    private final DevLoopbackGuard guard = new DevLoopbackGuard(new DevProperties());
+
+    private DevLoopbackGuard guardWithSecret(String secret) {
+        DevProperties properties = new DevProperties();
+        properties.setSecret(secret);
+        return new DevLoopbackGuard(properties);
+    }
 
     private MockHttpServletRequest request(String remoteAddr, String forwardedFor, String realIp) {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/dev/device/open");
@@ -89,5 +96,47 @@ class DevLoopbackGuardTest {
         assertThatThrownBy(() -> guard.require(null, "dev/device/open")).isInstanceOf(RRException.class);
         assertThatThrownBy(() -> guard.require(request(null, null, null), "dev/device/open"))
                 .isInstanceOf(RRException.class);
+    }
+
+    // ---------- dev 口令（非本机的受控入口） ----------
+
+    @Test
+    @DisplayName("非本机 + 正确 dev 口令 ⇒ 放行（受控入口，替代把 dev 面直接暴露出去）")
+    void 非本机凭口令放行() {
+        DevLoopbackGuard withSecret = guardWithSecret("s3cr3t-value");
+        MockHttpServletRequest request = request("203.0.113.7", null, null);
+        request.addHeader(DevLoopbackGuard.DEV_SECRET_HEADER, "s3cr3t-value");
+
+        assertThat(withSecret.require(request, "dev/device/open")).isEqualTo("203.0.113.7");
+    }
+
+    @Test
+    @DisplayName("非本机 + 口令错误 ⇒ 拒绝")
+    void 口令错误拒绝() {
+        DevLoopbackGuard withSecret = guardWithSecret("s3cr3t-value");
+        MockHttpServletRequest request = request("203.0.113.7", null, null);
+        request.addHeader(DevLoopbackGuard.DEV_SECRET_HEADER, "wrong");
+
+        assertThatThrownBy(() -> withSecret.require(request, "dev/device/open"))
+                .isInstanceOf(RRException.class)
+                .hasMessageContaining(DevLoopbackGuard.DEV_SECRET_HEADER);
+    }
+
+    @Test
+    @DisplayName("未配置 dev 口令 ⇒ 非本机即使带上 header 也拒绝（fail-closed，不把\"没配\"当\"不用配\"）")
+    void 未配置口令时非本机拒绝() {
+        MockHttpServletRequest request = request("203.0.113.7", null, null);
+        request.addHeader(DevLoopbackGuard.DEV_SECRET_HEADER, "anything");
+
+        assertThatThrownBy(() -> guard.require(request, "dev/device/open"))
+                .isInstanceOf(RRException.class);
+    }
+
+    @Test
+    @DisplayName("本机调用不需要口令（本地脚本/模拟器不受影响）")
+    void 本机免口令() {
+        DevLoopbackGuard withSecret = guardWithSecret("s3cr3t-value");
+        assertThat(withSecret.require(request("127.0.0.1", null, null), "dev/device/open"))
+                .isEqualTo("127.0.0.1");
     }
 }

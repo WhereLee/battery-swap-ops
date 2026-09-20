@@ -233,6 +233,9 @@ public class TransferService {
 
     public TransferTaskEntity approve(Long id, String operator) {
         TransferTaskEntity task = require(id);
+        // 批次43 补（F-01 口径）：**放不放货由货源方决定**——审批/取消按调出站校验（行业惯例：
+        // 调出方审批、调入方确认收货，两个动作分属两方，不能互相替代）。读路径仍按参与方可见。
+        DataScopeSupport.requireStationAccess(task.getFromStation());
         boolean moved = casTask(id, TransferStatus.DRAFT, TransferStatus.APPROVED,
                 w -> w.set(TransferTaskEntity::getApprovedBy, operator));
         if (!moved) {
@@ -243,6 +246,8 @@ public class TransferService {
 
     public TransferTaskEntity cancel(Long id, String operator) {
         TransferTaskEntity task = require(id);
+        // 同 approve：取消是货源方的决定（EXECUTING 必须闭环，见下）。
+        DataScopeSupport.requireStationAccess(task.getFromStation());
         boolean moved = casTask(id, TransferStatus.DRAFT, TransferStatus.CANCELLED, w -> { })
                 || casTask(id, TransferStatus.APPROVED, TransferStatus.CANCELLED, w -> { });
         if (!moved) {

@@ -30,29 +30,65 @@ import org.springframework.stereotype.Component;
 @Component
 public class DevLoopbackGuard {
 
+    /** 非本机调用时必须携带的请求头（值来自 {@code swap.dev.secret}）。 */
+    public static final String DEV_SECRET_HEADER = "X-Dev-Secret";
+
+    private final DevProperties devProperties;
+
+    public DevLoopbackGuard(DevProperties devProperties) {
+        this.devProperties = devProperties;
+    }
+
     /**
      * 校验通过返回解析出的客户端地址（供日志），不通过抛 403 并打 WARN。
+     *
+     * <p>规则（批次43 补，F-07/F-08/F-15）：<b>本机闸门 OR 共享口令</b>，两者都不满足就拒绝。
+     * 口令走 {@code swap.dev.secret}（该配置项此前存在但**从未被任何 dev 端点使用**）：
+     * <ul>
+     *   <li>本机调用（直连对端回环、无转发头）⇒ 放行，本地脚本/浏览器/模拟器不受影响；</li>
+     *   <li>非本机调用 ⇒ 必须携带 {@code X-Dev-Secret} 且与配置值一致；<b>未配置口令时一律拒绝</b>（fail-closed）；</li>
+     *   <li>口令比较用常量时间比较，避免时序侧信道（低风险，但成本为零）。</li>
+     * </ul>
+     * 这样"本机联调"和"给演示/CI 一个受控入口"两种形态都成立，而不需要把 dev 面直接暴露出去。
      *
      * @param endpoint 仅用于日志/报错文案，例如 {@code pay/mock/notify}
      */
     public String require(HttpServletRequest request, String endpoint) {
         String direct = request == null ? null : request.getRemoteAddr();
-        if (!isLoopback(direct)) {
-            return reject(endpoint, "直连对端不是回环地址", direct);
-        }
+        boolean loopbackDirect = isLoopback(direct);
         String forwarded = header(request, "X-Forwarded-For");
         if (forwarded == null) {
             forwarded = header(request, "X-Real-IP");
         }
-        if (forwarded == null) {
+        String client = forwarded == null ? direct : rightmostHop(forwarded);
+        if (loopbackDirect && forwarded == null) {
             // 真·直连本机（本地脚本 / 本机浏览器 / 本机压测），无代理参与。
             return direct;
         }
-        String client = rightmostHop(forwarded);
-        if (!isLoopback(client)) {
-            return reject(endpoint, "转发头中的客户端不是回环地址", client);
+        if (isLoopback(client)) {
+            // 经（本机）反代进来，但解析出的客户端仍是本机 —— 联调浏览器走 ssh -L / 本机 nginx 的形态。
+            return client;
         }
-        return client;
+        if (secretMatches(request)) {
+            log.warn("[dev-loopback] 非本机调用凭 dev 口令放行 endpoint={} client={}", endpoint, client);
+            return client;
+        }
+        return reject(endpoint, "既不是本机调用、也没有有效的 " + DEV_SECRET_HEADER, client);
+    }
+
+    /** 共享口令比对：未配置 = 不接受非本机调用（fail-closed）；比较用常量时间。 */
+    private boolean secretMatches(HttpServletRequest request) {
+        String configured = devProperties.getSecret();
+        if (configured == null || configured.isBlank()) {
+            return false;
+        }
+        String provided = header(request, DEV_SECRET_HEADER);
+        if (provided == null) {
+            return false;
+        }
+        return java.security.MessageDigest.isEqual(
+                provided.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                configured.trim().getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     private String reject(String endpoint, String why, String client) {

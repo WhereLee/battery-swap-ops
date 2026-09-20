@@ -1,6 +1,6 @@
 === C34 batch31: page-level contract (console endpoints + frontend type parity) ===
 PASS  P00 platform health UP
-SETUP generated settlement statement ST95157787482521600 for agentId=1 (period 2023-11~2027-01)
+SETUP 1 settlement statement(s) already exist - setup skipped
 
 --- page 1: work-order list ---
 PASS  P01 work-order list code=0

@@ -47,7 +47,7 @@ class PayMockControllerTest {
     @BeforeEach
     void setUp() {
         controller = new PayMockController(payOrderService, paySignatureService, channelReconService,
-                new DevLoopbackGuard());
+                new DevLoopbackGuard(new DevProperties()));
     }
 
     private MockHttpServletRequest request(String remoteAddr, String forwardedFor) {

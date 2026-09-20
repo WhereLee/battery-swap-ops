@@ -80,10 +80,17 @@ mybatis-plus:
       id-type: auto
 
 springdoc:
-  # P0-4：OpenAPI 文档（/api/swagger-ui.html、/api/v3/api-docs）；演示/复现用，只读展示
+  # P0-4：OpenAPI 文档（/api/swagger-ui.html、/api/v3/api-docs）；演示/复现用，只读展示。
+  #
+  # 批次43 补（独立审计 F-09）：springdoc 的端点**不在**管理端安全链内（securityMatcher 只匹配
+  # /admin/** 与 /actuator/**），实测匿名 `GET /api/v3/api-docs` 返回 200、87KB、109 个 path——
+  # 等于把 /dev/**、/pay/mock/** 的完整形状免费公开给未认证访问者。
+  # 行业惯例是"接口文档只在联调/开发形态打开"，因此这里跟随 dev 开关：默认关，`--swap.dev.enabled=true`
+  # 时才开（本地联调与录屏演示照旧可用，云上稳态不再匿名暴露 API 地图）。
   api-docs:
-    enabled: true
+    enabled: ${swap.dev.enabled:false}
   swagger-ui:
+    enabled: ${swap.dev.enabled:false}
     path: /swagger-ui.html
     operations-sorter: alpha
     tags-sorter: alpha
